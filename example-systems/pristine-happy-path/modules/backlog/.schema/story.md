@@ -1,12 +1,17 @@
 ---
 entity: story
-schema_version: 1.2
-id_pattern: ^STORY-[0-9]{4}$
+schema_version: 1.3
+entity_key:
+  field: id
+  type: entity_key
+  entity_kind: story
+  example: STORY-0001
 frontmatter_contract:
   id:
-    type: string
+    type: entity_key
     required: true
-    pattern: ^STORY-[0-9]{4}$
+    entity_kind: story
+    example: STORY-0001
   title:
     type: string
     required: true
@@ -15,17 +20,21 @@ frontmatter_contract:
     required: true
     allowed: [draft, ready, in-progress, done]
   epic_ref:
-    type: ghost_ref
+    type: ref
     required: true
+    uri_scheme: pals
+    namespace: section9
     module: backlog
-    id_pattern: ^EPIC-[0-9]{4}$
+    target_entity: epic
   people:
     type: array
     required: false
     items:
-      type: ghost_ref
+      type: ref
+      uri_scheme: pals
+      namespace: section9
       module: people
-      id_pattern: ^PPL-[0-9]{6}$
+      target_entity: person
 body_contract:
   source: markdown
   section_contract_model: inline

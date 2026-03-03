@@ -1,13 +1,12 @@
 ---
 module_id: backlog
+namespace: section9
+uri_scheme: pals
 module_version: 1
 schema_version: 1.0
 compat:
   read_versions: [1]
   write_version: 1
-references:
-  scheme: ghost
-  canonical_pattern: ghost://backlog/<opaque-id>
 ---
 
 # Backlog Module
@@ -15,7 +14,7 @@ references:
 ## Ownership
 
 - Owns epic and story records under this module directory.
-- External modules reference backlog entities via `ghost://backlog/...` only.
+- External modules reference backlog entities via `pals://section9/backlog/...` only.
 
 ## Invariants
 

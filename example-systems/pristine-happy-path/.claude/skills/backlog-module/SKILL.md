@@ -28,8 +28,8 @@ Return:
 ## Write Rules
 
 1. Enforce schema in `modules/backlog/.schema/`.
-2. Enforce canonical references: `ghost://backlog/<opaque-id>`.
-3. Keep body required sections present. Use `_none_` for explicit empty content.
+2. Enforce canonical references: `pals://section9/backlog/<opaque-id>`.
+3. Keep body required sections present. Use `null` for explicit empty content.
 
 ## Evolution Rules
 
