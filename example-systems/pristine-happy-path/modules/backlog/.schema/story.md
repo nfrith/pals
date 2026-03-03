@@ -1,17 +1,10 @@
 ---
 entity: story
 schema_version: 1.3
-entity_key:
-  field: id
-  type: entity_key
-  entity_kind: story
-  example: STORY-0001
 frontmatter_contract:
   id:
-    type: entity_key
+    type: id
     required: true
-    entity_kind: story
-    example: STORY-0001
   title:
     type: string
     required: true
