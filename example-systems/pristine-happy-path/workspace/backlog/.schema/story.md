@@ -16,7 +16,7 @@ frontmatter_contract:
     type: ref
     required: true
     uri_scheme: pals
-    namespace: section9
+    namespace: workspace
     module: backlog
     target_entity: epic
   people:
@@ -25,7 +25,7 @@ frontmatter_contract:
     items:
       type: ref
       uri_scheme: pals
-      namespace: section9
+      namespace: workspace
       module: people
       target_entity: person
 body_contract:

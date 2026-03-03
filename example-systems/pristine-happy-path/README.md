@@ -4,7 +4,7 @@ This fixture represents a clean PALS-style module.
 
 ## Includes
 
-1. Module root at `modules/backlog/`
+1. Module root at `workspace/backlog/`
 2. Module skill at `.claude/skills/backlog-module/SKILL.md`
 3. Module metadata, schema files, and compliant records
 

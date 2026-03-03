@@ -1,6 +1,6 @@
 ---
 module_id: backlog
-namespace: section9
+namespace: workspace
 uri_scheme: pals
 module_version: 1
 schema_version: 1.0
@@ -14,7 +14,7 @@ compat:
 ## Ownership
 
 - Owns epic and story records under this module directory.
-- External modules reference backlog entities via `pals://section9/backlog/...` only.
+- External modules reference backlog entities via `pals://workspace/backlog/...` only.
 
 ## Invariants
 

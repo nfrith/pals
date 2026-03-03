@@ -2,9 +2,9 @@
 id: STORY-0002
 title: Add Linter Rule Codes
 status: draft
-epic_ref: "[epic-0001](pals://section9/backlog/EPIC-0001)"
+epic_ref: "[epic-0001](pals://workspace/backlog/EPIC-0001)"
 people:
-  - "[mira-chen](pals://section9/people/PPL-000204)"
+  - "[mira-chen](pals://workspace/people/PPL-000204)"
 ---
 
 # STORY-0002

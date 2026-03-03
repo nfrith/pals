@@ -13,7 +13,7 @@ description: Operate on the PALS backlog module for read/write workflows, schema
 
 ## Scope
 
-- Read/write scope: `modules/backlog/`
+- Read/write scope: `workspace/backlog/`
 - Do not write outside module scope.
 
 ## Read Response Contract
@@ -27,11 +27,11 @@ Return:
 
 ## Write Rules
 
-1. Enforce schema in `modules/backlog/.schema/`.
-2. Enforce canonical references: `pals://section9/backlog/<opaque-id>`.
+1. Enforce schema in `workspace/backlog/.schema/`.
+2. Enforce canonical references: `pals://workspace/backlog/<opaque-id>`.
 3. Keep body required sections present. Use `null` for explicit empty content.
 
 ## Evolution Rules
 
-1. Follow module compatibility policy in `modules/backlog/MODULE.md`.
+1. Follow module compatibility policy in `workspace/backlog/MODULE.md`.
 2. Use phased plan: `prepare -> expand -> backfill -> cutover -> cleanup`.

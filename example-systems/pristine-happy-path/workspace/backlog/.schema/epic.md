@@ -18,7 +18,7 @@ frontmatter_contract:
     items:
       type: ref
       uri_scheme: pals
-      namespace: section9
+      namespace: workspace
       module: backlog
       target_entity: story
 body_contract:
