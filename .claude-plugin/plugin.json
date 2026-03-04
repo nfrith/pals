@@ -1,0 +1,6 @@
+{
+  "name": "pals",
+  "version": "0.0.1",
+  "description": "PALS module toolchain — init, adopt, mutate, validate, migrate",
+  "skills": "./palsc/skills"
+}
