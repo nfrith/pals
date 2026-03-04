@@ -1,22 +1,20 @@
 ---
 name: people-module
-description: Operate on the PALS people module for identity lookups and person profile updates.
+description: Version router for people-module. Load the currently deployed versioned skill content.
 ---
 
-# People Module Skill
+# People Module (Version Router)
 
-## Use This Skill When
+This file is a pointer to the latest deployed people-module skill version.
 
-1. You need to read person records by `id`.
-2. You need to update person metadata or contact details.
+## Current Deployed Version
 
-## Scope
+- `v0`
 
-- Read/write scope: `workspace/people/`
-- Do not write outside module scope.
+## Load Target
 
-## Write Rules
+- `v0/content/SKILL.md`
 
-1. Enforce schema in `workspace/people/.schema/`.
-2. Enforce canonical references: `pals://workspace/people/<opaque-id>`.
-3. Keep required sections present and use `null` for explicit empty content.
+## Router Rule
+
+When this skill is invoked, read and follow the skill instructions at `v0/content/SKILL.md`.

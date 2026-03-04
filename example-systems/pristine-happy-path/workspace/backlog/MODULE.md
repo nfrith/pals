@@ -2,11 +2,8 @@
 module_id: backlog
 namespace: workspace
 uri_scheme: pals
-module_version: 1
-schema_version: 1.0
-compat:
-  read_versions: [1]
-  write_version: 1
+module_version: 0
+schema_version: 0
 ---
 
 # Backlog Module
