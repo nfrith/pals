@@ -8,6 +8,7 @@ Schema-file shape is defined separately in:
 
 1. `palsc/references/frontmatter-schema-definition.md`
 2. `palsc/references/content-schema-definition.md`
+3. `palsc/references/module-schema-definition.md`
 
 ## Inputs
 
@@ -37,10 +38,11 @@ The compiler should collect as many diagnostics as possible per file. If parsing
 
 ## Phase 1: Preload Module Context
 
-1. Parse `MODULE.md` and load `module_id`, `namespace`, `uri_scheme`, `module_version`, `schema_version`, and entity paths.
-2. Load all schema files from schema dir.
-3. Build an entity schema registry keyed by `entity`.
-4. Build an ID index for reference resolution:
+1. Parse `MODULE.md` and validate it against `palsc/references/module-schema-definition.md`.
+2. Load `module_id`, `namespace`, `uri_scheme`, `module_version`, `schema_version`, entity paths, and `references.modules`.
+3. Load all schema files from schema dir.
+4. Build an entity schema registry keyed by `entity`.
+5. Build an ID index for reference resolution:
    - key: `(namespace, module_id, entity, id)`
    - value: absolute record path
 

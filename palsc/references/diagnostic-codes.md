@@ -34,6 +34,10 @@ Allowed groups:
 | `PAL-SCHEMA-008` | error | `schema_content` | Invalid section `value_type` |
 | `PAL-SCHEMA-009` | error | `schema_content` | Duplicate section key in schema body |
 | `PAL-SCHEMA-010` | error | `module_consistency` | Schema version mismatch against `MODULE.md` |
+| `PAL-SCHEMA-011` | error | `module_contract` | Invalid `MODULE.md` top-level frontmatter key set |
+| `PAL-SCHEMA-012` | error | `module_contract` | Invalid `entity_paths` contract shape |
+| `PAL-SCHEMA-013` | error | `module_contract` | Invalid `references.modules` contract shape |
+| `PAL-SCHEMA-014` | error | `module_contract` | `MODULE.md` must be frontmatter-only (body not allowed) |
 | `PAL-RV-PARSE-001` | error | `parse` | Frontmatter YAML parse failure |
 | `PAL-RV-PARSE-002` | error | `parse` | Markdown section parse failure |
 | `PAL-RV-PARSE-003` | error | `parse` | Could not infer entity from record path |

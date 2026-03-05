@@ -13,7 +13,7 @@ The operator provides the path or name of a PALS module skill (e.g. `backlog-mod
 
 ## Preflight
 
-Before starting, verify the target is a valid PALS module skill (see `palsc/references/pals-module-shape.md`). If it isn't, stop and tell the operator pals-mutate can only be operated against PALS enabled skills.
+Before starting, verify the target is a valid PALS module skill (see `palsc/references/module-schema-definition.md`). If it isn't, stop and tell the operator pals-mutate can only be operated against PALS enabled skills.
 
 ## Scope & Boundaries
 
