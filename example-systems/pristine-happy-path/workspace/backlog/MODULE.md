@@ -4,27 +4,11 @@ namespace: workspace
 uri_scheme: pals
 module_version: 1
 schema_version: 1
+entity_paths:
+  epic: epics/<EPIC-ID>.md
+  story: stories/<STORY-ID>.md
+references:
+  modules:
+    - namespace: workspace
+      module_id: people
 ---
-
-# Backlog Module
-
-## Ownership
-
-- Owns epic and story records under this module directory.
-- External modules reference backlog entities via `pals://workspace/backlog/...` only.
-
-## Invariants
-
-1. Stories must reference an epic.
-2. IDs are opaque and stable.
-3. Required sections must exist in every record.
-4. `id` is required in frontmatter for every record.
-5. Filename stem must equal frontmatter `id`.
-6. `id` is immutable after creation except through explicit migration workflow.
-7. Reference targets must resolve to existing records by exact `id`.
-8. Duplicate `id` values within module scope are forbidden.
-
-## Entity Paths
-
-- Epics: `epics/<EPIC-ID>.md`
-- Stories: `stories/<STORY-ID>.md`

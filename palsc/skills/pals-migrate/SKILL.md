@@ -103,7 +103,7 @@ The migration script has been tested and validated. Now apply it to the live mod
 
 4. **Update the version router.** Edit the skill's root `SKILL.md` to point to `vN+1`.
 
-5. **Update the module contract.** Edit `MODULE.md` to reflect the new `module_version` and `schema_version`.
+5. **Update the module contract.** Edit `MODULE.md` frontmatter only: set new `module_version` and `schema_version`, and ensure `entity_paths` + `references.modules` match the deployed schemas (deduplicated, sorted, no self-reference).
 
 6. **Update the manifest.** Set `status` to `migrated` and `updated_on` to today's date in `vN+1/migrations/MANIFEST.md`.
 

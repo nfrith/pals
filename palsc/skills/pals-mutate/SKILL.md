@@ -36,7 +36,7 @@ Before starting, verify the target is a valid PALS module skill (see `palsc/refe
 
 Before speaking to the operator, silently build a complete mental model of the module.
 
-1. **Read the module contract.** Find and read `MODULE.md`. Note: `module_id`, `namespace`, `module_version`, `schema_version`, ownership declarations, invariants, and entity paths.
+1. **Read the module contract.** Find and read `MODULE.md` frontmatter only. Note: `module_id`, `namespace`, `uri_scheme`, `module_version`, `schema_version`, `entity_paths`, and `references.modules`.
 
 2. **Read the version router.** Find the skill's root `SKILL.md`. Identify the current deployed version (`vN`).
 
@@ -48,7 +48,7 @@ Before speaking to the operator, silently build a complete mental model of the m
 
 6. **Read prior versions if they exist.** If `v1`, `v2`, ... `vN-1` exist, skim them to understand the module's evolutionary history.
 
-7. **Map cross-module references.** Identify all reference targets using the module's `uri_scheme` (found in `MODULE.md` frontmatter). Note which external modules are referenced and from which fields.
+7. **Map cross-module references.** Identify all external reference targets from deployed schema `ref` fields. Verify `MODULE.md` `references.modules` matches exactly (same modules, deduplicated, sorted, no self-reference).
 
 Do not proceed to Phase 2 until all of the above is complete.
 

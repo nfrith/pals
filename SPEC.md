@@ -397,13 +397,23 @@ people:
 
 Every module declares explicit version metadata.
 Versioning is customer-facing and starts at `v1`.
+`MODULE.md` is frontmatter-only (no markdown body).
 
-Minimum fields (in `MODULE.md` or equivalent):
+Required `MODULE.md` frontmatter fields:
 - `module_id`
 - `namespace`
 - `uri_scheme`
 - `module_version`
 - `schema_version`
+- `entity_paths`
+- `references`
+
+Module contract field rules:
+1. `entity_paths` maps entity names to canonical relative record path patterns.
+2. `references.modules` declares direct external module dependencies.
+3. Each `references.modules` item must include `namespace` and `module_id`.
+4. Self references must not be listed in `references.modules`.
+5. `references.modules` must be derived from deployed schema `ref` fields, deduplicated, and sorted.
 
 ### Versioning Rules
 
@@ -777,19 +787,21 @@ This section reflects the current concrete fixture under `example-systems/pristi
 
 1. Workspace root uses `workspace/` as the high-level partition.
 2. Each module has `workspace/<module_id>/MODULE.md`.
-3. `MODULE.md` frontmatter is authoritative module metadata and invariants (body is optional).
+3. `MODULE.md` is frontmatter-only and is authoritative for module metadata, entity paths, and module dependency declarations.
 
 Current fixture module shapes:
 1. `backlog` -> flat entity files under typed subdirectories.
 2. `people` -> simple single-entity module.
 3. `experiments` -> nested 3-layer hierarchy (program -> experiment -> run).
 
-Minimum module metadata fields:
+Minimum module contract frontmatter fields:
 - `module_id`
 - `namespace`
 - `uri_scheme`
 - `module_version`
 - `schema_version`
+- `entity_paths`
+- `references`
 
 Versioning conventions in fixture:
 1. Customer-facing skill versions start at `v1`.

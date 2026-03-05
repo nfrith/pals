@@ -15,7 +15,7 @@ Module contracts must reduce ambiguity for orchestrator and module skills.
 
 ## Acceptance
 
-- MODULE.md defines ownership, invariants, and compatibility metadata.
+- MODULE.md defines module metadata, entity paths, and module dependencies.
 - Schema files exist for each entity.
 
 ## Notes
