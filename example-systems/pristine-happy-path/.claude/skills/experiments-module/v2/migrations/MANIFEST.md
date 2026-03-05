@@ -10,8 +10,6 @@ data_migration_required: true
 status: migrated
 created_on: 2026-03-04
 updated_on: 2026-03-04
-operator: example-operator
-agent: codex
 ---
 
 ## Intent

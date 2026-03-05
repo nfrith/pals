@@ -97,7 +97,8 @@ vN+1/
 ├── schemas/
 │   ├── <entity>.md   (one per entity)
 │   └── ...
-└── migrations/       (empty or populated as needed)
+└── migrations/
+    └── MANIFEST.md   (required)
 ```
 
 #### Authoring Rules
@@ -108,9 +109,11 @@ vN+1/
 
 3. **Skill content authoring.** Update `content/SKILL.md` to reflect any new or changed entry points, response contracts, invariants, or rules. If nothing changed in the skill behavior, the content may be identical to vN.
 
-4. **Migration notes.** If the schema changes require existing data to be transformed, document what transformations are needed in `migrations/`. This is informational for pals-migrate — pals-mutate does not execute migrations.
+4. **Manifest authoring (required).** Always create `migrations/MANIFEST.md`. Use `palsc/references/manifest-template.md` as the source template and fully populate frontmatter plus the `Mutate Outputs` section from the confirmed interview and post-interview analysis.
 
-5. **No cosmetic changes.** Do not reformat, reorganize, or "improve" content that is not part of the agreed changes. The diff between vN and vN+1 should contain only what was discussed.
+5. **Migration notes.** If the schema changes require existing data to be transformed, capture the transformation plan inside `migrations/MANIFEST.md` under mutate outputs. This is informational for pals-migrate — pals-mutate does not execute migrations.
+
+6. **No cosmetic changes.** Do not reformat, reorganize, or "improve" content that is not part of the agreed changes. The diff between vN and vN+1 should contain only what was discussed.
 
 ### Phase 5 — Alignment
 
