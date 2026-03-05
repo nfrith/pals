@@ -2,8 +2,8 @@
 module_id: experiments
 namespace: workspace
 uri_scheme: pals
-module_version: 0
-schema_version: 0
+module_version: 2
+schema_version: 2
 ---
 
 # Experiments Module

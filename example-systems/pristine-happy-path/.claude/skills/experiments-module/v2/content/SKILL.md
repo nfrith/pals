@@ -1,6 +1,6 @@
 ---
 name: experiments-module
-description: Operate on the PALS experiments module. Handles program lifecycle, experiment design, run recording, outcome interpretation, and evidence assessment across the program/experiment/run hierarchy.
+description: Operate on the PALS experiments module. Handles program lifecycle, experiment design, funding lifecycle, run recording, outcome interpretation, and evidence assessment across the program/experiment/run hierarchy.
 context: fork
 ---
 
@@ -22,6 +22,20 @@ Programs contain experiments. Experiments contain runs.
 - Programs: `workspace/experiments/programs/<PRG-ID>/<PRG-ID>.md`
 - Experiments: `workspace/experiments/programs/<PRG-ID>/experiments/<EXP-ID>/<EXP-ID>.md`
 - Runs: `workspace/experiments/programs/<PRG-ID>/experiments/<EXP-ID>/runs/<RUN-ID>.md`
+
+## Experiment Workflow
+
+`draft -> awaiting-funds -> funded -> active`
+
+Allowed side states remain:
+- `paused`
+- `completed`
+
+Guard rules:
+1. `draft -> awaiting-funds` requires `budget` to be present and greater than zero.
+2. `awaiting-funds -> funded` requires `budget` to be present and greater than zero.
+3. `funded -> active` requires `budget` to be present and greater than zero.
+4. Direct `draft -> active` is forbidden.
 
 ## Entry Points
 
@@ -51,11 +65,53 @@ Steps:
 2. Validate the parent program exists by reading its record.
 3. Scan existing experiment directories under the parent program to determine the next available `EXP-XXXX` ID.
 4. Create directory `workspace/experiments/programs/<PRG-ID>/experiments/<new-id>/`.
-5. Create `<new-id>.md` with frontmatter (`id`, `program_ref`, `title`, `status: draft`) and body sections (`Design`, `Metrics`, `Notes`) per the schema.
+5. Create `<new-id>.md` with frontmatter (`id`, `program_ref`, `title`, `status: draft`, `budget: null`) and body sections (`Design`, `Metrics`, `Notes`) per the schema.
 6. Format `program_ref` as: `"[<label>](pals://workspace/experiments/<PRG-ID>)"`
 7. Return a write response.
 
-### 3. record-run (write)
+### 3. submit-budget (write)
+
+Submit or update an experiment budget and move the experiment into funding review.
+
+When to use: The request asks to set a budget or start funding review for a draft experiment.
+
+Steps:
+1. Read the experiment schema at `workspace/experiments/.schema/experiment.md`.
+2. Read the existing experiment record.
+3. Validate current status is `draft`.
+4. Validate the provided `budget` is a positive number.
+5. Update frontmatter: set `budget`, set `status: awaiting-funds`.
+6. Return a write response.
+
+### 4. mark-funded (write)
+
+Mark an awaiting-funds experiment as funded.
+
+When to use: The request confirms budget approval for an experiment.
+
+Steps:
+1. Read the experiment schema at `workspace/experiments/.schema/experiment.md`.
+2. Read the existing experiment record.
+3. Validate current status is `awaiting-funds`.
+4. Validate `budget` is present and greater than zero.
+5. Update frontmatter: set `status: funded`.
+6. Return a write response.
+
+### 5. activate-experiment (write)
+
+Activate a funded experiment.
+
+When to use: The request asks to start execution for a funded experiment.
+
+Steps:
+1. Read the experiment schema at `workspace/experiments/.schema/experiment.md`.
+2. Read the existing experiment record.
+3. Validate current status is `funded`.
+4. Validate `budget` is present and greater than zero.
+5. Update frontmatter: set `status: active`.
+6. Return a write response.
+
+### 6. record-run (write)
 
 Record observations from an experiment execution.
 
@@ -64,14 +120,15 @@ When to use: The request asks to log a run, record observations, or capture what
 Steps:
 1. Read the run schema at `workspace/experiments/.schema/run.md`.
 2. Validate the parent program and experiment both exist by reading their records.
-3. Scan existing run files under the parent experiment to determine the next available `RUN-XXXX` ID.
-4. Create `<new-id>.md` under `workspace/experiments/programs/<PRG-ID>/experiments/<EXP-ID>/runs/`.
-5. Set frontmatter: `id`, `program_ref`, `experiment_ref`, `status: running`, `started_on: <today>`.
-6. Format refs as: `"[<label>](pals://workspace/experiments/<ID>)"`
-7. Set body sections (`Observations`, `Decision`, `Notes`) per the schema. If no decision yet, set Decision to `null`.
-8. Return a write response.
+3. Validate the parent experiment status is `active`.
+4. Scan existing run files under the parent experiment to determine the next available `RUN-XXXX` ID.
+5. Create `<new-id>.md` under `workspace/experiments/programs/<PRG-ID>/experiments/<EXP-ID>/runs/`.
+6. Set frontmatter: `id`, `program_ref`, `experiment_ref`, `status: running`, `started_on: <today>`.
+7. Format refs as: `"[<label>](pals://workspace/experiments/<ID>)"`
+8. Set body sections (`Observations`, `Decision`, `Notes`) per the schema. If no decision yet, set Decision to `null`.
+9. Return a write response.
 
-### 4. interpret-run (write)
+### 7. interpret-run (write)
 
 Update a completed run with outcome and decision.
 
@@ -85,7 +142,7 @@ Steps:
 5. Do not modify `Observations` unless the request explicitly provides corrections.
 6. Return a write response.
 
-### 5. assess-outcomes (read)
+### 8. assess-outcomes (read)
 
 Evaluate experiment evidence for a given scope.
 
@@ -94,7 +151,7 @@ When to use: The request asks about experiment progress, outcome summaries, evid
 Steps:
 1. Determine scope from the request: a specific program, experiment, run, or recent outcomes across all programs.
 2. Read all relevant records within scope.
-3. Interpret the evidence. You own the interpretation — assess confidence, freshness, and whether outcomes are conclusive.
+3. Interpret the evidence. You own the interpretation -- assess confidence, freshness, and whether outcomes are conclusive.
 4. Return a read response.
 
 ## Write Response Contract
@@ -102,7 +159,7 @@ Steps:
 After any write operation, respond with:
 
 ```
-result: <what was created or updated — entity type, id, and path>
+result: <what was created or updated - entity type, id, and path>
 side_effects: <any downstream needs the orchestrator should be aware of, or "none">
 confidence: high | medium | low
 ```
@@ -114,9 +171,9 @@ After any read operation, respond with:
 ```
 answer: <your module-owned interpretation of the evidence>
 evidence: <which records and files you read>
-needs: <external facts that would strengthen your answer, using standardized tokens — or "none">
+needs: <external facts that would strengthen your answer, using standardized tokens - or "none">
 confidence: high | medium | low
-uncertainties: <assumptions, ambiguities, data quality issues — or "none">
+uncertainties: <assumptions, ambiguities, data quality issues - or "none">
 ```
 
 Standardized `needs` tokens: `BACKLOG_STORY_CONTEXT`, `PERSON_IDENTITY`, `EXTERNAL_METRIC_SOURCE`. Express what information is missing, not which module to call.

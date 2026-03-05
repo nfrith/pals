@@ -1,6 +1,6 @@
 ---
 entity: epic
-schema_version: 1.3
+schema_version: 1
 frontmatter_contract:
   id:
     type: id

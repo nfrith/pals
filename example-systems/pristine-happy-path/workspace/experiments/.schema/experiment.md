@@ -1,6 +1,6 @@
 ---
 entity: experiment
-schema_version: 1.0
+schema_version: 2
 frontmatter_contract:
   id:
     type: id
@@ -18,7 +18,10 @@ frontmatter_contract:
   status:
     type: enum
     required: true
-    allowed: [draft, active, paused, completed]
+    allowed: [draft, awaiting-funds, funded, active, paused, completed]
+  budget:
+    type: number
+    required: false
   owner_ref:
     type: ref
     required: false

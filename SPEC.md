@@ -542,7 +542,7 @@ Use transport-agnostic references only:
 ```yaml
 module_id: backlog
 module_version: 2
-schema_version: 2.0
+schema_version: 2
 compat:
   read_versions: [1, 2]
   write_version: 2

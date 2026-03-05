@@ -38,7 +38,7 @@ Before speaking to the operator, silently build a complete mental model of the m
 
 5. **Read concrete data.** Sample at least 2-3 records per entity type from the module data directory. Observe how the schemas manifest in practice. Note any patterns, edge cases, or inconsistencies between schema and data.
 
-6. **Read prior versions if they exist.** If `v0`, `v1`, ... `vN-1` exist, skim them to understand the module's evolutionary history.
+6. **Read prior versions if they exist.** If `v1`, `v2`, ... `vN-1` exist, skim them to understand the module's evolutionary history.
 
 7. **Map cross-module references.** Identify all reference targets using the module's `uri_scheme` (found in `MODULE.md` frontmatter). Note which external modules are referenced and from which fields.
 

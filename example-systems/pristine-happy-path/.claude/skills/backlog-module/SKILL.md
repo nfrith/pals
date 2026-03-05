@@ -9,12 +9,12 @@ This file is a pointer to the latest deployed backlog-module skill version.
 
 ## Current Deployed Version
 
-- `v0`
+- `v1`
 
 ## Load Target
 
-- `v0/content/SKILL.md`
+- `v1/content/SKILL.md`
 
 ## Router Rule
 
-When this skill is invoked, read and follow the skill instructions at `v0/content/SKILL.md`.
+When this skill is invoked, read and follow the skill instructions at `v1/content/SKILL.md`.

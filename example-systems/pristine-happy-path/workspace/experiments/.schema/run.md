@@ -1,6 +1,6 @@
 ---
 entity: run
-schema_version: 1.0
+schema_version: 2
 frontmatter_contract:
   id:
     type: id

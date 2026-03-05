@@ -1,6 +1,6 @@
 ---
 entity: experiment
-schema_version: 1.0
+schema_version: 1
 frontmatter_contract:
   id:
     type: id
