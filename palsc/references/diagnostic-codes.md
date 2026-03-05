@@ -20,6 +20,20 @@ Allowed groups:
 
 `NNN` is a zero-padded integer (`001`, `002`, ...).
 
+## Allowed `phase` Values
+
+Diagnostics emitted by `palsc validate` must use one of:
+
+1. `parse`
+2. `schema_frontmatter`
+3. `schema_content`
+4. `module_contract`
+5. `record_frontmatter`
+6. `record_body`
+7. `identity`
+8. `reference`
+9. `module_consistency`
+
 ## Registry
 
 | Code | Default Severity | Phase | Meaning |
@@ -41,14 +55,14 @@ Allowed groups:
 | `PAL-RV-PARSE-001` | error | `parse` | Frontmatter YAML parse failure |
 | `PAL-RV-PARSE-002` | error | `parse` | Markdown section parse failure |
 | `PAL-RV-PARSE-003` | error | `parse` | Could not infer entity from record path |
-| `PAL-RV-FM-001` | error | `record_frontmatter` | Missing required frontmatter field |
+| `PAL-RV-FM-001` | error | `record_frontmatter` | Missing declared frontmatter field |
 | `PAL-RV-FM-002` | error | `record_frontmatter` | Unknown frontmatter field |
 | `PAL-RV-FM-003` | error | `record_frontmatter` | Enum value not in allowed set |
 | `PAL-RV-FM-004` | error | `record_frontmatter` | Field type mismatch |
 | `PAL-RV-FM-005` | error | `record_frontmatter` | Invalid date format (expected `YYYY-MM-DD`) |
 | `PAL-RV-FM-006` | error | `record_frontmatter` | Invalid ref link format |
 | `PAL-RV-FM-007` | error | `record_frontmatter` | Invalid array item value |
-| `PAL-RV-BODY-001` | error | `record_body` | Missing required body section |
+| `PAL-RV-BODY-001` | error | `record_body` | Missing declared body section |
 | `PAL-RV-BODY-002` | error | `record_body` | Unknown body section |
 | `PAL-RV-BODY-003` | error | `record_body` | Explicit `null` not allowed for non-nullable section |
 | `PAL-RV-BODY-004` | error | `record_body` | Section value does not match declared `value_type` |

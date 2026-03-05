@@ -66,11 +66,14 @@ The compiler should collect as many diagnostics as possible per file. If parsing
 
 Given `schema.frontmatter_contract`, validate:
 
-1. Required fields:
-   - every field with `required: true` must exist.
+1. Declared field presence:
+   - every field declared in the contract must exist in record frontmatter.
 2. Unknown fields:
    - any frontmatter field not declared in contract is a validation error.
-3. Type checks by declared `type`:
+3. Required/optional value semantics:
+   - `required: true` fields must be non-null and pass type checks.
+   - `required: false` fields must still be present and may be explicit `null` or pass type checks.
+4. Type checks by declared `type` (for non-null values):
    - `id`: non-empty string
    - `string`: string scalar
    - `number`: numeric scalar
@@ -78,7 +81,7 @@ Given `schema.frontmatter_contract`, validate:
    - `enum`: string and member of `allowed`
    - `ref`: markdown link string with URI target matching contract (`uri_scheme`, `namespace`, `module`, `target_entity`)
    - `array`: YAML sequence; each item validates against `items`
-4. Array item checks:
+5. Array item checks:
    - `items.type: string` -> each item is string
    - `items.type: ref` -> each item is valid ref link matching declared ref contract
 
@@ -86,22 +89,23 @@ Given `schema.frontmatter_contract`, validate:
 
 Given inline section contracts in schema body, validate:
 
-1. Required section presence:
-   - `required: true` section must exist in record body.
-2. Optional sections:
-   - `required: false` section may be absent.
+1. Declared section presence:
+   - every section declared in schema body must exist in the record body.
+2. Required/optional declaration semantics:
+   - `required: true` sections must be present and non-null.
+   - `required: false` sections must still be present.
 3. Unknown sections:
    - record sections not declared in schema are validation errors.
 4. Null semantics:
    - explicit empty marker is literal `null`
    - `nullable: true` allows explicit `null`
    - `nullable: false` rejects explicit `null`
-5. Value-type checks:
+5. Value-type checks (for non-null values):
    - `markdown_string`: non-list prose content
    - `markdown_list`: list-only content
    - `markdown_string_or_list`: prose or list content
 6. Missing vs explicit empty:
-   - missing required section is an error
+   - omitted declared section is an error
    - explicit `null` is not equivalent to missing
 
 ## Phase 5: Identity Invariant Validation

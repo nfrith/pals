@@ -32,6 +32,7 @@ type CompilerPhase =
   | "parse"
   | "schema_frontmatter"
   | "schema_content"
+  | "module_contract"
   | "record_frontmatter"
   | "record_body"
   | "identity"

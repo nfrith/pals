@@ -391,52 +391,13 @@ people:
 1. No rich inline relation objects as default reference form.
 2. No path-coupled references as canonical FK mechanism.
 
-## 13) Module Evolution and Versioning (Resolved Decision + Playbook Foundation)
+## 13) Module Evolution (Playbook Foundation)
 
-### Decision
+Canonical module contract and versioning rules are defined in:
+1. `palsc/references/module-schema-definition.md`
+2. `palsc/references/versioning.md`
 
-Every module declares explicit version metadata.
-Versioning is customer-facing and starts at `v1`.
-`MODULE.md` is frontmatter-only (no markdown body).
-
-Required `MODULE.md` frontmatter fields:
-- `module_id`
-- `namespace`
-- `uri_scheme`
-- `module_version`
-- `schema_version`
-- `entity_paths`
-- `references`
-
-Module contract field rules:
-1. `entity_paths` maps entity names to canonical relative record path patterns.
-2. `references.modules` declares direct external module dependencies.
-3. Each `references.modules` item must include `namespace` and `module_id`.
-4. Self references must not be listed in `references.modules`.
-5. `references.modules` must be derived from deployed schema `ref` fields, deduplicated, and sorted.
-
-### Versioning Rules
-
-1. `module_version` tracks deployed module behavior (schema + skill logic package).
-2. `schema_version` is a global module-level version, not per-entity.
-3. Schema versions are integers only (`1`, `2`, `3`, ...), not decimals.
-4. If any deployed schema file changes, bump module `schema_version`.
-5. All deployed schema files in a module must carry the same `schema_version`.
-6. Root skill router target `vN` must match `MODULE.md` `module_version: N`.
-
-### Bump Rules
-
-1. Logic-only change:
-- bump `module_version` by `+1`
-- keep `schema_version` unchanged
-
-2. Schema-only change:
-- bump `module_version` by `+1`
-- bump `schema_version` by `+1`
-
-3. Schema + logic change:
-- bump `module_version` by `+1`
-- bump `schema_version` by `+1`
+This spec intentionally does not duplicate those normative rules.
 
 ### Mutate -> Migrate Contract
 
@@ -474,35 +435,13 @@ Module contract field rules:
 - Example: field meaning changes from label to computed score.
 - Requires explicit version bump, manifested behavior test plan, and migration validation proof.
 
-## 14) Body Structure and Null Semantics (Resolved Decision)
+## 14) Body Validation Contract
 
-### Decision
+Canonical body-shape and null/empty semantics are defined in:
+1. `palsc/references/content-schema-definition.md`
+2. `palsc/references/record-validation.md`
 
-Markdown body structure is part of schema, not free-form prose.
-
-Current baseline enforcement model:
-1. Enforce section presence/shape contract first.
-2. Defer deep typed parsing of section internals unless needed.
-
-### Required vs Missing vs Empty
-
-Treat as three distinct states:
-1. Present with value.
-2. Present and explicitly empty (canonical null marker).
-3. Missing.
-
-Rules:
-1. Required sections must be present, even when empty.
-2. Missing required section is a schema violation.
-3. Explicit empty must use one canonical marker: `null`.
-4. Per-section empty-marker overrides are not supported in the current baseline.
-
-### Add-New-Section Process
-
-1. Introduce as optional.
-2. Require explicit presence in all new writes (use empty marker if no value).
-3. Backfill existing records incrementally (lazy-on-touch + optional batch pass).
-4. Promote to required and enforce with linter error at cutover.
+This spec intentionally does not duplicate those normative rules.
 
 ## 15) Compiler Responsibilities (Separation of Concerns, Resolved Decision)
 
@@ -534,7 +473,7 @@ Do not build one monolithic linter. Split responsibilities:
 
 1. Orchestrator request/response chaining is the primary cross-module mechanism.
 2. Transport-agnostic references with `pals://<namespace>/<module>/<id>`.
-3. Additive evolution support (including required explicit empty section markers).
+3. Additive evolution support.
 4. Shape-change support via deterministic migration transforms + atomic cutover rules.
 5. Minimal migrator for deterministic rewrites.
 
@@ -552,14 +491,12 @@ Do not build one monolithic linter. Split responsibilities:
 4. Canonical FK truth is opaque ID in URI target, not display label.
 5. Keep relation payload minimal to reduce drift.
 6. Prefer synchronous orchestrator chaining in the current baseline; add integration events selectively for async/high-value transitions.
-7. Treat body section structure as schema; enforce explicit empty vs missing semantics.
+7. Treat body section structure as schema.
 8. Support three evolution classes with different strategies (additive, shape, semantic).
 9. Separate normalizer/linter/migrator responsibilities.
 10. Keep module read envelopes semi-structured and keep `needs` standardized.
 11. Do not require persistent short-term orchestrator memory artifacts between turns.
-12. Customer-facing module and skill versions start at `v1`.
-13. `schema_version` is global per module and uses integers only.
-14. `pals-mutate` requires `migrations/MANIFEST.md`; `pals-migrate` performs atomic cutover.
+12. `pals-mutate` requires `migrations/MANIFEST.md`; `pals-migrate` performs atomic cutover.
 
 ## 18) Backlog Evolution Playbook (Epic/Story -> Initiative/Epic/Story, Playbook/Template)
 
@@ -627,7 +564,7 @@ Exit criteria:
 Exit criteria:
 - Strict validation passes.
 - Behavior tests pass.
-- Failures are either zero or explicitly accepted with manual resolution plan.
+- Failures are zero.
 
 #### Phase 3: Cutover
 
@@ -642,19 +579,13 @@ Exit criteria:
 
 ### Linter Rule Timeline (Concrete)
 
-Example rules:
+Use canonical compiler diagnostics from `palsc/references/diagnostic-codes.md`.
 
-1. `BKL-REF-001` reference target must be valid `pals://<namespace>/<module>/<id>` URI.
-- Always `error`.
-
-2. `BKL-EVO-001` `initiative_ref` missing on story.
-- Always `error` in deployed v2 data.
-
-3. `BKL-EVO-002` `initiative_ref` missing on epic.
-- Always `error` in deployed v2 data.
-
-4. `BKL-EVO-003` v1-only write shape detected.
-- Always `error` in deployed v2 logic.
+Example mappings:
+1. Invalid reference URI format -> `PAL-RV-REF-001` (error).
+2. Missing `initiative_ref` on story in v2 schema -> `PAL-RV-FM-001` (error).
+3. Missing `initiative_ref` on epic in v2 schema -> `PAL-RV-FM-001` (error).
+4. v1-only frontmatter key in deployed v2 records -> `PAL-RV-FM-002` (error).
 
 ### Backfill Process Contract
 
@@ -676,7 +607,7 @@ If mapping story/epic to initiative is ambiguous:
 1. Mark record `failed` with explicit reason.
 2. Do not guess silently.
 3. Route failed set to manual resolution queue.
-4. Do not cut over until failures are resolved or explicitly waived.
+4. Do not cut over until failures are fully resolved.
 
 ### Orchestrator/Skill Behavior During Migration
 
@@ -769,8 +700,9 @@ Exit criteria:
 
 ### Null/Empty Handling During Move
 
-1. Empty content remains explicit using canonical empty marker (`null`).
-2. Missing required section after move is still a schema violation.
+Use canonical null/empty and section-presence rules from:
+1. `palsc/references/content-schema-definition.md`
+2. `palsc/references/record-validation.md`
 
 ### Definition of Done
 
@@ -794,19 +726,9 @@ Current fixture module shapes:
 2. `people` -> simple single-entity module.
 3. `experiments` -> nested 3-layer hierarchy (program -> experiment -> run).
 
-Minimum module contract frontmatter fields:
-- `module_id`
-- `namespace`
-- `uri_scheme`
-- `module_version`
-- `schema_version`
-- `entity_paths`
-- `references`
-
-Versioning conventions in fixture:
-1. Customer-facing skill versions start at `v1`.
-2. Root skill router target `vN` matches `MODULE.md` `module_version: N`.
-3. All schema files in a deployed module share the module `schema_version`.
+Module contract and versioning norms are source-of-truth in:
+1. `palsc/references/module-schema-definition.md`
+2. `palsc/references/versioning.md`
 
 ### Identity Invariants (Enforced)
 
@@ -827,10 +749,9 @@ Resolution target key is opinionated: always `id`.
 
 ### Body Contract (Current Baseline)
 
-1. Body schema is defined inline in markdown section contract blocks.
-2. Required sections must be present.
-3. Explicit empty value is literal `null`.
-4. Custom per-section empty markers are not supported in the current baseline.
+Body contract semantics are source-of-truth in:
+1. `palsc/references/content-schema-definition.md`
+2. `palsc/references/record-validation.md`
 
 ### Flat and Nested Structures
 
