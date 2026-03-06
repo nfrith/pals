@@ -48,5 +48,6 @@ updated_on: <yyyy-mm-dd>
 - `behavior_test_plan`: <list or `null`>
 - `cutover_gates`: <list>
 - `risks`: <list or `null`>
-- `open_questions`: <list or `null`> <!-- TODO: there should be no open questions. we need to make it explicit in the skill that these need to be answered and this section should as a result not exist --> 
 - `sign_off`: <summary or `null`>
+
+All ambiguities must be resolved before `MANIFEST.md` is authored. `open_questions` is not a valid manifest output section in the current baseline.

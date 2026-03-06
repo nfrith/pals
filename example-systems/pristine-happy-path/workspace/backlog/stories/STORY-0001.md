@@ -9,15 +9,15 @@ people:
 
 # STORY-0001
 
-## Context
+## CONTEXT
 
 Module contracts must reduce ambiguity for orchestrator and module skills.
 
-## Acceptance
+## ACCEPTANCE
 
 - MODULE.md defines module metadata, entity paths, and module dependencies.
 - Schema files exist for each entity.
 
-## Notes
+## NOTES
 
 null

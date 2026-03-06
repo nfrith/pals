@@ -13,7 +13,7 @@ The operator provides the path or name of a PALS module skill (e.g. `backlog-mod
 
 ## Preflight
 
-Before starting, verify the target is a valid PALS module skill (see `palsc/references/module-schema-definition.md`). If it isn't, stop and tell the operator pals-mutate can only be operated against PALS enabled skills.
+Before starting, verify the target is a valid PALS module skill (see `palsc/references/module-skill-definition.md`). If it isn't, stop and tell the operator pals-mutate can only be operated against PALS enabled skills.
 
 ## Scope & Boundaries
 
@@ -42,7 +42,7 @@ Before speaking to the operator, silently build a complete mental model of the m
 
 3. **Read the current version skill.** Read `vN/content/SKILL.md` end to end. Note: entry points, response contracts, identity invariants, body section rules, reference URI patterns, and any evolution rules.
 
-4. **Read every schema.** Read all files in `vN/schemas/`. For each entity, note: frontmatter contract (fields, types, required/optional, enums, refs), body contract (sections, types, required/nullable, includes/excludes).
+4. **Read every schema.** Read all files in `vN/schemas/`. For each entity, note: frontmatter contract (fields, types, nullability, enums, refs), body contract (sections, types, nullability, includes/excludes).
 
 5. **Read concrete data.** Sample at least 2-3 records per entity type from the module data directory. Observe how the schemas manifest in practice. Note any patterns, edge cases, or inconsistencies between schema and data.
 
@@ -84,7 +84,7 @@ After the operator confirms the interview summary, return to the module with fre
    - Sections being added, removed, or restructured
    - Reference paths being added or changed
    - Enum values being added, removed, or renamed
-   - Required/optional changes on any field or section
+   - Nullability changes on any field or section
 
 2. **Surface ambiguities.** For each change, ask:
    - What happens to existing records that don't match the new schema?
@@ -117,7 +117,7 @@ vN+1/
 
 3. **Skill content authoring.** Update `content/SKILL.md` to reflect any new or changed entry points, response contracts, invariants, or rules. If nothing changed in the skill behavior, the content may be identical to vN.
 
-4. **Manifest authoring (required).** Always create `migrations/MANIFEST.md`. Use `palsc/references/manifest-template.md` as the source template and fully populate frontmatter plus the `Mutate Outputs` section from the confirmed interview and post-interview analysis.
+4. **Manifest authoring (required).** Always create `migrations/MANIFEST.md`. Use `palsc/references/manifest-template.md` as the source template and fully populate frontmatter plus the `Mutate Outputs` section from the confirmed interview and post-interview analysis. Do not leave unresolved questions in the manifest.
 
 5. **Migration notes.** If the schema changes require existing data to be transformed, capture the transformation plan inside `migrations/MANIFEST.md` under mutate outputs. This is informational for pals-migrate — pals-mutate does not execute migrations.
 

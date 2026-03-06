@@ -21,15 +21,15 @@ description: Operate on the PALS backlog module for read/write workflows, schema
 Return:
 1. `answer`
 2. `evidence`
-3. `needs`
-4. `confidence`
-5. `uncertainties`
+3. `confidence`
+4. `uncertainties`
 
 ## Write Rules
 
 1. Enforce schema in `workspace/backlog/.schema/`.
 2. Enforce canonical references: `pals://workspace/backlog/<opaque-id>`.
-3. Keep body required sections present. Use `null` for explicit empty content.
+3. Keep all declared body sections present. Use `null` for explicit empty content.
+4. Section headings must match schema headings exactly.
 
 ## Evolution Rules
 

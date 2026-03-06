@@ -84,6 +84,7 @@ This file defines only module-contract file shape.
 1. Per-record validation semantics are defined in `palsc/references/record-validation.md`.
 2. Entity schema file frontmatter shape is defined in `palsc/references/frontmatter-schema-definition.md`.
 3. Entity schema body shape is defined in `palsc/references/content-schema-definition.md`.
+4. Module skill filesystem/router shape is defined in `palsc/references/module-skill-definition.md`.
 
 ## Explicitly Not Supported (Current Baseline)
 

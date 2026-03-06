@@ -35,20 +35,15 @@ Each module read response uses a semi-structured envelope, but no global routing
 Canonical response envelope keys:
 - `answer`: module-owned interpretation/result.
 - `evidence`: which records/files were used.
-- `needs`: external facts required to complete stronger answer.
 - `confidence`: high/medium/low.
 - `uncertainties`: assumptions, ambiguities, data quality issues.
 
 Envelope rules:
 1. Use a stable semi-structured template with the canonical keys above.
 2. Module-local extra fields are allowed, but canonical keys remain consistent.
-3. `needs` entries must use standardized need-type tokens with optional context details.
+3. `uncertainties` should explicitly describe missing facts, assumptions, or data quality gaps.
 
-Example standardized `needs` entries:
-- `EXPERIMENT_OUTCOMES_RECENT` + context: "experiment IDs X/Y, last 30 days"
-- `RISK_CLASSIFICATION` + context: "platform channel Z"
-
-Important: `needs` expresses missing information categories, not "call module X" instructions.
+Important: `uncertainties` expresses evidence or interpretation limits, not "call module X" instructions.
 
 ## 3) Reference Scenarios (Behavioral Examples)
 
@@ -65,7 +60,7 @@ Flow:
 2. Backlog returns:
 - candidate stories for EPIC-42
 - local eligibility interpretation
-- `needs`: latest experiment outcomes for referenced experiment IDs
+- `uncertainties`: latest experiment outcomes for referenced experiment IDs are not yet incorporated
 - evidence paths
 3. Orchestrator forwards original prompt + backlog output to `experiments` skill (forked).
 4. Experiments returns:
@@ -89,7 +84,7 @@ Flow:
 1. Orchestrator first calls `distribution` by mistake.
 2. Distribution returns:
 - minimal answer: out-of-scope for requested decision
-- optional `needs` expressed as unknowns (e.g., "story candidate set required")
+- optional `uncertainties` expressed as scope gaps (e.g., "story candidate set not yet established")
 3. Orchestrator calls `backlog` then `experiments`.
 4. Continues normal flow.
 
@@ -102,7 +97,7 @@ Human prompt:
 "Choose next stories for EPIC-42 using experiments."
 
 Flow:
-1. Backlog provides candidates + needs.
+1. Backlog provides candidates + uncertainties.
 2. Experiments reports stale/inconclusive outcomes for all relevant IDs.
 3. Backlog returns ranking with reduced confidence and a gating note:
 - "Decision provisional due to stale experiment evidence."
@@ -230,7 +225,7 @@ Flow:
 1. Orchestrator calls `backlog` write skill.
 2. Backlog updates STORY-311 and returns:
 - write result
-- side-effect need: "experiment plan required for STORY-311"
+- explicit note: experiment planning is still outstanding for STORY-311
 - confidence + uncertainties
 3. Orchestrator calls `experiments` write skill with that side-effect context.
 4. Experiments creates/updates planning record and returns result.
@@ -323,7 +318,7 @@ If a flow is synchronous and human-in-loop in one turn, orchestrator chaining is
 ## 10) Practical Guardrails for Baseline (Resolved Decisions)
 
 1. Keep module read/write responses in a stable template.
-2. Keep `needs` standardized and fact-oriented.
+2. Keep `uncertainties` explicit and fact-oriented.
 3. Keep cross-module references as IDs, not file paths.
 4. Require a correlation ID per orchestrated request chain.
 5. Start with 2-4 integration event types only; avoid event proliferation.
@@ -395,7 +390,8 @@ people:
 
 Canonical module contract and versioning rules are defined in:
 1. `palsc/references/module-schema-definition.md`
-2. `palsc/references/versioning.md`
+2. `palsc/references/module-skill-definition.md`
+3. `palsc/references/versioning.md`
 
 This spec intentionally does not duplicate those normative rules.
 
@@ -451,11 +447,11 @@ Do not build one monolithic linter. Split responsibilities:
 
 1. Normalizer
 - Parse frontmatter + markdown sections.
-- Resolve layout aliases into canonical schema keys.
+- Preserve literal section headings exactly as written.
 
 2. Linter
 - Validate canonical model against schema + module invariants.
-- Enforce references, required fields/sections, enums, state transitions.
+- Enforce references, declared fields/sections, nullability, enums, state transitions.
 
 3. Migrator
 - Apply record rewrites/backfills.
@@ -494,7 +490,7 @@ Do not build one monolithic linter. Split responsibilities:
 7. Treat body section structure as schema.
 8. Support three evolution classes with different strategies (additive, shape, semantic).
 9. Separate normalizer/linter/migrator responsibilities.
-10. Keep module read envelopes semi-structured and keep `needs` standardized.
+10. Keep module read envelopes semi-structured and keep `uncertainties` explicit.
 11. Do not require persistent short-term orchestrator memory artifacts between turns.
 12. `pals-mutate` requires `migrations/MANIFEST.md`; `pals-migrate` performs atomic cutover.
 

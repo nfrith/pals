@@ -49,7 +49,7 @@ Experiment lifecycle becomes `draft -> awaiting-funds -> funded -> active` with 
 No reference path changes. Existing `program_ref` and `owner_ref` remain canonical.
 
 ## Schema Changes
-- SCH-001: entity=experiment; action=add_field; field=budget:number(required=false)
+- SCH-001: entity=experiment; action=add_field; field=budget:number(nullable=true)
 - SCH-002: entity=experiment; action=expand_enum; field=status; add=[awaiting-funds,funded]
 
 ## Behavior Changes
@@ -79,9 +79,6 @@ No reference path changes. Existing `program_ref` and `owner_ref` remain canonic
 
 ## Risks
 - RSK-001: Placeholder budgets on legacy active experiments may need operator adjustment later.
-
-## Open Questions
-- Q-001: Should budget evolve to structured money object (`amount`,`currency`) in v3?
 
 ## Sign-off
 - operator_approved: yes

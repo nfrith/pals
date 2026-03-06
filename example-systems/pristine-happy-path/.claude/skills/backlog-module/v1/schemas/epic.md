@@ -4,17 +4,17 @@ schema_version: 1
 frontmatter_contract:
   id:
     type: id
-    required: true
+    nullable: false
   title:
     type: string
-    required: true
+    nullable: false
   status:
     type: enum
-    required: true
+    nullable: false
     allowed: [draft, active, done]
   story_refs:
     type: array
-    required: false
+    nullable: true
     items:
       type: ref
       uri_scheme: pals
@@ -30,7 +30,6 @@ body_contract:
 
 ## OBJECTIVE
 
-- required: true
 - value_type: markdown_string
 - nullable: false
 - empty_marker: null
@@ -39,7 +38,6 @@ body_contract:
 
 ## SCOPE
 
-- required: true
 - value_type: markdown_string_or_list
 - nullable: true
 - empty_marker: null
@@ -48,7 +46,6 @@ body_contract:
 
 ## NOTES
 
-- required: true
 - value_type: markdown_string
 - nullable: true
 - empty_marker: null

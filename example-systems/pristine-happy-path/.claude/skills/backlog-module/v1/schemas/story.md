@@ -4,24 +4,24 @@ schema_version: 1
 frontmatter_contract:
   id:
     type: id
-    required: true
+    nullable: false
   title:
     type: string
-    required: true
+    nullable: false
   status:
     type: enum
-    required: true
+    nullable: false
     allowed: [draft, ready, in-progress, done]
   epic_ref:
     type: ref
-    required: true
+    nullable: false
     uri_scheme: pals
     namespace: workspace
     module: backlog
     target_entity: epic
   people:
     type: array
-    required: false
+    nullable: true
     items:
       type: ref
       uri_scheme: pals
@@ -37,7 +37,6 @@ body_contract:
 
 ## CONTEXT
 
-- required: true
 - value_type: markdown_string
 - nullable: false
 - empty_marker: null
@@ -46,7 +45,6 @@ body_contract:
 
 ## ACCEPTANCE
 
-- required: true
 - value_type: markdown_list
 - nullable: false
 - empty_marker: null
@@ -55,7 +53,6 @@ body_contract:
 
 ## NOTES
 
-- required: true
 - value_type: markdown_string
 - nullable: true
 - empty_marker: null

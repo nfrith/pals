@@ -1,6 +1,7 @@
 ---
 name: people-module
 description: Version router for people-module. Load the currently deployed versioned skill content.
+context: fork
 ---
 
 # People Module (Version Router)

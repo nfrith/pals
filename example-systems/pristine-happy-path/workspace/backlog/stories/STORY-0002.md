@@ -9,15 +9,15 @@ people:
 
 # STORY-0002
 
-## Context
+## CONTEXT
 
 Validation findings need stable codes for migration and CI workflows.
 
-## Acceptance
+## ACCEPTANCE
 
 - Add initial rule-code taxonomy.
 - Include severity and fix hints in validation output.
 
-## Notes
+## NOTES
 
 Include one negative fixture for each rule code.

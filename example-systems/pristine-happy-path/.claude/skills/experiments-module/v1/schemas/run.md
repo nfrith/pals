@@ -4,35 +4,35 @@ schema_version: 1
 frontmatter_contract:
   id:
     type: id
-    required: true
+    nullable: false
   program_ref:
     type: ref
-    required: true
+    nullable: false
     uri_scheme: pals
     namespace: workspace
     module: experiments
     target_entity: program
   experiment_ref:
     type: ref
-    required: true
+    nullable: false
     uri_scheme: pals
     namespace: workspace
     module: experiments
     target_entity: experiment
   status:
     type: enum
-    required: true
+    nullable: false
     allowed: [queued, running, completed, failed]
   outcome:
     type: enum
-    required: false
+    nullable: true
     allowed: [positive, negative, inconclusive]
   started_on:
     type: date
-    required: true
+    nullable: false
   ended_on:
     type: date
-    required: false
+    nullable: true
 body_contract:
   source: markdown
   section_contract_model: inline
@@ -42,7 +42,6 @@ body_contract:
 
 ## OBSERVATIONS
 
-- required: true
 - value_type: markdown_string_or_list
 - nullable: false
 - empty_marker: null
@@ -51,7 +50,6 @@ body_contract:
 
 ## DECISION
 
-- required: true
 - value_type: markdown_string
 - nullable: true
 - empty_marker: null
@@ -60,7 +58,6 @@ body_contract:
 
 ## NOTES
 
-- required: true
 - value_type: markdown_string
 - nullable: true
 - empty_marker: null

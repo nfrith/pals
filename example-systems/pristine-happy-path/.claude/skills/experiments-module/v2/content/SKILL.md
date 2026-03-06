@@ -138,8 +138,8 @@ Steps:
 1. Read the run schema at `workspace/experiments/.schema/run.md`.
 2. Read the existing run record.
 3. Update the frontmatter: set `outcome` (positive | negative | inconclusive), set `status: completed`, set `ended_on: <today>`.
-4. Update the `Decision` body section with the interpretation.
-5. Do not modify `Observations` unless the request explicitly provides corrections.
+4. Update the `DECISION` body section with the interpretation.
+5. Do not modify `OBSERVATIONS` unless the request explicitly provides corrections.
 6. Return a write response.
 
 ### 8. assess-outcomes (read)
@@ -160,7 +160,7 @@ After any write operation, respond with:
 
 ```
 result: <what was created or updated - entity type, id, and path>
-side_effects: <any downstream needs the orchestrator should be aware of, or "none">
+side_effects: <any downstream follow-up the orchestrator should be aware of, or "none">
 confidence: high | medium | low
 ```
 
@@ -171,12 +171,9 @@ After any read operation, respond with:
 ```
 answer: <your module-owned interpretation of the evidence>
 evidence: <which records and files you read>
-needs: <external facts that would strengthen your answer, using standardized tokens - or "none">
 confidence: high | medium | low
-uncertainties: <assumptions, ambiguities, data quality issues - or "none">
+uncertainties: <assumptions, ambiguities, data quality issues, or missing external facts - or "none">
 ```
-
-Standardized `needs` tokens: `BACKLOG_STORY_CONTEXT`, `PERSON_IDENTITY`, `EXTERNAL_METRIC_SOURCE`. Express what information is missing, not which module to call.
 
 ## Identity Invariants (enforced on every write)
 
@@ -191,7 +188,7 @@ Standardized `needs` tokens: `BACKLOG_STORY_CONTEXT`, `PERSON_IDENTITY`, `EXTERN
 
 1. All sections defined in the schema must be present in the record.
 2. Use `null` as the explicit empty marker for nullable sections.
-3. Section headings use title case (`## Hypothesis`, not `## HYPOTHESIS`).
+3. Section headings must match schema headings exactly (`## HYPOTHESIS`, not `## Hypothesis`).
 
 ## Reference URI Format
 

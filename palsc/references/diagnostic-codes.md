@@ -44,7 +44,7 @@ Diagnostics emitted by `palsc validate` must use one of:
 | `PAL-SCHEMA-004` | error | `schema_frontmatter` | Invalid ref contract shape |
 | `PAL-SCHEMA-005` | error | `schema_frontmatter` | Invalid array `items` contract |
 | `PAL-SCHEMA-006` | error | `schema_frontmatter` | Invalid `body_contract` values |
-| `PAL-SCHEMA-007` | error | `schema_content` | Missing required section contract key |
+| `PAL-SCHEMA-007` | error | `schema_content` | Missing schema section contract key |
 | `PAL-SCHEMA-008` | error | `schema_content` | Invalid section `value_type` |
 | `PAL-SCHEMA-009` | error | `schema_content` | Duplicate section key in schema body |
 | `PAL-SCHEMA-010` | error | `module_consistency` | Schema version mismatch against `MODULE.md` |

@@ -17,7 +17,6 @@ type SchemaBody = {
 };
 
 type SectionContract = {
-  required: boolean;
   value_type: "markdown_string" | "markdown_list" | "markdown_string_or_list";
   nullable: boolean;
   empty_marker: null;
@@ -33,7 +32,6 @@ type SectionContract = {
 
 ## <SECTION_NAME>
 
-- required: <true|false>
 - value_type: <markdown_string|markdown_list|markdown_string_or_list>
 - nullable: <true|false>
 - empty_marker: null
@@ -47,21 +45,21 @@ Repeat the `## <SECTION_NAME>` block for each section in the schema.
 
 1. Schema body must contain one top-level H1 title (`# ...`) before section contracts.
 2. Section contracts must be declared under level-2 headings (`## ...`).
-3. Section names must be unique within one schema file.
-4. Every section contract must include all keys:
-   - `required`
+3. Section names are literal contract keys and are matched exactly by record headings.
+4. Section names must be unique within one schema file.
+5. Every section contract must include all keys:
    - `value_type`
    - `nullable`
    - `empty_marker`
    - `includes`
    - `excludes`
-5. `value_type` must be one of:
+6. `value_type` must be one of:
    - `markdown_string`
    - `markdown_list`
    - `markdown_string_or_list`
-6. `empty_marker` must be literal `null`.
-7. `includes` and `excludes` must be non-empty strings.
-8. Unknown section-contract keys are invalid in the current baseline.
+7. `empty_marker` must be literal `null`.
+8. `includes` and `excludes` must be non-empty strings.
+9. Unknown section-contract keys are invalid in the current baseline.
 
 ## Boundary
 
@@ -78,3 +76,4 @@ This file defines only schema-file body shape. Record validation semantics are d
 1. Per-section custom empty markers.
 2. Non-markdown section content models.
 3. Deep typed section sub-schemas beyond `value_type` + nullability.
+4. Section-name normalization or aliasing.

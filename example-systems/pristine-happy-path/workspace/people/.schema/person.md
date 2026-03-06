@@ -4,17 +4,17 @@ schema_version: 1
 frontmatter_contract:
   id:
     type: id
-    required: true
+    nullable: false
   display_name:
     type: string
-    required: true
+    nullable: false
   status:
     type: enum
-    required: true
+    nullable: false
     allowed: [active, inactive]
   tags:
     type: array
-    required: false
+    nullable: true
     items:
       type: string
 body_contract:
@@ -26,7 +26,6 @@ body_contract:
 
 ## PROFILE
 
-- required: true
 - value_type: markdown_string
 - nullable: false
 - empty_marker: null
@@ -35,7 +34,6 @@ body_contract:
 
 ## CONTACT
 
-- required: true
 - value_type: markdown_string_or_list
 - nullable: true
 - empty_marker: null
@@ -44,7 +42,6 @@ body_contract:
 
 ## NOTES
 
-- required: true
 - value_type: markdown_string
 - nullable: true
 - empty_marker: null

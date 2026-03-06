@@ -4,27 +4,27 @@ schema_version: 2
 frontmatter_contract:
   id:
     type: id
-    required: true
+    nullable: false
   program_ref:
     type: ref
-    required: true
+    nullable: false
     uri_scheme: pals
     namespace: workspace
     module: experiments
     target_entity: program
   title:
     type: string
-    required: true
+    nullable: false
   status:
     type: enum
-    required: true
+    nullable: false
     allowed: [draft, awaiting-funds, funded, active, paused, completed]
   budget:
     type: number
-    required: false
+    nullable: true
   owner_ref:
     type: ref
-    required: false
+    nullable: true
     uri_scheme: pals
     namespace: workspace
     module: people
@@ -38,7 +38,6 @@ body_contract:
 
 ## DESIGN
 
-- required: true
 - value_type: markdown_string_or_list
 - nullable: false
 - empty_marker: null
@@ -47,7 +46,6 @@ body_contract:
 
 ## METRICS
 
-- required: true
 - value_type: markdown_list
 - nullable: false
 - empty_marker: null
@@ -56,7 +54,6 @@ body_contract:
 
 ## NOTES
 
-- required: true
 - value_type: markdown_string
 - nullable: true
 - empty_marker: null

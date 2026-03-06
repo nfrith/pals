@@ -13,7 +13,7 @@ The operator provides the path or name of a PALS module skill (e.g. `backlog-mod
 
 ## Preflight
 
-Before starting, verify the target is a valid PALS module skill (see `palsc/references/module-schema-definition.md`). If it isn't, stop and tell the operator pals-migrate can only be operated against PALS enabled skills.
+Before starting, verify the target is a valid PALS module skill (see `palsc/references/module-skill-definition.md`). If it isn't, stop and tell the operator pals-migrate can only be operated against PALS enabled skills.
 
 ## Step 1 — Version Readiness
 
@@ -80,7 +80,7 @@ Never run the migration script against the live module data. Test it against a d
 
      **Mechanical errors** — the migration script failed to account for a data shape, but the data's meaning is unambiguous. Examples: unexpected whitespace, a date in a slightly different format, a field the script didn't handle. Fix the migration script and re-run this step from scratch against a fresh clone.
 
-     **Semantic errors** — the data itself is ambiguous or contradictory in a way where any automated transform would be a guess. The meaning of the data would be silently changed or lost if forced through the migration. Examples: an enum value that was removed and has no obvious mapping, a required field that is missing and has no safe default, a reference that points to something that no longer exists. Stop and present these to the operator. The operator decides how each record should be resolved — fix the source data, then re-run this step from scratch against a fresh clone.
+     **Semantic errors** — the data itself is ambiguous or contradictory in a way where any automated transform would be a guess. The meaning of the data would be silently changed or lost if forced through the migration. Examples: an enum value that was removed and has no obvious mapping, a declared non-nullable field that has no safe value, or a reference that points to something that no longer exists. Stop and present these to the operator. The operator decides how each record should be resolved — fix the source data, then re-run this step from scratch against a fresh clone.
 
      A migration must never silently change what data means, only how it is shaped. When in doubt, treat the error as semantic and involve the operator.
 
