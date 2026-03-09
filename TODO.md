@@ -45,12 +45,12 @@ Without this spec, the compiler cannot reliably infer which entity a file belong
 
 ---
 
-### 3. Nested path-parent/ref-parent consistency algorithm is undefined
+### 3. Nested path-parent/identity-contract parent consistency algorithm is undefined
 
 **Status:** unresolved
 **Severity:** critical — blocks nested hierarchy validation
 
-`record-validation.md` Phase 7 rule 3 states: "For nested hierarchies, path-parent consistency and ref-parent consistency must both hold." But the algorithm connecting path segments to ref fields is not specified.
+`record-validation.md` Phase 7 rule 3 states: "For nested hierarchies, path-parent consistency and identity-contract parent consistency must both hold." But the algorithm connecting path segments to ref fields is not specified.
 
 **Concrete example of what this means:**
 
@@ -286,7 +286,7 @@ Without a concrete AST-level or token-level rule, `PAL-RV-BODY-004` will vary ac
 
 1. `### 12.` State-transition validation is referenced but has no declaration model
 2. `### 2.` Entity path pattern matching has no formal definition
-3. `### 3.` Nested path-parent/ref-parent consistency algorithm is undefined
+3. `### 3.` Nested path-parent/identity-contract parent consistency algorithm is undefined
 4. `### 6.` Workspace/module discovery mechanism is missing
 5. `### 4.` Schema file authority is ambiguous
 6. `### 7.` Body section null detection rule is imprecise

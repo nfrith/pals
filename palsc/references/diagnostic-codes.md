@@ -78,7 +78,7 @@ Diagnostics emitted by `palsc validate` must use one of:
 | `PAL-RV-REF-005` | warning | `reference` | Display label does not match target title/id |
 | `PAL-RV-REF-006` | error | `reference` | Parent ref target URI is not a strict prefix of child canonical URI |
 | `PAL-RV-MOD-001` | error | `module_consistency` | Record path does not match declared entity path template |
-| `PAL-RV-MOD-002` | error | `module_consistency` | Nested path-parent and ref-parent consistency violation |
+| `PAL-RV-MOD-002` | error | `module_consistency` | Nested path-parent and identity-contract parent consistency violation |
 | `PAL-RV-MOD-003` | error | `module_consistency` | Ref namespace/scheme incompatible with module contract |
 
 ## Governance
