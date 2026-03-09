@@ -1,6 +1,8 @@
 ---
 entity: program
 schema_version: 2
+identity_contract:
+  local_id_field: id
 frontmatter_contract:
   id:
     type: id

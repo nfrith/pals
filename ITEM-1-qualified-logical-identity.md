@@ -1,6 +1,6 @@
-# Item 1 Proposed Solution: Qualified Logical Identity
+# Item 1 Decision Record: Qualified Logical Identity
 
-Status: proposed
+Status: accepted and implemented
 Related TODO item: `TODO.md` -> `### 1. Duplicate ID in fixture contradicts spec`
 
 ## Problem
@@ -191,16 +191,16 @@ For item `1`:
 5. It reduces agent ambiguity because the entity type is present in the URI itself.
 6. It keeps the baseline model hierarchical instead of introducing arbitrary composite identities too early.
 
-## Explicit Non-Goals For This Proposal
+## Explicit Non-Goals For This Decision
 
 1. Do not support arbitrary identity field names such as `ExperimentId`.
 2. Do not introduce `scope: module | parent`.
 3. Do not support general multi-field composite identity in the baseline.
 4. Do not treat raw filesystem paths as canonical refs.
 
-## Follow-On Spec Work Required If Accepted
+## Repo Surfaces Updated By This Decision
 
-If this proposal is accepted, the normative specs will need coordinated updates in at least:
+This decision required coordinated updates in at least:
 
 1. `SPEC.md`
 2. `palsc/references/frontmatter-schema-definition.md`
@@ -210,4 +210,4 @@ If this proposal is accepted, the normative specs will need coordinated updates 
 6. example fixture schemas and records under `example-systems/pristine-happy-path`
 7. any repo skills/docs/examples that still embed the old bare-ID URI contract
 
-This repository is still pre-release. If accepted, this proposal is implemented as a repo-wide spec and example update, not as a production migration of already-deployed systems.
+This repository is still pre-release. This decision is implemented as a repo-wide spec and example update, not as a production migration of already-deployed systems.

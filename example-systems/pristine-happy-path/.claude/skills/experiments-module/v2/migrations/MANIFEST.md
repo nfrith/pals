@@ -46,7 +46,7 @@ Program and run entities are unchanged in v2. Experiment gains `budget` and expa
 Experiment lifecycle becomes `draft -> awaiting-funds -> funded -> active` with existing side states `paused`, `completed`.
 
 ### Reference Paths
-No reference path changes. Existing `program_ref` and `owner_ref` remain canonical.
+No reference path changes between v1 and v2. Existing `program_ref` and `owner_ref` remain canonical under the qualified logical URI contract.
 
 ## Schema Changes
 - SCH-001: entity=experiment; action=add_field; field=budget:number(nullable=true)

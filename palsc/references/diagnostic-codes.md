@@ -52,6 +52,7 @@ Diagnostics emitted by `palsc validate` must use one of:
 | `PAL-SCHEMA-012` | error | `module_contract` | Invalid `entity_paths` contract shape |
 | `PAL-SCHEMA-013` | error | `module_contract` | Invalid `references.modules` contract shape |
 | `PAL-SCHEMA-014` | error | `module_contract` | `MODULE.md` must be frontmatter-only (body not allowed) |
+| `PAL-SCHEMA-015` | error | `schema_frontmatter` | Invalid `identity_contract` shape |
 | `PAL-RV-PARSE-001` | error | `parse` | Frontmatter YAML parse failure |
 | `PAL-RV-PARSE-002` | error | `parse` | Markdown section parse failure |
 | `PAL-RV-PARSE-003` | error | `parse` | Could not infer entity from record path |
@@ -68,13 +69,14 @@ Diagnostics emitted by `palsc validate` must use one of:
 | `PAL-RV-BODY-004` | error | `record_body` | Section value does not match declared `value_type` |
 | `PAL-RV-BODY-005` | error | `record_body` | Invalid empty marker usage |
 | `PAL-RV-ID-001` | error | `identity` | Filename stem does not match frontmatter `id` |
-| `PAL-RV-ID-002` | error | `identity` | Duplicate `id` in module scope |
+| `PAL-RV-ID-002` | error | `identity` | Duplicate canonical identity in module scope |
 | `PAL-RV-ID-003` | error | `identity` | Immutable `id` changed versus previous snapshot |
 | `PAL-RV-REF-001` | error | `reference` | Ref URI is malformed |
 | `PAL-RV-REF-002` | error | `reference` | Ref URI segments do not match declared contract |
 | `PAL-RV-REF-003` | error | `reference` | Ref target does not resolve |
 | `PAL-RV-REF-004` | error | `reference` | Resolved target entity does not match `target_entity` |
 | `PAL-RV-REF-005` | warning | `reference` | Display label does not match target title/id |
+| `PAL-RV-REF-006` | error | `reference` | Parent ref target URI is not a strict prefix of child canonical URI |
 | `PAL-RV-MOD-001` | error | `module_consistency` | Record path does not match declared entity path template |
 | `PAL-RV-MOD-002` | error | `module_consistency` | Nested path-parent and ref-parent consistency violation |
 | `PAL-RV-MOD-003` | error | `module_consistency` | Ref namespace/scheme incompatible with module contract |

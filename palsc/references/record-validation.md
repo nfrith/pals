@@ -42,8 +42,8 @@ The compiler should collect as many diagnostics as possible per file. If parsing
 2. Load `module_id`, `namespace`, `uri_scheme`, `module_version`, `schema_version`, entity paths, and `references.modules`.
 3. Load all schema files from schema dir.
 4. Build an entity schema registry keyed by `entity`.
-5. Build an ID index for reference resolution:
-   - key: `(namespace, module_id, entity, id)`
+5. Build a canonical identity index for reference resolution:
+   - key: canonical URI string `pals://<namespace>/<module>/<qualified-logical-path>`
    - value: absolute record path
 
 ## Phase 2: Parse Record
@@ -59,7 +59,7 @@ The compiler should collect as many diagnostics as possible per file. If parsing
      - schema `SUCCESS_CRITERIA` requires record `## SUCCESS_CRITERIA`
      - record `## Success Criteria` is not equivalent
 5. Parse ref values as markdown links:
-   - form: `[display](pals://<namespace>/<module>/<id>)`
+   - form: `[display](pals://<namespace>/<module>/<entity>/<id>(/<entity>/<id>)*)`
    - canonical truth is URI target, not display label
 
 ## Phase 3: Frontmatter Contract Validation
@@ -79,7 +79,7 @@ Given `schema.frontmatter_contract`, validate:
    - `number`: numeric scalar
    - `date`: `YYYY-MM-DD`
    - `enum`: string and member of `allowed`
-   - `ref`: markdown link string with URI target matching contract (`uri_scheme`, `namespace`, `module`, `target_entity`)
+   - `ref`: markdown link string with canonical URI target matching contract (`uri_scheme`, `namespace`, `module`, `target_entity`)
    - `array`: YAML sequence; each item validates against `items`
 5. Array item checks:
    - `items.type: string` -> each item is string
@@ -111,27 +111,29 @@ Validate module identity invariants:
 
 1. Frontmatter `id` exists and is non-empty.
 2. Filename stem equals frontmatter `id`.
-3. Duplicate `id` within module scope is forbidden.
-4. ID immutability:
+3. Canonical identity is derived from schema `identity_contract`, local `id`, and zero or more parent canonical segments.
+4. Duplicate canonical identity within module scope is forbidden.
+5. ID immutability:
    - if `optional_previous_snapshot_path` is provided, record ID for same logical record path must not change unless running explicit migration workflow.
 
 ## Phase 6: Reference Validation
 
 For every `ref` or `array<ref>` value:
 
-1. URI parses as `pals://<namespace>/<module>/<id>`.
-2. URI segments are non-empty.
-3. URI segments match declared ref contract.
-4. Target record exists in ID index.
-5. Target record entity matches `target_entity` contract.
-6. Display label is soft-validated only (warning level):
+1. URI parses as `pals://<namespace>/<module>/<entity>/<id>(/<entity>/<id>)*`.
+2. Segments after `<module>` are non-empty and come in exact `<entity>/<id>` pairs.
+3. Namespace and module segments match declared ref contract.
+4. Final entity tag matches declared `target_entity`.
+5. Target record exists in the canonical identity index.
+6. If the current field is named by schema `identity_contract.parent_ref_field`, target URI must be a strict prefix of the current record's canonical URI.
+7. Display label is soft-validated only (warning level):
    - mismatch between display label and target title/id is warning, not error.
 
 ## Phase 7: Module-Level Consistency Validation
 
 1. Record must match one declared entity path template in `MODULE.md`.
 2. Entity inferred from path must have a matching schema `entity`.
-3. For nested hierarchies, path-parent consistency and ref-parent consistency must both hold.
+3. For nested hierarchies, path-parent consistency and identity-contract parent consistency must both hold.
 4. Module namespace and URI scheme in refs must be compatible with module contract rules.
 
 ## Output Contract

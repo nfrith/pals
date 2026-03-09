@@ -1,17 +1,13 @@
 ---
 entity: run
 schema_version: 1
+identity_contract:
+  local_id_field: id
+  parent_ref_field: experiment_ref
 frontmatter_contract:
   id:
     type: id
     nullable: false
-  program_ref:
-    type: ref
-    nullable: false
-    uri_scheme: pals
-    namespace: workspace
-    module: experiments
-    target_entity: program
   experiment_ref:
     type: ref
     nullable: false

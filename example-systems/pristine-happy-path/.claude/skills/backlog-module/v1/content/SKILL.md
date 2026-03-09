@@ -27,7 +27,7 @@ Return:
 ## Write Rules
 
 1. Enforce schema in `workspace/backlog/.schema/`.
-2. Enforce canonical references: `pals://workspace/backlog/<opaque-id>`.
+2. Enforce canonical references using entity-tagged qualified logical URIs, for example `pals://workspace/backlog/story/STORY-0001`.
 3. Keep all declared body sections present. Use `null` for explicit empty content.
 4. Section headings must match schema headings exactly.
 

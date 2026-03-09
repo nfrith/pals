@@ -76,6 +76,7 @@ references:
 13. Self-reference is not allowed in `references.modules` (`namespace` + `module_id` equal to this module).
 14. `references.modules` must be deduplicated by `(namespace, module_id)`.
 15. `references.modules` must be sorted by `namespace`, then `module_id`.
+16. `entity_paths` keys are the canonical entity names used by schema `entity` and logical URI entity tags.
 
 ## Boundary
 
@@ -85,6 +86,7 @@ This file defines only module-contract file shape.
 2. Entity schema file frontmatter shape is defined in `palsc/references/frontmatter-schema-definition.md`.
 3. Entity schema body shape is defined in `palsc/references/content-schema-definition.md`.
 4. Module skill filesystem/router shape is defined in `palsc/references/module-skill-definition.md`.
+5. `entity_paths` governs filesystem layout; logical identity and URI construction are defined by schema `identity_contract`.
 
 ## Explicitly Not Supported (Current Baseline)
 

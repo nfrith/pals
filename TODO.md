@@ -12,23 +12,9 @@ Workflow for now: `unresolved` -> `proposed` -> `resolved`
 
 ### 1. Duplicate ID in fixture contradicts spec
 
-**Status:** proposed
+**Status:** resolved
 **Severity:** critical — blocks compiler identity validation
-**Proposal:** [ITEM-1-qualified-logical-identity.md](ITEM-1-qualified-logical-identity.md)
-
-The spec rule is clear: "Duplicate `id` values within module scope are forbidden" (`palsc/references/record-validation.md`, Phase 5, rule 3).
-
-The pristine fixture violates this. The experiments module contains:
-- `workspace/experiments/programs/PRG-0001/experiments/EXP-0001/EXP-0001.md` with `id: EXP-0001`
-- `workspace/experiments/programs/PRG-0002/experiments/EXP-0001/EXP-0001.md` with `id: EXP-0001`
-
-Two records in the same module with the same `id`. Either:
-- (a) The uniqueness rule needs scoping (per-entity-type? per-parent-path? per-entity-type-within-parent?), OR
-- (b) The fixture has a bug and the second experiment should be `EXP-0002` or similar.
-
-The compiler cannot implement identity validation without knowing which interpretation is correct. If (a), the scoping rule must be precisely defined. If (b), fix the fixture and the rule stands as written.
-
-**Files:** `palsc/references/record-validation.md:114`, `example-systems/pristine-happy-path/workspace/experiments/`
+**Decision Record:** [ITEM-1-qualified-logical-identity.md](ITEM-1-qualified-logical-identity.md)
 
 ---
 
@@ -70,18 +56,16 @@ Without this spec, the compiler cannot reliably infer which entity a file belong
 
 Take `RUN-0001.md` at path `programs/PRG-0001/experiments/EXP-0001/runs/RUN-0001.md`. Its frontmatter has:
 ```yaml
-program_ref: "[program-0001](pals://workspace/experiments/PRG-0001)"
-experiment_ref: "[experiment-0001](pals://workspace/experiments/EXP-0001)"
+experiment_ref: "[experiment-0001](pals://workspace/experiments/program/PRG-0001/experiment/EXP-0001)"
 ```
 
 The compiler needs to verify two things:
-- **Path-parent consistency:** The file physically lives under `PRG-0001/` and `EXP-0001/` directories. The parent IDs embedded in the filesystem path should match the IDs in the ref URIs.
-- **Ref-parent consistency:** The `program_ref` URI target `PRG-0001` and the `experiment_ref` URI target `EXP-0001` should match the parent entities implied by the file's location in the directory tree.
+- **Path-parent consistency:** The file physically lives under `PRG-0001/` and `EXP-0001/` directories. The parent IDs embedded in the filesystem path should match the IDs implied by the canonical experiment URI.
+- **Identity-contract parent consistency:** The `experiment_ref` canonical URI target should be the immediate parent of the run and should be a strict prefix of the run's canonical URI.
 
 The undefined parts:
-1. **How does the compiler know which ref fields are "parent refs"?** The schema says `program_ref` targets entity `program` and `experiment_ref` targets entity `experiment`. The compiler must infer that these are hierarchical parents, not arbitrary cross-references. But the schema has no `is_parent: true` marker or equivalent.
-2. **How does the compiler extract parent IDs from the path?** It must parse `programs/PRG-0001/experiments/EXP-0001/runs/RUN-0001.md` and know that `PRG-0001` is the program parent and `EXP-0001` is the experiment parent. This requires overlaying the run's entity_path pattern against the program and experiment entity_path patterns to identify which path segments correspond to which parent entities.
-3. **What is the matching algorithm?** Given entity_path patterns for all entities in a module, how does the compiler determine that a run's path structurally contains a program path and an experiment path, and therefore the run is a child of both?
+1. **How does the compiler extract parent IDs from the path?** It must parse `programs/PRG-0001/experiments/EXP-0001/runs/RUN-0001.md` and know that `PRG-0001` is the program ancestor and `EXP-0001` is the immediate experiment parent. This requires overlaying the run's entity_path pattern against the program and experiment entity_path patterns to identify which path segments correspond to which ancestor entities.
+2. **What is the matching algorithm?** Given entity_path patterns for all entities in a module, how does the compiler determine that a run's path structurally contains a program path and an experiment path, and therefore the run is a child of that experiment under that program?
 
 This is the most algorithmically complex validation rule in the system and it has the least specification. A naive implementation would get flat modules right but fail on the experiments module's 3-layer hierarchy.
 
@@ -136,7 +120,7 @@ An implementer needs to know: read from workspace, read from skill, or require b
 **Status:** unresolved
 **Severity:** significant — blocks cross-module reference resolution
 
-Cross-module reference validation (record-validation Phase 6) requires the compiler to resolve URIs like `pals://workspace/people/PPL-000101`. This means it must locate the `people` module, load its records, and build an ID index.
+Cross-module reference validation (record-validation Phase 6) requires the compiler to resolve URIs like `pals://workspace/people/person/PPL-000101`. This means it must locate the `people` module, load its records, and build a canonical identity index.
 
 Currently there is no defined mechanism for this:
 1. **No workspace manifest.** There is no top-level file listing all modules in a workspace.
@@ -300,16 +284,15 @@ Without a concrete AST-level or token-level rule, `PAL-RV-BODY-004` will vary ac
 
 ## Recommended Work Order
 
-1. `### 1.` Duplicate ID in fixture contradicts spec
-2. `### 12.` State-transition validation is referenced but has no declaration model
-3. `### 2.` Entity path pattern matching has no formal definition
-4. `### 3.` Nested path-parent/ref-parent consistency algorithm is undefined
-5. `### 6.` Workspace/module discovery mechanism is missing
-6. `### 4.` Schema file authority is ambiguous
-7. `### 7.` Body section null detection rule is imprecise
-8. `### 13.` Body `value_type` classification rules are too loose for deterministic validation
-9. `### 9.` Display-label warning target is undefined
-10. `### 5.` CLI interface for `palsc validate` is undesigned
-11. `### 11.` Manifest validity and migration-report contracts are incomplete
-12. `### 10.` Diagnostic registry does not cover all compiler failure classes
-13. `### 8.` Correlation ID is required for orchestrated chains but is not part of the canonical read envelope keys
+1. `### 12.` State-transition validation is referenced but has no declaration model
+2. `### 2.` Entity path pattern matching has no formal definition
+3. `### 3.` Nested path-parent/ref-parent consistency algorithm is undefined
+4. `### 6.` Workspace/module discovery mechanism is missing
+5. `### 4.` Schema file authority is ambiguous
+6. `### 7.` Body section null detection rule is imprecise
+7. `### 13.` Body `value_type` classification rules are too loose for deterministic validation
+8. `### 9.` Display-label warning target is undefined
+9. `### 5.` CLI interface for `palsc validate` is undesigned
+10. `### 11.` Manifest validity and migration-report contracts are incomplete
+11. `### 10.` Diagnostic registry does not cover all compiler failure classes
+12. `### 8.` Correlation ID is required for orchestrated chains but is not part of the canonical read envelope keys

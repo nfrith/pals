@@ -340,14 +340,15 @@ If a flow is synchronous and human-in-loop in one turn, orchestrator chaining is
 Use standard markdown link syntax for cross-module references, but with transport-agnostic logical URIs in link targets.
 
 Canonical format:
-- `[display-label](pals://<namespace>/<module>/<id>)`
+- root entity: `[display-label](pals://<namespace>/<module>/<entity>/<id>)`
+- child entity: `[display-label](pals://<namespace>/<module>/<parent-entity>/<parent-id>/<entity>/<id>)`
 
 Example:
 ```yaml
 ---
 people:
-  - "[alex-rivera](pals://workspace/people/PPL-000101)"
-  - "[mira-chen](pals://workspace/people/PPL-000204)"
+  - "[alex-rivera](pals://workspace/people/person/PPL-000101)"
+  - "[mira-chen](pals://workspace/people/person/PPL-000204)"
 ---
 ```
 
@@ -371,15 +372,19 @@ people:
 - Allowed URI scheme check (`pals://`).
 - Namespace segment check (required, non-empty).
 - Module segment check (required, non-empty).
-- ID segment check (required, non-empty).
+- Entity-tag and ID segment pair check.
+- Entity-tag exact-match check.
+- Strict-prefix check for parent refs.
 - Existence/resolution check.
 
 ### Canonicality Rules
 
 1. Canonical truth is the URI target, not the display label.
-2. URI target must include namespace + module + id segments.
-3. Opaque primary IDs are required in URI targets (no slug-as-key in canonical target).
-4. Display labels are human-facing and may be soft-validated only.
+2. URI target must include namespace + module followed by one or more exact `<entity>/<id>` pairs.
+3. `<entity>` tags are exact, case-sensitive entity names.
+4. Root entities use one `<entity>/<id>` pair; child entities extend parent canonical URI by one additional pair.
+5. Opaque local IDs are required in URI targets (no slug-as-key in canonical target).
+6. Display labels are human-facing and may be soft-validated only.
 
 ### Non-Goals for Baseline
 
@@ -468,7 +473,7 @@ Do not build one monolithic linter. Split responsibilities:
 ### Current Baseline (Pre-Release)
 
 1. Orchestrator request/response chaining is the primary cross-module mechanism.
-2. Transport-agnostic references with `pals://<namespace>/<module>/<id>`.
+2. Transport-agnostic references with entity-tagged qualified logical URIs.
 3. Additive evolution support.
 4. Shape-change support via deterministic migration transforms + atomic cutover rules.
 5. Minimal migrator for deterministic rewrites.
@@ -508,15 +513,15 @@ Baseline (module_version: 1):
 
 Target (module_version: 2):
 - Hierarchy: `initiative -> epic -> story`
-- Story record requires both `initiative_ref` and `epic_ref`
+- Story record requires `epic_ref`
 - Epic record requires `initiative_ref`
 
 ### Canonical References
 
 Use transport-agnostic references only:
-- `pals://<namespace>/backlog/INIT-<id>`
-- `pals://<namespace>/backlog/EPIC-<id>`
-- `pals://<namespace>/backlog/STORY-<id>`
+- `pals://<namespace>/backlog/initiative/INIT-<id>`
+- `pals://<namespace>/backlog/epic/EPIC-<id>`
+- `pals://<namespace>/backlog/story/STORY-<id>`
 
 ### Module Version Contract (Example)
 
@@ -543,7 +548,7 @@ Exit criteria:
 
 1. Implement deterministic, idempotent migration script(s).
 2. Migration rewrites v1 records to v2 shape:
-- story requires `initiative_ref` + `epic_ref`
+- story requires `epic_ref`
 - epic requires `initiative_ref`
 3. Do not change IDs or containment paths.
 
@@ -579,7 +584,7 @@ Use canonical compiler diagnostics from `palsc/references/diagnostic-codes.md`.
 
 Example mappings:
 1. Invalid reference URI format -> `PAL-RV-REF-001` (error).
-2. Missing `initiative_ref` on story in v2 schema -> `PAL-RV-FM-001` (error).
+2. Missing `epic_ref` on story in v2 schema -> `PAL-RV-FM-001` (error).
 3. Missing `initiative_ref` on epic in v2 schema -> `PAL-RV-FM-001` (error).
 4. v1-only frontmatter key in deployed v2 records -> `PAL-RV-FM-002` (error).
 
@@ -731,8 +736,8 @@ Module contract and versioning norms are source-of-truth in:
 1. Every record must have frontmatter `id`.
 2. Filename stem must equal frontmatter `id`.
 3. `id` is immutable except through explicit migration workflows.
-4. Duplicate `id` values within module scope are forbidden.
-5. Reference targets must resolve by exact `id`.
+4. Duplicate canonical identities within module scope are forbidden.
+5. Reference targets must resolve by exact canonical identity.
 
 ### Reference Contract (Current Baseline)
 
@@ -741,7 +746,7 @@ Reference fields use `type: ref` with:
 - `namespace`
 - `module`
 - `target_entity`
-Resolution target key is opinionated: always `id`.
+Resolution target key is opinionated: always the target record's canonical logical URI.
 
 ### Body Contract (Current Baseline)
 
@@ -764,12 +769,13 @@ Both structures are allowed:
 
 ### Nested Hierarchy Rule
 
-Containment path encodes hierarchy, but explicit parent refs are still required in frontmatter.
+Containment path encodes hierarchy, but only immediate-parent refs are required in frontmatter.
 
 For example:
 1. Experiment record contains `program_ref`.
-2. Run record contains both `program_ref` and `experiment_ref`.
-3. Linter must validate path-parent consistency and ref-parent consistency.
+2. Run record contains `experiment_ref`.
+3. Child `parent_ref_field` target URI must be a strict prefix of the child's canonical URI.
+4. Linter must validate path-parent consistency and identity-contract parent consistency.
 
 ## 21) Open Decision Note (Deferred Design Space)
 

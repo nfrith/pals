@@ -52,7 +52,7 @@ Steps:
 3. Scan existing experiment directories under the parent program to determine the next available `EXP-XXXX` ID.
 4. Create directory `workspace/experiments/programs/<PRG-ID>/experiments/<new-id>/`.
 5. Create `<new-id>.md` with frontmatter (`id`, `program_ref`, `title`, `status: draft`) and body sections (`Design`, `Metrics`, `Notes`) per the schema.
-6. Format `program_ref` as: `"[<label>](pals://workspace/experiments/<PRG-ID>)"`
+6. Format `program_ref` as: `"[<label>](pals://workspace/experiments/program/<PRG-ID>)"`
 7. Return a write response.
 
 ### 3. record-run (write)
@@ -66,8 +66,8 @@ Steps:
 2. Validate the parent program and experiment both exist by reading their records.
 3. Scan existing run files under the parent experiment to determine the next available `RUN-XXXX` ID.
 4. Create `<new-id>.md` under `workspace/experiments/programs/<PRG-ID>/experiments/<EXP-ID>/runs/`.
-5. Set frontmatter: `id`, `program_ref`, `experiment_ref`, `status: running`, `started_on: <today>`.
-6. Format refs as: `"[<label>](pals://workspace/experiments/<ID>)"`
+5. Set frontmatter: `id`, `experiment_ref`, `status: running`, `started_on: <today>`.
+6. Format `experiment_ref` as: `"[<label>](pals://workspace/experiments/program/<PRG-ID>/experiment/<EXP-ID>)"`
 7. Set body sections (`Observations`, `Decision`, `Notes`) per the schema. If no decision yet, set Decision to `null`.
 8. Return a write response.
 
@@ -123,9 +123,9 @@ uncertainties: <assumptions, ambiguities, data quality issues, or missing extern
 1. Every record must have frontmatter `id`.
 2. Filename stem must equal frontmatter `id`.
 3. `id` is immutable after creation.
-4. No duplicate `id` values within module scope.
+4. No duplicate canonical identities within module scope.
 5. Child records must live under their parent's directory.
-6. Child frontmatter refs must match their containment path parents.
+6. Child frontmatter parent refs must match their containment path parents.
 
 ## Body Section Rules
 
@@ -135,7 +135,8 @@ uncertainties: <assumptions, ambiguities, data quality issues, or missing extern
 
 ## Reference URI Format
 
-All cross-entity and cross-module references use:
-`"[<display-label>](pals://workspace/<module>/<id>)"`
+All cross-entity and cross-module references use entity-tagged qualified logical URIs, for example:
+`"[<display-label>](pals://workspace/<module>/<entity>/<id>)"`
+`"[<display-label>](pals://workspace/<module>/<parent-entity>/<parent-id>/<entity>/<id>)"`
 
 The URI target is canonical truth. The display label is human-facing and informational only.

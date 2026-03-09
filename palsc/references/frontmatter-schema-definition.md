@@ -13,6 +13,10 @@ This document defines the allowed frontmatter shape for PALS schema files:
 type SchemaFileFrontmatter = {
   entity: EntityName;
   schema_version: PositiveInteger;
+  identity_contract: {
+    local_id_field: "id";
+    parent_ref_field?: FieldName;
+  };
   frontmatter_contract: Record<FieldName, FieldContract>;
   body_contract: {
     source: "markdown";
@@ -53,6 +57,10 @@ type ArrayItemContract =
 ---
 entity: <entity-name>
 schema_version: <positive-integer>
+identity_contract:
+  local_id_field: id
+  # optional for child entities
+  parent_ref_field: <field-name>
 frontmatter_contract:
   id:
     type: id
@@ -83,27 +91,32 @@ body_contract:
 
 ## Compiler Enforcement Rules
 
-1. Top-level frontmatter keys must be exactly: `entity`, `schema_version`, `frontmatter_contract`, `body_contract`.
+1. Top-level frontmatter keys must be exactly: `entity`, `schema_version`, `identity_contract`, `frontmatter_contract`, `body_contract`.
 2. `entity` must be a non-empty identifier string.
 3. `schema_version` must be a positive integer.
-4. `frontmatter_contract` must be a non-empty object keyed by field name.
-5. Every field contract must include `type` and `nullable`.
-6. Allowed field `type` values are only: `id`, `string`, `number`, `date`, `enum`, `ref`, `array`.
-7. `enum` fields must include non-empty `allowed` with unique string values.
-8. `ref` fields must include: `uri_scheme`, `namespace`, `module`, `target_entity`.
-9. `ref.uri_scheme` must be `pals`.
-10. `array` fields must include `items`.
-11. Array item contracts support only `string` and `ref` in the current baseline.
-12. `id` must be declared in `frontmatter_contract` with `type: id` and `nullable: false`.
-13. `body_contract.source` must be `markdown`.
-14. `body_contract.section_contract_model` must be `inline`.
-15. `schema_version` in each schema file must match module `MODULE.md` `schema_version` for the deployed version.
-16. All deployed schema files in a module must share the same `schema_version`.
+4. `identity_contract` must be an object with key `local_id_field` and optional key `parent_ref_field`.
+5. `identity_contract.local_id_field` must be literal `id`.
+6. If `identity_contract.parent_ref_field` is present, it must be a non-empty identifier string.
+7. `frontmatter_contract` must be a non-empty object keyed by field name.
+8. Every field contract must include `type` and `nullable`.
+9. Allowed field `type` values are only: `id`, `string`, `number`, `date`, `enum`, `ref`, `array`.
+10. `enum` fields must include non-empty `allowed` with unique string values.
+11. `ref` fields must include: `uri_scheme`, `namespace`, `module`, `target_entity`.
+12. `ref.uri_scheme` must be `pals`.
+13. `array` fields must include `items`.
+14. Array item contracts support only `string` and `ref` in the current baseline.
+15. `id` must be declared in `frontmatter_contract` with `type: id` and `nullable: false`.
+16. If `identity_contract.parent_ref_field` is present, it must refer to a declared `frontmatter_contract` field with `type: ref` and `nullable: false`.
+17. `body_contract.source` must be `markdown`.
+18. `body_contract.section_contract_model` must be `inline`.
+19. `schema_version` in each schema file must match module `MODULE.md` `schema_version` for the deployed version.
+20. All deployed schema files in a module must share the same `schema_version`.
 
 ## Boundary
 
 This file defines only schema-file frontmatter shape. Record validation semantics are defined in `palsc/references/record-validation.md`.
 Declared frontmatter fields are always required to be present on records; `nullable` controls whether the value may be explicit `null`.
+Logical URI construction is defined by `identity_contract`; ref values still use the canonical markdown-link form.
 
 ## Explicitly Not Supported (Current Baseline)
 
@@ -111,3 +124,4 @@ Declared frontmatter fields are always required to be present on records; `nulla
 2. Non-markdown body sources.
 3. Non-inline body section contract models.
 4. Optional-presence field semantics (`nullable: true` does not make a field omittable).
+5. Arbitrary identity field names (`local_id_field` is fixed to `id` in the current baseline).

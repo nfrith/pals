@@ -1,6 +1,9 @@
 ---
 entity: experiment
 schema_version: 2
+identity_contract:
+  local_id_field: id
+  parent_ref_field: program_ref
 frontmatter_contract:
   id:
     type: id

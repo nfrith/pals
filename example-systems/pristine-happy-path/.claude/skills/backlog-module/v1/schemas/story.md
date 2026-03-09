@@ -1,6 +1,8 @@
 ---
 entity: story
 schema_version: 1
+identity_contract:
+  local_id_field: id
 frontmatter_contract:
   id:
     type: id
