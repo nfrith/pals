@@ -1,0 +1,28 @@
+{
+  "name": "@pals/shapec",
+  "version": "0.1.0",
+  "description": "PALS shape compiler — validate directory structures against SHAPE.yaml definitions",
+  "type": "module",
+  "bin": {
+    "shapec": "./src/index.ts"
+  },
+  "scripts": {
+    "validate": "tsx src/index.ts",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "gray-matter": "^4.0.3",
+    "yaml": "^2.7.0",
+    "zod": "^3.24.0",
+    "unified": "^11.0.0",
+    "remark-parse": "^11.0.0",
+    "glob": "^11.0.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0",
+    "@types/node": "^22.0.0",
+    "tsx": "^4.0.0"
+  }
+}

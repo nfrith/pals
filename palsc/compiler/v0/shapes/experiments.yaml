@@ -1,0 +1,47 @@
+module: experiments
+namespace: workspace
+version: 2
+refs:
+  - workspace/people
+
+entities:
+  program:
+    path: programs/{id}/{id}.md
+    fields:
+      id: id
+      title: string
+      status: enum(draft, active, completed)
+    body:
+      HYPOTHESIS: prose
+      SUCCESS_CRITERIA: list
+      NOTES: prose?
+
+  experiment:
+    path: programs/{program}/experiments/{id}/{id}.md
+    parent: program via program_ref
+    fields:
+      id: id
+      program_ref: ref(program)
+      title: string
+      status: enum(draft, awaiting-funds, funded, active, paused, completed)
+      budget: number?
+      owner_ref: ref(people/person)?
+    body:
+      DESIGN: prose|list
+      METRICS: list
+      NOTES: prose?
+
+  run:
+    path: programs/{program}/experiments/{experiment}/runs/{id}.md
+    parent: experiment via experiment_ref
+    fields:
+      id: id
+      experiment_ref: ref(experiment)
+      status: enum(queued, running, completed, failed)
+      outcome: enum(positive, negative, inconclusive)?
+      started_on: date
+      ended_on: date?
+    body:
+      OBSERVATIONS: prose|list
+      DECISION: prose?
+      NOTES: prose?

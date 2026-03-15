@@ -1,0 +1,32 @@
+module: backlog
+namespace: workspace
+version: 1
+refs:
+  - workspace/people
+
+entities:
+  epic:
+    path: epics/{id}.md
+    fields:
+      id: id
+      title: string
+      status: enum(draft, active, done)
+      story_refs: ref(story)[]?
+    body:
+      OBJECTIVE: prose
+      SCOPE: prose|list?
+      NOTES: prose?
+
+  story:
+    path: stories/{id}.md
+    parent: epic via epic_ref
+    fields:
+      id: id
+      title: string
+      status: enum(draft, ready, in-progress, done)
+      epic_ref: ref(epic)
+      people: ref(people/person)[]?
+    body:
+      CONTEXT: prose
+      ACCEPTANCE: list
+      NOTES: prose?

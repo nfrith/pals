@@ -1,0 +1,17 @@
+module: people
+namespace: workspace
+version: 1
+refs: []
+
+entities:
+  person:
+    path: persons/{id}.md
+    fields:
+      id: id
+      display_name: string
+      status: enum(active, inactive)
+      tags: string[]?
+    body:
+      PROFILE: prose
+      CONTACT: prose|list?
+      NOTES: prose?
