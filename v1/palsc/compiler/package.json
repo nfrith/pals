@@ -5,7 +5,9 @@
   "type": "module",
   "scripts": {
     "validate": "bun src/index.ts",
-    "test": "bun test"
+    "test": "bun test",
+    "test:parallel": "bun test --concurrent --max-concurrency=20",
+    "test:stress": "bun test --concurrent --randomize --rerun-each 3"
   },
   "dependencies": {
     "gray-matter": "^4.0.3",
