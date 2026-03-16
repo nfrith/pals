@@ -1,0 +1,8 @@
+{
+  "name": "pals",
+  "version": "0.1.0",
+  "description": "Structured markdown storage with typed frontmatter, governed prose sections, and a validating compiler. PALS modules turn plain markdown files into schema-enforced records.",
+  "author": {
+    "name": "nfrith"
+  }
+}
