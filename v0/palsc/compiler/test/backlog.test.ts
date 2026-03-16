@@ -7,7 +7,7 @@ import { writeFileSync, mkdirSync, rmSync, cpSync } from "node:fs";
 const SHAPES_DIR = resolve(import.meta.dirname, "../shapes");
 const FIXTURE_DIR = resolve(
   import.meta.dirname,
-  "../../../../example-systems/pristine-happy-path/workspace/backlog",
+  "../../../example-systems/pristine-happy-path/workspace/backlog",
 );
 
 describe("backlog module — pristine fixture", () => {

@@ -6,7 +6,7 @@ import { validate } from "../src/validator/runtime.js";
 const SHAPES_DIR = resolve(import.meta.dirname, "../shapes");
 const FIXTURE_DIR = resolve(
   import.meta.dirname,
-  "../../../../example-systems/pristine-happy-path/workspace/experiments",
+  "../../../example-systems/pristine-happy-path/workspace/experiments",
 );
 
 describe("experiments module — pristine fixture", () => {

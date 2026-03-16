@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { codes } from "../src/diagnostics.ts";
 import { validateSystem } from "../src/validate.ts";
 
-const fixtureRoot = resolve(process.cwd(), "../../../example-systems/centralized-metadata-happy-path");
+const fixtureRoot = resolve(process.cwd(), "../../example-systems/centralized-metadata-happy-path");
 
 test("centralized metadata fixture validates clean", () => {
   const result = validateSystem(fixtureRoot);
@@ -15,7 +15,7 @@ test("centralized metadata fixture validates clean", () => {
 });
 
 test("disallowed subheading inside a paragraph-only section fails", async () => {
-  const tempRoot = await mkdtemp(join(tmpdir(), "centralized-v0-"));
+  const tempRoot = await mkdtemp(join(tmpdir(), "pals-compiler-"));
   await cp(fixtureRoot, tempRoot, { recursive: true });
 
   const storyPath = join(tempRoot, "workspace/backlog/stories/STORY-0001.md");

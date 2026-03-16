@@ -1,5 +1,5 @@
 {
-  "name": "@pals/centralized-v0",
+  "name": "@pals/compiler",
   "version": "0.1.0",
   "private": true,
   "type": "module",

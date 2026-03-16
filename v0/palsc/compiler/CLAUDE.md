@@ -66,7 +66,7 @@ Negative cases tested (backlog):
 ## Running It
 
 ```bash
-cd palsc/compiler/v0
+cd v0/palsc/compiler
 npm install
 npx tsx src/index.ts shapes/backlog.yaml <path-to-module-dir>
 npx vitest run   # 31 tests
