@@ -3,7 +3,8 @@ schema: pals-module@1
 module:
   id: backlog
   namespace: workspace
-  root: workspace/backlog
+  mount: workspace
+  path: backlog
   version: 1
 
 dependencies:

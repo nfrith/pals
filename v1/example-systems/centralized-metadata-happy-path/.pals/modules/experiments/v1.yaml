@@ -3,7 +3,8 @@ schema: pals-module@1
 module:
   id: experiments
   namespace: workspace
-  root: workspace/experiments
+  mount: workspace
+  path: experiments
   version: 1
 
 dependencies:

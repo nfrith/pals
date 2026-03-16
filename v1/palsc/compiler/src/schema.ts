@@ -1,9 +1,24 @@
+import { posix } from "node:path";
 import { z } from "zod";
 
 const entityName = z.string().regex(/^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/);
 const fieldName = z.string().regex(/^[a-z][a-z0-9_]*$/);
 const nonEmptyString = z.string().min(1);
 const positiveInt = z.number().int().positive();
+
+function isNormalizedRelativePath(value: string): boolean {
+  if (value.length === 0) return false;
+  if (value.startsWith("/") || value.startsWith("\\")) return false;
+  if (value.includes("\\")) return false;
+  if (posix.normalize(value) !== value) return false;
+
+  const segments = value.split("/");
+  return segments.every((segment) => segment.length > 0 && segment !== "." && segment !== "..");
+}
+
+const relativePath = z.string().min(1).refine(isNormalizedRelativePath, {
+  message: "must be a normalized relative path without '.', '..', or a leading slash",
+});
 
 const targetSchema = z.object({
   namespace: nonEmptyString,
@@ -146,7 +161,8 @@ export const moduleShapeSchema = z.object({
   module: z.object({
     id: entityName,
     namespace: nonEmptyString,
-    root: nonEmptyString,
+    mount: entityName,
+    path: relativePath,
     version: positiveInt,
   }),
   dependencies: z.array(z.object({
@@ -207,12 +223,26 @@ export const moduleShapeSchema = z.object({
 export const systemConfigSchema = z.object({
   schema: z.literal("pals-system@1"),
   namespace: nonEmptyString,
+  roots: z.record(entityName, z.object({
+    path: relativePath,
+  })),
   modules: z.record(entityName, z.object({
-    root: nonEmptyString,
+    mount: entityName,
+    path: relativePath,
     deployed_version: positiveInt,
     shape: nonEmptyString,
     skill: nonEmptyString,
   })),
+}).superRefine((value, ctx) => {
+  for (const [moduleId, moduleConfig] of Object.entries(value.modules)) {
+    if (!value.roots[moduleConfig.mount]) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `module ${moduleId} references unknown mount ${moduleConfig.mount}`,
+        path: ["modules", moduleId, "mount"],
+      });
+    }
+  }
 });
 
 export type ModuleShape = z.infer<typeof moduleShapeSchema>;

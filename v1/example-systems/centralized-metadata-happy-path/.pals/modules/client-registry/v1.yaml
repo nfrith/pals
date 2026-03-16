@@ -1,17 +1,17 @@
 schema: pals-module@1
 
 module:
-  id: people
+  id: client-registry
   namespace: workspace
-  mount: workspace
-  path: people
+  mount: clients
+  path: registry
   version: 1
 
 dependencies: []
 
 entities:
-  person:
-    path: persons/{id}.md
+  client:
+    path: clients/{id}.md
 
     identity:
       id_field: id
@@ -31,14 +31,7 @@ entities:
         type: enum
         required: true
         allow_null: false
-        allowed_values: [active, inactive]
-
-      tags:
-        type: list
-        required: true
-        allow_null: true
-        items:
-          type: string
+        allowed_values: [prospect, active, paused, former]
 
     sections:
       - name: PROFILE
@@ -50,20 +43,20 @@ entities:
           allow_blockquotes: false
           allow_code_blocks: false
         guidance:
-          include: who this person is and the role they play in this workspace
-          exclude: transient task updates
+          include: stable description of the client and why they matter
+          exclude: experimental run logs or tactical work items
 
-      - name: CONTACT
+      - name: PRIORITIES
         required: true
-        allow_null: true
+        allow_null: false
         content:
-          allowed_blocks: [paragraph, bullet_list, ordered_list]
+          allowed_blocks: [bullet_list, ordered_list]
           allow_subheadings: false
           allow_blockquotes: false
           allow_code_blocks: false
         guidance:
-          include: stable contact channels or handles
-          exclude: private credentials or secrets
+          include: the main outcomes or constraints this client cares about
+          exclude: internal team-only implementation details
 
       - name: NOTES
         required: true
@@ -74,5 +67,5 @@ entities:
           allow_blockquotes: false
           allow_code_blocks: false
         guidance:
-          include: optional context and collaboration notes
-          exclude: authoritative policy statements
+          include: optional context and relationship notes
+          exclude: required profile or priority content

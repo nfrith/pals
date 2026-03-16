@@ -2,6 +2,8 @@
 
 Bun-based validator for the explicit centralized `.pals/` metadata model.
 
+The system registry declares named repo-root mounts, and each module resolves from `mount + path`.
+
 ## Usage
 
 ```bash

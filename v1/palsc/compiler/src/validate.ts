@@ -126,7 +126,8 @@ export function validateSystem(systemRootInput: string, moduleFilter?: string): 
 
 function loadModuleState(systemRootAbs: string, systemConfig: SystemConfig, moduleId: string): ModuleWorkState {
   const registryEntry = systemConfig.modules[moduleId];
-  const modulePathAbs = resolve(systemRootAbs, registryEntry.root);
+  const mountEntry = systemConfig.roots[registryEntry.mount];
+  const modulePathAbs = resolve(systemRootAbs, mountEntry.path, registryEntry.path);
   const modulePathRel = toRepoRelative(modulePathAbs);
   const shapePathAbs = resolve(systemRootAbs, registryEntry.shape);
   const shapePathRel = toRepoRelative(shapePathAbs);
@@ -728,12 +729,22 @@ function validateRegistryAlignment(
     );
   }
 
-  if (context.shape.module.root !== registryEntry.root) {
+  if (context.shape.module.mount !== registryEntry.mount) {
     diagnostics.push(
-      diag(codes.SHAPE_REGISTRY_MISMATCH, "error", "module_shape", context.shape_path_rel, "Shape module.root does not match system registry", {
+      diag(codes.SHAPE_REGISTRY_MISMATCH, "error", "module_shape", context.shape_path_rel, "Shape module.mount does not match system registry", {
         module_id: context.module_id,
-        expected: registryEntry.root,
-        actual: context.shape.module.root,
+        expected: registryEntry.mount,
+        actual: context.shape.module.mount,
+      }),
+    );
+  }
+
+  if (context.shape.module.path !== registryEntry.path) {
+    diagnostics.push(
+      diag(codes.SHAPE_REGISTRY_MISMATCH, "error", "module_shape", context.shape_path_rel, "Shape module.path does not match system registry", {
+        module_id: context.module_id,
+        expected: registryEntry.path,
+        actual: context.shape.module.path,
       }),
     );
   }
