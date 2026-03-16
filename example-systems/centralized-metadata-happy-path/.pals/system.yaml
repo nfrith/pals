@@ -1,0 +1,21 @@
+schema: pals-system@1
+namespace: workspace
+
+modules:
+  people:
+    root: workspace/people
+    deployed_version: 1
+    shape: .pals/modules/people/v1.yaml
+    skill: .claude/skills/people-module/SKILL.md
+
+  backlog:
+    root: workspace/backlog
+    deployed_version: 1
+    shape: .pals/modules/backlog/v1.yaml
+    skill: .claude/skills/backlog-module/SKILL.md
+
+  experiments:
+    root: workspace/experiments
+    deployed_version: 2
+    shape: .pals/modules/experiments/v2.yaml
+    skill: .claude/skills/experiments-module/SKILL.md

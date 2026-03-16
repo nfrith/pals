@@ -1,0 +1,241 @@
+schema: pals-module@1
+
+module:
+  id: experiments
+  namespace: workspace
+  root: workspace/experiments
+  version: 2
+
+dependencies:
+  - namespace: workspace
+    module: people
+
+entities:
+  program:
+    path: programs/{id}/{id}.md
+
+    identity:
+      id_field: id
+
+    fields:
+      id:
+        type: id
+        required: true
+        allow_null: false
+
+      title:
+        type: string
+        required: true
+        allow_null: false
+
+      status:
+        type: enum
+        required: true
+        allow_null: false
+        allowed_values: [draft, active, completed]
+
+    sections:
+      - name: HYPOTHESIS
+        required: true
+        allow_null: false
+        content:
+          allowed_blocks: [paragraph]
+          allow_subheadings: false
+          allow_blockquotes: false
+          allow_code_blocks: false
+        guidance:
+          include: primary belief being tested by this program
+          exclude: run-level observations
+
+      - name: SUCCESS_CRITERIA
+        required: true
+        allow_null: false
+        content:
+          allowed_blocks: [bullet_list, ordered_list]
+          allow_subheadings: false
+          allow_blockquotes: false
+          allow_code_blocks: false
+        guidance:
+          include: measurable outcomes for program-level success
+          exclude: tactical implementation notes
+
+      - name: NOTES
+        required: true
+        allow_null: true
+        content:
+          allowed_blocks: [paragraph]
+          allow_subheadings: false
+          allow_blockquotes: false
+          allow_code_blocks: false
+        guidance:
+          include: optional context and caveats
+          exclude: required acceptance details
+
+  experiment:
+    path: programs/{program}/experiments/{id}/{id}.md
+
+    identity:
+      id_field: id
+      parent:
+        entity: program
+        ref_field: program_ref
+
+    fields:
+      id:
+        type: id
+        required: true
+        allow_null: false
+
+      program_ref:
+        type: ref
+        required: true
+        allow_null: false
+        target:
+          namespace: workspace
+          module: experiments
+          entity: program
+
+      title:
+        type: string
+        required: true
+        allow_null: false
+
+      status:
+        type: enum
+        required: true
+        allow_null: false
+        allowed_values: [draft, awaiting-funds, funded, active, paused, completed]
+
+      budget:
+        type: number
+        required: true
+        allow_null: true
+
+      owner_ref:
+        type: ref
+        required: true
+        allow_null: true
+        target:
+          namespace: workspace
+          module: people
+          entity: person
+
+    sections:
+      - name: DESIGN
+        required: true
+        allow_null: false
+        content:
+          allowed_blocks: [paragraph, bullet_list, ordered_list]
+          allow_subheadings: false
+          allow_blockquotes: false
+          allow_code_blocks: false
+        guidance:
+          include: experiment setup, boundaries, and methodology
+          exclude: final interpretation of results
+
+      - name: METRICS
+        required: true
+        allow_null: false
+        content:
+          allowed_blocks: [bullet_list, ordered_list]
+          allow_subheadings: false
+          allow_blockquotes: false
+          allow_code_blocks: false
+        guidance:
+          include: metrics to track during runs
+          exclude: narrative-only notes
+
+      - name: NOTES
+        required: true
+        allow_null: true
+        content:
+          allowed_blocks: [paragraph]
+          allow_subheadings: false
+          allow_blockquotes: false
+          allow_code_blocks: false
+        guidance:
+          include: optional caveats and implementation details
+          exclude: decision outcomes from completed runs
+
+  run:
+    path: programs/{program}/experiments/{experiment}/runs/{id}.md
+
+    identity:
+      id_field: id
+      parent:
+        entity: experiment
+        ref_field: experiment_ref
+
+    fields:
+      id:
+        type: id
+        required: true
+        allow_null: false
+
+      experiment_ref:
+        type: ref
+        required: true
+        allow_null: false
+        target:
+          namespace: workspace
+          module: experiments
+          entity: experiment
+
+      status:
+        type: enum
+        required: true
+        allow_null: false
+        allowed_values: [queued, running, completed, failed]
+
+      outcome:
+        type: enum
+        required: true
+        allow_null: true
+        allowed_values: [positive, negative, inconclusive]
+
+      started_on:
+        type: date
+        required: true
+        allow_null: false
+
+      ended_on:
+        type: date
+        required: true
+        allow_null: true
+
+    sections:
+      - name: OBSERVATIONS
+        required: true
+        allow_null: false
+        content:
+          allowed_blocks: [paragraph, bullet_list, ordered_list]
+          allow_subheadings: false
+          allow_blockquotes: false
+          allow_code_blocks: false
+        guidance:
+          include: objective observations gathered during this run
+          exclude: final cross-run decision policy
+
+      - name: DECISION
+        required: true
+        allow_null: true
+        content:
+          allowed_blocks: [paragraph]
+          allow_subheadings: false
+          allow_blockquotes: false
+          allow_code_blocks: false
+        guidance:
+          include: run-level interpretation and local decision
+          exclude: module-wide strategy changes
+
+      - name: NOTES
+        required: true
+        allow_null: true
+        content:
+          allowed_blocks: [paragraph]
+          allow_subheadings: false
+          allow_blockquotes: false
+          allow_code_blocks: false
+        guidance:
+          include: optional operational context
+          exclude: mandatory observations

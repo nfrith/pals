@@ -1,0 +1,163 @@
+schema: pals-module@1
+
+module:
+  id: backlog
+  namespace: workspace
+  root: workspace/backlog
+  version: 1
+
+dependencies:
+  - namespace: workspace
+    module: people
+
+entities:
+  epic:
+    path: epics/{id}.md
+
+    identity:
+      id_field: id
+
+    fields:
+      id:
+        type: id
+        required: true
+        allow_null: false
+
+      title:
+        type: string
+        required: true
+        allow_null: false
+
+      status:
+        type: enum
+        required: true
+        allow_null: false
+        allowed_values: [draft, active, done]
+
+      story_refs:
+        type: list
+        required: true
+        allow_null: true
+        items:
+          type: ref
+          target:
+            namespace: workspace
+            module: backlog
+            entity: story
+
+    sections:
+      - name: OBJECTIVE
+        required: true
+        allow_null: false
+        content:
+          allowed_blocks: [paragraph]
+          allow_subheadings: false
+          allow_blockquotes: false
+          allow_code_blocks: false
+        guidance:
+          include: problem statement and desired outcome for this epic
+          exclude: story-level implementation steps and tactical checklist details
+
+      - name: SCOPE
+        required: true
+        allow_null: true
+        content:
+          allowed_blocks: [paragraph, bullet_list, ordered_list]
+          allow_subheadings: false
+          allow_blockquotes: false
+          allow_code_blocks: false
+        guidance:
+          include: in-scope boundaries, major constraints, and explicit non-goals
+          exclude: implementation history and meeting transcript details
+
+      - name: NOTES
+        required: true
+        allow_null: true
+        content:
+          allowed_blocks: [paragraph]
+          allow_subheadings: false
+          allow_blockquotes: false
+          allow_code_blocks: false
+        guidance:
+          include: non-critical context, caveats, and follow-up remarks
+          exclude: required acceptance criteria
+
+  story:
+    path: stories/{id}.md
+
+    identity:
+      id_field: id
+
+    fields:
+      id:
+        type: id
+        required: true
+        allow_null: false
+
+      title:
+        type: string
+        required: true
+        allow_null: false
+
+      status:
+        type: enum
+        required: true
+        allow_null: false
+        allowed_values: [draft, ready, in-progress, done]
+
+      epic_ref:
+        type: ref
+        required: true
+        allow_null: false
+        target:
+          namespace: workspace
+          module: backlog
+          entity: epic
+
+      people:
+        type: list
+        required: true
+        allow_null: true
+        items:
+          type: ref
+          target:
+            namespace: workspace
+            module: people
+            entity: person
+
+    sections:
+      - name: CONTEXT
+        required: true
+        allow_null: false
+        content:
+          allowed_blocks: [paragraph]
+          allow_subheadings: false
+          allow_blockquotes: false
+          allow_code_blocks: false
+        guidance:
+          include: business context, why this story matters, and relevant dependencies
+          exclude: final acceptance checklist
+
+      - name: ACCEPTANCE
+        required: true
+        allow_null: false
+        content:
+          allowed_blocks: [bullet_list, ordered_list]
+          allow_subheadings: false
+          allow_blockquotes: false
+          allow_code_blocks: false
+        guidance:
+          include: concrete completion conditions and validation criteria
+          exclude: historical commentary or unrelated roadmap discussion
+
+      - name: NOTES
+        required: true
+        allow_null: true
+        content:
+          allowed_blocks: [paragraph]
+          allow_subheadings: false
+          allow_blockquotes: false
+          allow_code_blocks: false
+        guidance:
+          include: optional implementation notes, caveats, and reminders
+          exclude: mandatory requirements
