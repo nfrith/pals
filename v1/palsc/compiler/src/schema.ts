@@ -76,7 +76,39 @@ const sectionSchema = z.object({
   }),
 });
 
-const entitySchema = z.object({
+const sectionDefinitionSchema = z.object({
+  required: z.boolean(),
+  allow_null: z.boolean(),
+  content: z.object({
+    allowed_blocks: z.array(z.enum(["paragraph", "bullet_list", "ordered_list"])).min(1),
+    allow_subheadings: z.boolean(),
+    allow_blockquotes: z.boolean(),
+    allow_code_blocks: z.boolean(),
+  }),
+  guidance: z.object({
+    include: nonEmptyString,
+    exclude: nonEmptyString,
+  }),
+});
+
+const variantSchema = z.object({
+  fields: z.record(fieldName, fieldSchema),
+  sections: z.array(nonEmptyString).min(1),
+}).superRefine((value, ctx) => {
+  const seenSectionNames = new Set<string>();
+  for (const [index, sectionName] of value.sections.entries()) {
+    if (seenSectionNames.has(sectionName)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `duplicate variant section name ${sectionName}`,
+        path: ["sections", index],
+      });
+    }
+    seenSectionNames.add(sectionName);
+  }
+});
+
+const entityBaseSchema = z.object({
   path: nonEmptyString,
   identity: z.object({
     id_field: z.literal("id"),
@@ -86,8 +118,19 @@ const entitySchema = z.object({
     }).optional(),
   }),
   fields: z.record(fieldName, fieldSchema),
+});
+
+const plainEntitySchema = entityBaseSchema.extend({
   sections: z.array(sectionSchema).min(1),
-}).superRefine((value, ctx) => {
+});
+
+const variantEntitySchema = entityBaseSchema.extend({
+  discriminator: fieldName,
+  section_definitions: z.record(nonEmptyString, sectionDefinitionSchema),
+  variants: z.record(nonEmptyString, variantSchema),
+});
+
+const entitySchema = z.union([plainEntitySchema, variantEntitySchema]).superRefine((value, ctx) => {
   if (!("id" in value.fields) || value.fields.id.type !== "id") {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
@@ -104,16 +147,84 @@ const entitySchema = z.object({
     });
   }
 
-  const seenSectionNames = new Set<string>();
-  for (const section of value.sections) {
-    if (seenSectionNames.has(section.name)) {
+  if ("sections" in value) {
+    const seenSectionNames = new Set<string>();
+    for (const section of value.sections) {
+      if (seenSectionNames.has(section.name)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `duplicate section name ${section.name}`,
+          path: ["sections"],
+        });
+      }
+      seenSectionNames.add(section.name);
+    }
+  } else {
+    const discriminatorField = value.fields[value.discriminator];
+    if (!discriminatorField) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message: `duplicate section name ${section.name}`,
-        path: ["sections"],
+        message: `discriminator field ${value.discriminator} is not declared`,
+        path: ["discriminator"],
       });
+    } else if (discriminatorField.type !== "enum") {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `discriminator field ${value.discriminator} must be type=enum`,
+        path: ["discriminator"],
+      });
+    } else {
+      if (!discriminatorField.required || discriminatorField.allow_null) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `discriminator field ${value.discriminator} must be required and non-null`,
+          path: ["discriminator"],
+        });
+      }
+
+      const expectedVariants = new Set(discriminatorField.allowed_values);
+      const actualVariants = new Set(Object.keys(value.variants));
+      for (const variantName of discriminatorField.allowed_values) {
+        if (!actualVariants.has(variantName)) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: `missing variant ${variantName} for discriminator field ${value.discriminator}`,
+            path: ["variants", variantName],
+          });
+        }
+      }
+      for (const variantName of Object.keys(value.variants)) {
+        if (!expectedVariants.has(variantName)) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: `variant ${variantName} is not declared in discriminator enum ${value.discriminator}`,
+            path: ["variants", variantName],
+          });
+        }
+      }
     }
-    seenSectionNames.add(section.name);
+
+    for (const [variantName, variant] of Object.entries(value.variants)) {
+      for (const fieldName of Object.keys(variant.fields)) {
+        if (fieldName in value.fields) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: `variant field ${variantName}.${fieldName} collides with root field ${fieldName}`,
+            path: ["variants", variantName, "fields", fieldName],
+          });
+        }
+      }
+
+      for (const [index, sectionName] of variant.sections.entries()) {
+        if (!(sectionName in value.section_definitions)) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: `variant ${variantName} references unknown section definition ${sectionName}`,
+            path: ["variants", variantName, "sections", index],
+          });
+        }
+      }
+    }
   }
 
   if (value.identity.parent) {
@@ -208,5 +319,9 @@ export const systemConfigSchema = z.object({
 export type ModuleShape = z.infer<typeof moduleShapeSchema>;
 export type SystemConfig = z.infer<typeof systemConfigSchema>;
 export type EntityShape = z.infer<typeof entitySchema>;
+export type PlainEntityShape = z.infer<typeof plainEntitySchema>;
+export type VariantEntityShape = z.infer<typeof variantEntitySchema>;
+export type SectionDefinitionShape = z.infer<typeof sectionDefinitionSchema>;
+export type EntityVariantShape = z.infer<typeof variantSchema>;
 export type FieldShape = z.infer<typeof fieldSchema>;
 export type SectionShape = z.infer<typeof sectionSchema>;

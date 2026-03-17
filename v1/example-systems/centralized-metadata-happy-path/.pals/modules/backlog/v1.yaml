@@ -4,11 +4,13 @@ dependencies:
   - module: people
 
 entities:
-  epic:
-    path: epics/{id}.md
+  item:
+    path: items/{id}.md
 
     identity:
       id_field: id
+
+    discriminator: type
 
     fields:
       id:
@@ -21,91 +23,21 @@ entities:
         required: true
         allow_null: false
 
-      status:
+      type:
         type: enum
         required: true
         allow_null: false
-        allowed_values: [draft, active, done]
+        allowed_values: [app, infra, client, event, s9-ops, personal-ops, research]
 
-      story_refs:
-        type: list
-        required: true
-        allow_null: true
-        items:
-          type: ref
-          target:
-            module: backlog
-            entity: story
-
-    sections:
-      - name: OBJECTIVE
-        required: true
-        allow_null: false
-        content:
-          allowed_blocks: [paragraph]
-          allow_subheadings: false
-          allow_blockquotes: false
-          allow_code_blocks: false
-        guidance:
-          include: problem statement and desired outcome for this epic
-          exclude: story-level implementation steps and tactical checklist details
-
-      - name: SCOPE
-        required: true
-        allow_null: true
-        content:
-          allowed_blocks: [paragraph, bullet_list, ordered_list]
-          allow_subheadings: false
-          allow_blockquotes: false
-          allow_code_blocks: false
-        guidance:
-          include: in-scope boundaries, major constraints, and explicit non-goals
-          exclude: implementation history and meeting transcript details
-
-      - name: NOTES
-        required: true
-        allow_null: true
-        content:
-          allowed_blocks: [paragraph]
-          allow_subheadings: false
-          allow_blockquotes: false
-          allow_code_blocks: false
-        guidance:
-          include: non-critical context, caveats, and follow-up remarks
-          exclude: required acceptance criteria
-
-  story:
-    path: stories/{id}.md
-
-    identity:
-      id_field: id
-
-    fields:
-      id:
-        type: id
-        required: true
-        allow_null: false
-
-      title:
-        type: string
-        required: true
-        allow_null: false
-
-      status:
-        type: enum
-        required: true
-        allow_null: false
-        allowed_values: [draft, ready, in-progress, done]
-
-      epic_ref:
+      owner_ref:
         type: ref
         required: true
         allow_null: false
         target:
-          module: backlog
-          entity: epic
+          module: people
+          entity: person
 
-      people:
+      collaborator_refs:
         type: list
         required: true
         allow_null: true
@@ -115,8 +47,8 @@ entities:
             module: people
             entity: person
 
-    sections:
-      - name: CONTEXT
+    section_definitions:
+      DESCRIPTION:
         required: true
         allow_null: false
         content:
@@ -125,10 +57,10 @@ entities:
           allow_blockquotes: false
           allow_code_blocks: false
         guidance:
-          include: business context, why this story matters, and relevant dependencies
-          exclude: final acceptance checklist
+          include: what this item is, why it exists, and the relevant operating context
+          exclude: timestamped progress notes and variant-specific implementation detail that belongs elsewhere
 
-      - name: ACCEPTANCE
+      ACTIVITY_LOG:
         required: true
         allow_null: false
         content:
@@ -137,10 +69,34 @@ entities:
           allow_blockquotes: false
           allow_code_blocks: false
         guidance:
-          include: concrete completion conditions and validation criteria
-          exclude: historical commentary or unrelated roadmap discussion
+          include: dated work log entries, decisions, and notable state changes in chronological order
+          exclude: evergreen requirements or long-form architectural rationale
 
-      - name: NOTES
+      REQUIREMENTS:
+        required: true
+        allow_null: true
+        content:
+          allowed_blocks: [bullet_list, ordered_list]
+          allow_subheadings: false
+          allow_blockquotes: false
+          allow_code_blocks: false
+        guidance:
+          include: completion criteria, constraints, and checklist-style requirements
+          exclude: session history and exploratory findings
+
+      ARCHITECTURE:
+        required: true
+        allow_null: true
+        content:
+          allowed_blocks: [paragraph, bullet_list, ordered_list]
+          allow_subheadings: false
+          allow_blockquotes: false
+          allow_code_blocks: false
+        guidance:
+          include: technical design choices, structural implications, and implementation approach
+          exclude: raw research conclusions and generic task history
+
+      HYPOTHESIS:
         required: true
         allow_null: true
         content:
@@ -149,5 +105,98 @@ entities:
           allow_blockquotes: false
           allow_code_blocks: false
         guidance:
-          include: optional implementation notes, caveats, and reminders
-          exclude: mandatory requirements
+          include: the belief or question being tested for exploratory work
+          exclude: settled implementation plans
+
+      FINDINGS:
+        required: true
+        allow_null: true
+        content:
+          allowed_blocks: [paragraph, bullet_list, ordered_list]
+          allow_subheadings: false
+          allow_blockquotes: false
+          allow_code_blocks: false
+        guidance:
+          include: conclusions, evidence summaries, and next-step implications from research work
+          exclude: speculative work that has not been observed or learned yet
+
+    variants:
+      app:
+        fields:
+          status:
+            type: enum
+            required: true
+            allow_null: false
+            allowed_values: [draft, scoped, active, blocked, delivered, completed, cancelled]
+        sections:
+          - DESCRIPTION
+          - REQUIREMENTS
+          - ARCHITECTURE
+          - ACTIVITY_LOG
+      infra:
+        fields:
+          status:
+            type: enum
+            required: true
+            allow_null: false
+            allowed_values: [draft, scoped, active, blocked, completed, cancelled]
+        sections:
+          - DESCRIPTION
+          - REQUIREMENTS
+          - ACTIVITY_LOG
+      client:
+        fields:
+          status:
+            type: enum
+            required: true
+            allow_null: false
+            allowed_values: [draft, scoped, active, blocked, delivered, completed, cancelled]
+        sections:
+          - DESCRIPTION
+          - REQUIREMENTS
+          - ACTIVITY_LOG
+      event:
+        fields:
+          status:
+            type: enum
+            required: true
+            allow_null: false
+            allowed_values: [draft, scoped, active, blocked, completed, cancelled]
+        sections:
+          - DESCRIPTION
+          - REQUIREMENTS
+          - ACTIVITY_LOG
+      s9-ops:
+        fields:
+          status:
+            type: enum
+            required: true
+            allow_null: false
+            allowed_values: [draft, active, blocked, completed, deferred, cancelled]
+        sections:
+          - DESCRIPTION
+          - REQUIREMENTS
+          - ACTIVITY_LOG
+      personal-ops:
+        fields:
+          status:
+            type: enum
+            required: true
+            allow_null: false
+            allowed_values: [draft, active, blocked, completed, deferred, cancelled]
+        sections:
+          - DESCRIPTION
+          - REQUIREMENTS
+          - ACTIVITY_LOG
+      research:
+        fields:
+          status:
+            type: enum
+            required: true
+            allow_null: false
+            allowed_values: [draft, active, blocked, findings-ready, completed, cancelled]
+        sections:
+          - DESCRIPTION
+          - HYPOTHESIS
+          - FINDINGS
+          - ACTIVITY_LOG

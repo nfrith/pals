@@ -4,76 +4,76 @@ import { expectModuleDiagnostic, updateRecord, validateFixture, withFixtureSandb
 
 test.concurrent("ref fields must be markdown links", async () => {
   await withFixtureSandbox("refs-markdown-link", async ({ root }) => {
-    await updateRecord(root, "workspace/backlog/stories/STORY-0001.md", (record) => {
-      record.data.epic_ref = "pals://centralized-happy-path/backlog/epic/EPIC-0001";
+    await updateRecord(root, "workspace/backlog/items/ITEM-0001.md", (record) => {
+      record.data.owner_ref = "pals://centralized-happy-path/people/person/PPL-000101";
     });
 
     const result = validateFixture(root);
     expect(result.status).toBe("fail");
-    expectModuleDiagnostic(result, "backlog", codes.FM_REF_FORMAT, "STORY-0001.md");
+    expectModuleDiagnostic(result, "backlog", codes.FM_REF_FORMAT, "ITEM-0001.md");
   });
 });
 
 test.concurrent("ref fields must use valid pals uris", async () => {
   await withFixtureSandbox("refs-pals-uri", async ({ root }) => {
-    await updateRecord(root, "workspace/backlog/stories/STORY-0001.md", (record) => {
-      record.data.epic_ref = "[epic](https://example.test/EPIC-0001)";
+    await updateRecord(root, "workspace/backlog/items/ITEM-0001.md", (record) => {
+      record.data.owner_ref = "[owner](https://example.test/PPL-000101)";
     });
 
     const result = validateFixture(root);
     expect(result.status).toBe("fail");
-    expectModuleDiagnostic(result, "backlog", codes.FM_REF_FORMAT, "STORY-0001.md");
+    expectModuleDiagnostic(result, "backlog", codes.FM_REF_FORMAT, "ITEM-0001.md");
   });
 });
 
 test.concurrent("ref fields must target the declared system and module", async () => {
   await withFixtureSandbox("refs-system-module", async ({ root }) => {
-    await updateRecord(root, "workspace/backlog/stories/STORY-0001.md", (record) => {
-      record.data.epic_ref = "[epic](pals://other-system/backlog/epic/EPIC-0001)";
+    await updateRecord(root, "workspace/backlog/items/ITEM-0001.md", (record) => {
+      record.data.owner_ref = "[owner](pals://other-system/people/person/PPL-000101)";
     });
 
     const result = validateFixture(root);
     expect(result.status).toBe("fail");
-    expectModuleDiagnostic(result, "backlog", codes.REF_CONTRACT_MISMATCH, "STORY-0001.md");
+    expectModuleDiagnostic(result, "backlog", codes.REF_CONTRACT_MISMATCH, "ITEM-0001.md");
   });
 });
 
 test.concurrent("ref fields must target the declared entity", async () => {
   await withFixtureSandbox("refs-entity", async ({ root }) => {
-    await updateRecord(root, "workspace/backlog/stories/STORY-0001.md", (record) => {
-      record.data.epic_ref = "[story](pals://centralized-happy-path/backlog/story/STORY-0001)";
+    await updateRecord(root, "workspace/backlog/items/ITEM-0001.md", (record) => {
+      record.data.owner_ref = "[item](pals://centralized-happy-path/backlog/item/ITEM-0001)";
     });
 
     const result = validateFixture(root);
     expect(result.status).toBe("fail");
-    expectModuleDiagnostic(result, "backlog", codes.REF_ENTITY_MISMATCH, "STORY-0001.md");
+    expectModuleDiagnostic(result, "backlog", codes.REF_ENTITY_MISMATCH, "ITEM-0001.md");
   });
 });
 
 test.concurrent("ref targets must resolve to existing records", async () => {
   await withFixtureSandbox("refs-unresolved", async ({ root }) => {
-    await updateRecord(root, "workspace/backlog/stories/STORY-0001.md", (record) => {
-      record.data.epic_ref = "[epic](pals://centralized-happy-path/backlog/epic/EPIC-9999)";
+    await updateRecord(root, "workspace/backlog/items/ITEM-0001.md", (record) => {
+      record.data.owner_ref = "[ghost](pals://centralized-happy-path/people/person/PPL-9999)";
     });
 
     const result = validateFixture(root);
     expect(result.status).toBe("fail");
-    expectModuleDiagnostic(result, "backlog", codes.REF_UNRESOLVED, "STORY-0001.md");
+    expectModuleDiagnostic(result, "backlog", codes.REF_UNRESOLVED, "ITEM-0001.md");
   });
 });
 
 test.concurrent("ref list items must resolve individually", async () => {
   await withFixtureSandbox("refs-list-item", async ({ root }) => {
-    await updateRecord(root, "workspace/backlog/epics/EPIC-0001.md", (record) => {
-      record.data.story_refs = [
-        "[story-0001](pals://centralized-happy-path/backlog/story/STORY-0001)",
-        "[story-9999](pals://centralized-happy-path/backlog/story/STORY-9999)",
+    await updateRecord(root, "workspace/backlog/items/ITEM-0002.md", (record) => {
+      record.data.collaborator_refs = [
+        "[alex-rivera](pals://centralized-happy-path/people/person/PPL-000101)",
+        "[ghost](pals://centralized-happy-path/people/person/PPL-9999)",
       ];
     });
 
     const result = validateFixture(root);
     expect(result.status).toBe("fail");
-    expectModuleDiagnostic(result, "backlog", codes.REF_UNRESOLVED, "EPIC-0001.md");
+    expectModuleDiagnostic(result, "backlog", codes.REF_UNRESOLVED, "ITEM-0002.md");
   });
 });
 

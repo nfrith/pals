@@ -7,7 +7,7 @@ import { codes, computeStatus, diag } from "./diagnostics.ts";
 import { parseBodySections, validateSectionMarkdown, type ParsedBody } from "./markdown.ts";
 import { parsePathTemplate, matchPath, type ParsedPathTemplate } from "./parser/path-template.ts";
 import { parseRefUri, refTargetEntity } from "./refs.ts";
-import { moduleShapeSchema, systemConfigSchema, type EntityShape, type FieldShape, type ModuleShape, type SystemConfig } from "./schema.ts";
+import { moduleShapeSchema, systemConfigSchema, type EntityShape, type FieldShape, type ModuleShape, type SectionDefinitionShape, type SectionShape, type SystemConfig, type VariantEntityShape } from "./schema.ts";
 import type { CompilerDiagnostic, ModuleValidationReport, ModuleValidationSummary, SystemValidationOutput } from "./types.ts";
 
 interface LoadedModuleContext {
@@ -45,6 +45,19 @@ interface ModuleWorkState {
   file_error_map: Map<string, boolean>;
   parsed_records: ParsedRecord[];
   context: LoadedModuleContext | null;
+}
+
+export interface EffectiveEntityContract {
+  fields: Record<string, FieldShape>;
+  sections: SectionShape[] | null;
+  diagnostics: CompilerDiagnostic[];
+}
+
+export interface EffectiveEntityContractContext {
+  module_id: string;
+  entity_name: string;
+  record_file: string;
+  shape_file: string;
 }
 
 export function validateSystem(systemRootInput: string, moduleFilter?: string): SystemValidationOutput {
@@ -207,16 +220,26 @@ function validateRecord(
   recordIndex: Map<string, ParsedRecord>,
 ): CompilerDiagnostic[] {
   const diagnostics: CompilerDiagnostic[] = [];
-  diagnostics.push(...validateFrontmatter(record, context));
-  diagnostics.push(...validateBody(record, context));
+  const effectiveContract = resolveEffectiveEntityContract(record.entity_shape, record.frontmatter, {
+    module_id: context.module_id,
+    entity_name: record.entity_name,
+    record_file: record.file_rel,
+    shape_file: context.shape_path_rel,
+  });
+  diagnostics.push(...validateFrontmatter(record, context, effectiveContract.fields));
+  diagnostics.push(...effectiveContract.diagnostics);
+  diagnostics.push(...validateBody(record, effectiveContract.sections));
   diagnostics.push(...validateIdentity(record));
-  diagnostics.push(...validateReferences(record, context, recordIndex));
+  diagnostics.push(...validateReferences(record, context, recordIndex, effectiveContract.fields));
   return diagnostics;
 }
 
-function validateFrontmatter(record: ParsedRecord, context: LoadedModuleContext): CompilerDiagnostic[] {
+function validateFrontmatter(
+  record: ParsedRecord,
+  context: LoadedModuleContext,
+  declaredFields: Record<string, FieldShape>,
+): CompilerDiagnostic[] {
   const diagnostics: CompilerDiagnostic[] = [];
-  const declaredFields = record.entity_shape.fields;
 
   for (const [fieldName, fieldShape] of Object.entries(declaredFields)) {
     if (fieldShape.required && !(fieldName in record.frontmatter)) {
@@ -411,9 +434,9 @@ function validateFieldValue(
   return diagnostics;
 }
 
-function validateBody(record: ParsedRecord, context: LoadedModuleContext): CompilerDiagnostic[] {
+function validateBody(record: ParsedRecord, declaredSections: SectionShape[] | null): CompilerDiagnostic[] {
   const diagnostics: CompilerDiagnostic[] = [];
-  const declaredSections = record.entity_shape.sections;
+  if (!declaredSections) return diagnostics;
 
   for (const section of declaredSections) {
     if (section.required && !record.body.by_name.has(section.name)) {
@@ -494,10 +517,11 @@ function validateReferences(
   record: ParsedRecord,
   context: LoadedModuleContext,
   recordIndex: Map<string, ParsedRecord>,
+  declaredFields: Record<string, FieldShape>,
 ): CompilerDiagnostic[] {
   const diagnostics: CompilerDiagnostic[] = [];
 
-  for (const [fieldName, fieldShape] of Object.entries(record.entity_shape.fields)) {
+  for (const [fieldName, fieldShape] of Object.entries(declaredFields)) {
     if (!(fieldName in record.frontmatter)) continue;
     const value = record.frontmatter[fieldName];
 
@@ -530,6 +554,143 @@ function validateReferences(
   }
 
   return diagnostics;
+}
+
+export function resolveEffectiveEntityContract(
+  entityShape: EntityShape,
+  frontmatter: Record<string, unknown>,
+  meta: EffectiveEntityContractContext,
+): EffectiveEntityContract {
+  if (!isVariantEntityShape(entityShape)) {
+    return {
+      fields: entityShape.fields,
+      sections: entityShape.sections,
+      diagnostics: [],
+    };
+  }
+
+  const discriminatorField = entityShape.discriminator;
+  const expectedVariants = Object.keys(entityShape.variants).sort();
+
+  if (!(discriminatorField in frontmatter)) {
+    return {
+      fields: entityShape.fields,
+      sections: null,
+      diagnostics: [
+        unresolvedVariantDiagnostic(
+          meta,
+          discriminatorField,
+          `Could not resolve variant contract because discriminator field '${discriminatorField}' is missing`,
+          expectedVariants,
+          null,
+        ),
+      ],
+    };
+  }
+
+  const discriminatorValue = frontmatter[discriminatorField];
+  if (typeof discriminatorValue !== "string") {
+    return {
+      fields: entityShape.fields,
+      sections: null,
+      diagnostics: [
+        unresolvedVariantDiagnostic(
+          meta,
+          discriminatorField,
+          `Could not resolve variant contract because discriminator field '${discriminatorField}' is not a string`,
+          expectedVariants,
+          discriminatorValue,
+        ),
+      ],
+    };
+  }
+
+  const variant = entityShape.variants[discriminatorValue];
+  if (!variant) {
+    return {
+      fields: entityShape.fields,
+      sections: null,
+      diagnostics: [
+        unresolvedVariantDiagnostic(
+          meta,
+          discriminatorField,
+          `Could not resolve variant contract because discriminator field '${discriminatorField}' has unknown variant '${discriminatorValue}'`,
+          expectedVariants,
+          discriminatorValue,
+        ),
+      ],
+    };
+  }
+
+  const fields = {
+    ...entityShape.fields,
+    ...variant.fields,
+  };
+  const diagnostics: CompilerDiagnostic[] = [];
+  const sections: SectionShape[] = [];
+
+  variant.sections.forEach((sectionName, index) => {
+    const materialized = materializeSectionShape(sectionName, entityShape.section_definitions[sectionName]);
+    if (!materialized) {
+      diagnostics.push(
+        diag(
+          codes.SHAPE_CONTRACT_INVALID,
+          "error",
+          "module_shape",
+          meta.shape_file,
+          `Variant '${discriminatorValue}' references missing section definition '${sectionName}' during contract resolution`,
+          {
+            module_id: meta.module_id,
+            entity: meta.entity_name,
+            field: `entities.${meta.entity_name}.variants.${discriminatorValue}.sections[${index}]`,
+            expected: Object.keys(entityShape.section_definitions).sort(),
+            actual: sectionName,
+            hint: "This should have been caught during shape validation before record validation.",
+          },
+        ),
+      );
+      return;
+    }
+    sections.push(materialized);
+  });
+
+  return {
+    fields,
+    sections: diagnostics.length > 0 ? null : sections,
+    diagnostics,
+  };
+}
+
+function isVariantEntityShape(entityShape: EntityShape): entityShape is VariantEntityShape {
+  return "discriminator" in entityShape;
+}
+
+function materializeSectionShape(name: string, definition: SectionDefinitionShape | undefined): SectionShape | null {
+  if (!definition) {
+    return null;
+  }
+
+  return {
+    name,
+    ...definition,
+  };
+}
+
+function unresolvedVariantDiagnostic(
+  meta: EffectiveEntityContractContext,
+  discriminatorField: string,
+  message: string,
+  expectedVariants: string[],
+  actual: unknown,
+): CompilerDiagnostic {
+  return diag(codes.FM_VARIANT_UNRESOLVED, "error", "record_frontmatter", meta.record_file, message, {
+    module_id: meta.module_id,
+    entity: meta.entity_name,
+    field: discriminatorField,
+    expected: expectedVariants,
+    actual,
+    hint: "Variant-local fields and body sections were not validated because the discriminator could not be resolved.",
+  });
 }
 
 function validateRefContract(
@@ -764,30 +925,54 @@ function validateShapeContracts(
 
   for (const [entityName, entityShape] of Object.entries(context.shape.entities)) {
     for (const [fieldName, fieldShape] of Object.entries(entityShape.fields)) {
-      if (fieldShape.type === "ref" && fieldShape.target.module !== context.module_id && !dependencySet.has(fieldShape.target.module)) {
-        diagnostics.push(
-          diag(codes.SHAPE_CONTRACT_INVALID, "error", "module_shape", context.shape_path_rel, `Field '${fieldName}' targets undeclared dependency '${fieldShape.target.module}'`, {
-            module_id: context.module_id,
-            entity: entityName,
-            field: fieldName,
-            expected: [...dependencySet].sort(),
-            actual: fieldShape.target.module,
-          }),
-        );
-      }
+      diagnostics.push(...validateFieldDependencyContract(context, dependencySet, entityName, fieldName, fieldShape));
+    }
 
-      if (fieldShape.type === "list" && fieldShape.items.type === "ref" && fieldShape.items.target.module !== context.module_id && !dependencySet.has(fieldShape.items.target.module)) {
-        diagnostics.push(
-          diag(codes.SHAPE_CONTRACT_INVALID, "error", "module_shape", context.shape_path_rel, `Field '${fieldName}' targets undeclared dependency '${fieldShape.items.target.module}'`, {
-            module_id: context.module_id,
-            entity: entityName,
-            field: fieldName,
-            expected: [...dependencySet].sort(),
-            actual: fieldShape.items.target.module,
-          }),
-        );
+    if (isVariantEntityShape(entityShape)) {
+      for (const [variantName, variant] of Object.entries(entityShape.variants)) {
+        for (const [fieldName, fieldShape] of Object.entries(variant.fields)) {
+          diagnostics.push(
+            ...validateFieldDependencyContract(context, dependencySet, entityName, `${variantName}.${fieldName}`, fieldShape),
+          );
+        }
       }
     }
+  }
+
+  return diagnostics;
+}
+
+function validateFieldDependencyContract(
+  context: LoadedModuleContext,
+  dependencySet: Set<string>,
+  entityName: string,
+  fieldName: string,
+  fieldShape: FieldShape,
+): CompilerDiagnostic[] {
+  const diagnostics: CompilerDiagnostic[] = [];
+
+  if (fieldShape.type === "ref" && fieldShape.target.module !== context.module_id && !dependencySet.has(fieldShape.target.module)) {
+    diagnostics.push(
+      diag(codes.SHAPE_CONTRACT_INVALID, "error", "module_shape", context.shape_path_rel, `Field '${fieldName}' targets undeclared dependency '${fieldShape.target.module}'`, {
+        module_id: context.module_id,
+        entity: entityName,
+        field: fieldName,
+        expected: [...dependencySet].sort(),
+        actual: fieldShape.target.module,
+      }),
+    );
+  }
+
+  if (fieldShape.type === "list" && fieldShape.items.type === "ref" && fieldShape.items.target.module !== context.module_id && !dependencySet.has(fieldShape.items.target.module)) {
+    diagnostics.push(
+      diag(codes.SHAPE_CONTRACT_INVALID, "error", "module_shape", context.shape_path_rel, `Field '${fieldName}' targets undeclared dependency '${fieldShape.items.target.module}'`, {
+        module_id: context.module_id,
+        entity: entityName,
+        field: fieldName,
+        expected: [...dependencySet].sort(),
+        actual: fieldShape.items.target.module,
+      }),
+    );
   }
 
   return diagnostics;

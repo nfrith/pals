@@ -8,7 +8,7 @@ Lives at `.pals/system.yaml`. Declares the system identity, root directories, an
 
 ```yaml
 schema: pals-system@1
-system_id: my-system                  # unique system identifier, kebab-case
+system_id: my-system                  # unique system identifier used in ref URIs
 
 roots:                                # top-level directories that hold module data
   - workspace
@@ -25,6 +25,7 @@ modules:
 Rules:
 - `system_id`: non-empty string, used in ref URIs
 - `roots`: at least one, no duplicates, each must exist as a directory
+- `roots`, module ids, module `root`, and module `dir` values must match `^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$`
 - Module `root` must reference a declared root
 - Module `dir` is the directory name under that root — the module's data lives at `{root}/{dir}/`
 - No two modules may share the same `root`/`dir` combination
@@ -46,9 +47,16 @@ entities:
 
 Rules:
 - `dependencies`: list modules whose entities are referenced by this module's ref fields. If a ref targets another module, that module must be listed here.
-- `entities`: keyed by entity name (kebab-case lowercase)
+- `entities`: keyed by entity name matching `^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$`
 
 ## Entity definition
+
+Entities have two supported shapes:
+
+1. Plain entities with a single shared ordered `sections` list
+2. Variant entities with root/base `fields`, a `discriminator`, a `section_definitions` library, and per-variant `fields` + full ordered `sections`
+
+### Plain entity
 
 ```yaml
 entity-name:
@@ -65,6 +73,76 @@ entity-name:
 
   sections:
     # ... section definitions
+```
+
+### Variant entity
+
+```yaml
+entity-name:
+  path: items/{id}.md
+
+  identity:
+    id_field: id
+
+  discriminator: type
+
+  fields:                             # root/base fields present for every variant
+    id:
+      type: id
+      required: true
+      allow_null: false
+    title:
+      type: string
+      required: true
+      allow_null: false
+    type:
+      type: enum
+      required: true
+      allow_null: false
+      allowed_values: [app, research]
+
+  section_definitions:                # reusable section definitions keyed by section name
+    DESCRIPTION:
+      required: true
+      allow_null: false
+      content:
+        allowed_blocks: [paragraph]
+        allow_subheadings: false
+        allow_blockquotes: false
+        allow_code_blocks: false
+      guidance:
+        include: what this item is and why it exists
+        exclude: status history
+    ACTIVITY_LOG:
+      required: true
+      allow_null: false
+      content:
+        allowed_blocks: [bullet_list, ordered_list]
+        allow_subheadings: false
+        allow_blockquotes: false
+        allow_code_blocks: false
+      guidance:
+        include: dated progress history
+        exclude: evergreen requirements
+
+  variants:
+    app:
+      fields:                         # variant-local fields added to the root/base set
+        status:
+          type: enum
+          required: true
+          allow_null: false
+          allowed_values: [draft, active, completed]
+      sections: [DESCRIPTION, ACTIVITY_LOG]   # authoritative full section order for app records
+
+    research:
+      fields:
+        status:
+          type: enum
+          required: true
+          allow_null: false
+          allowed_values: [draft, findings-ready, completed]
+      sections: [DESCRIPTION, ACTIVITY_LOG]
 ```
 
 ### Path templates
@@ -183,7 +261,7 @@ people:
 
 ### Section definitions
 
-Sections define the markdown body structure of a record. They render as `## SECTION_NAME` headings in the file.
+Plain entities define sections inline. Sections render as `## SECTION_NAME` headings in the file.
 
 ```yaml
 sections:
@@ -201,7 +279,7 @@ sections:
 ```
 
 Rules:
-- `name`: rendered as `## NAME` in the markdown file (use UPPER_SNAKE_CASE)
+- `name`: rendered as `## NAME` in the markdown file (`UPPER_SNAKE_CASE` is recommended, not required)
 - `required`: whether the section must be present
 - `allow_null`: if true, the section can contain the literal word `null` instead of real content
 - `content.allowed_blocks`: at least one of `paragraph`, `bullet_list`, `ordered_list`
@@ -210,12 +288,50 @@ Rules:
 - Sections must appear in the record in the same order they are declared in the shape
 - No duplicate section names within an entity
 
-## Naming conventions
+### Variant section definitions
 
-- Module ids: `kebab-case` (`client-registry`, `backlog`)
-- Entity names: `kebab-case` (`person`, `experiment`, `pull-request`)
-- Field names: `snake_case` (`display_name`, `owner_ref`, `started_on`)
-- Section names: `UPPER_SNAKE_CASE` (`PROFILE`, `SUCCESS_CRITERIA`)
+Variant entities define reusable section contracts in `section_definitions` and then reference them by name from each variant.
+
+```yaml
+section_definitions:
+  DESCRIPTION:
+    required: true
+    allow_null: false
+    content:
+      allowed_blocks: [paragraph]
+      allow_subheadings: false
+      allow_blockquotes: false
+      allow_code_blocks: false
+    guidance:
+      include: what this item is and why it exists
+      exclude: historical updates
+
+variants:
+  app:
+    fields:
+      status:
+        type: enum
+        required: true
+        allow_null: false
+        allowed_values: [draft, active, completed]
+    sections: [DESCRIPTION, ACTIVITY_LOG]
+```
+
+Rules:
+- `discriminator` must point to a root/base field that is `type: enum`, `required: true`, and `allow_null: false`
+- Variant keys form a bijection with the discriminator enum values: every enum value needs a variant, and extra variant keys are invalid
+- Variant-local field names cannot collide with root/base field names
+- Every section name referenced by a variant must exist in `section_definitions`
+- A variant's `sections` list is the authoritative full section order for records of that variant
+- `required` on a section definition applies only when that section appears in the selected variant
+- If the discriminator is missing, non-string, or invalid, the compiler emits `PAL-RV-FM-008`, validates only root/base fields, and does not guess variant-specific fields or body sections
+
+## Naming rules and conventions
+
+- Module ids, entity names, roots, module `root`, and module `dir` are compiler-enforced single-segment slugs matching `^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$`
+- Field names are compiler-enforced and must match `^[a-z][a-z0-9_]*$`
+- `system_id` can be any non-empty string; `kebab-case` is recommended but not enforced
+- Section names can be any non-empty string; `UPPER_SNAKE_CASE` is recommended
 - Record ids: any non-empty string, but must match filename stem
 
 ## What a record file looks like
@@ -226,6 +342,7 @@ A record is a markdown file with YAML frontmatter and headed sections:
 ---
 id: ITEM-001
 title: Example item
+type: app
 status: active
 owner_ref: "[jane](pals://my-system/people/person/PPL-001)"
 ---
@@ -236,9 +353,9 @@ owner_ref: "[jane](pals://my-system/people/person/PPL-001)"
 
 This is the description content.
 
-## NOTES
+## ACTIVITY_LOG
 
-null
+- 2026-03-17: Created the example record.
 ```
 
 - The `# Title` heading after frontmatter is informal — the compiler does not validate it

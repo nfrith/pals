@@ -1,44 +1,142 @@
 import { expect, test } from "bun:test";
 import { codes } from "../src/diagnostics.ts";
-import { expectModuleDiagnostic, updateRecord, validateFixture, withFixtureSandbox } from "./helpers/fixture.ts";
+import { expectModuleDiagnostic, updateRecord, updateShapeYaml, validateFixture, withFixtureSandbox } from "./helpers/fixture.ts";
 
-test.concurrent("missing required frontmatter fields are rejected", async () => {
+test("missing required frontmatter fields are rejected", async () => {
   await withFixtureSandbox("frontmatter-missing-field", async ({ root }) => {
-    await updateRecord(root, "workspace/backlog/stories/STORY-0001.md", (record) => {
+    await updateRecord(root, "workspace/backlog/items/ITEM-0001.md", (record) => {
       delete record.data.title;
     });
 
     const result = validateFixture(root);
     expect(result.status).toBe("fail");
-    expectModuleDiagnostic(result, "backlog", codes.FM_MISSING_FIELD, "STORY-0001.md");
+    expectModuleDiagnostic(result, "backlog", codes.FM_MISSING_FIELD, "ITEM-0001.md");
   });
 });
 
-test.concurrent("unknown frontmatter fields are rejected", async () => {
+test("unknown frontmatter fields are rejected", async () => {
   await withFixtureSandbox("frontmatter-unknown-field", async ({ root }) => {
-    await updateRecord(root, "workspace/backlog/stories/STORY-0001.md", (record) => {
+    await updateRecord(root, "workspace/backlog/items/ITEM-0001.md", (record) => {
       record.data.surprise = true;
     });
 
     const result = validateFixture(root);
     expect(result.status).toBe("fail");
-    expectModuleDiagnostic(result, "backlog", codes.FM_UNKNOWN_FIELD, "STORY-0001.md");
+    expectModuleDiagnostic(result, "backlog", codes.FM_UNKNOWN_FIELD, "ITEM-0001.md");
   });
 });
 
-test.concurrent("enum values must be declared", async () => {
+test("enum values must be declared", async () => {
   await withFixtureSandbox("frontmatter-enum", async ({ root }) => {
-    await updateRecord(root, "workspace/backlog/stories/STORY-0001.md", (record) => {
-      record.data.status = "blocked";
+    await updateRecord(root, "workspace/backlog/items/ITEM-0001.md", (record) => {
+      record.data.status = "findings-ready";
     });
 
     const result = validateFixture(root);
     expect(result.status).toBe("fail");
-    expectModuleDiagnostic(result, "backlog", codes.FM_ENUM_INVALID, "STORY-0001.md");
+    expectModuleDiagnostic(result, "backlog", codes.FM_ENUM_INVALID, "ITEM-0001.md");
   });
 });
 
-test.concurrent("number fields must remain numeric", async () => {
+test("missing discriminators emit explicit unresolved-variant diagnostics", async () => {
+  await withFixtureSandbox("frontmatter-missing-discriminator", async ({ root }) => {
+    await updateRecord(root, "workspace/backlog/items/ITEM-0001.md", (record) => {
+      delete record.data.type;
+      record.content = `# ITEM-0001
+
+## TOTALLY_CUSTOM
+
+This body should be ignored because variant resolution failed.
+`;
+    });
+
+    const result = validateFixture(root);
+    expect(result.status).toBe("fail");
+    expectModuleDiagnostic(result, "backlog", codes.FM_MISSING_FIELD, "ITEM-0001.md");
+    expectModuleDiagnostic(result, "backlog", codes.FM_VARIANT_UNRESOLVED, "ITEM-0001.md");
+
+    const backlogReport = result.modules.find((report) => report.module_id === "backlog");
+    expect(backlogReport).toBeDefined();
+    const bodyDiagnostics = backlogReport!.diagnostics.filter(
+      (diagnostic) => diagnostic.file.endsWith("ITEM-0001.md") && diagnostic.phase === "record_body",
+    );
+    expect(bodyDiagnostics).toHaveLength(0);
+  });
+});
+
+test("non-string discriminators emit explicit unresolved-variant diagnostics", async () => {
+  await withFixtureSandbox("frontmatter-discriminator-type", async ({ root }) => {
+    await updateRecord(root, "workspace/backlog/items/ITEM-0001.md", (record) => {
+      record.data.type = 101;
+    });
+
+    const result = validateFixture(root);
+    expect(result.status).toBe("fail");
+    expectModuleDiagnostic(result, "backlog", codes.FM_TYPE_MISMATCH, "ITEM-0001.md");
+    expectModuleDiagnostic(result, "backlog", codes.FM_VARIANT_UNRESOLVED, "ITEM-0001.md");
+  });
+});
+
+test("invalid discriminators emit explicit unresolved-variant diagnostics", async () => {
+  await withFixtureSandbox("frontmatter-discriminator-enum", async ({ root }) => {
+    await updateRecord(root, "workspace/backlog/items/ITEM-0001.md", (record) => {
+      record.data.type = "application";
+    });
+
+    const result = validateFixture(root);
+    expect(result.status).toBe("fail");
+    expectModuleDiagnostic(result, "backlog", codes.FM_ENUM_INVALID, "ITEM-0001.md");
+    expectModuleDiagnostic(result, "backlog", codes.FM_VARIANT_UNRESOLVED, "ITEM-0001.md");
+  });
+});
+
+test("variant-local required fields are enforced", async () => {
+  await withFixtureSandbox("frontmatter-variant-required", async ({ root }) => {
+    await updateShapeYaml(root, "backlog", 1, (shape) => {
+      const entities = shape.entities as Record<string, Record<string, unknown>>;
+      const item = entities.item;
+      const variants = item.variants as Record<string, Record<string, unknown>>;
+      const app = variants.app;
+      const fields = app.fields as Record<string, unknown>;
+      fields.delivery_scope = {
+        type: "string",
+        required: true,
+        allow_null: false,
+      };
+    });
+
+    const result = validateFixture(root);
+    expect(result.status).toBe("fail");
+    expectModuleDiagnostic(result, "backlog", codes.FM_MISSING_FIELD, "ITEM-0001.md");
+  });
+});
+
+test("fields from other variants are rejected", async () => {
+  await withFixtureSandbox("frontmatter-variant-unknown", async ({ root }) => {
+    await updateShapeYaml(root, "backlog", 1, (shape) => {
+      const entities = shape.entities as Record<string, Record<string, unknown>>;
+      const item = entities.item;
+      const variants = item.variants as Record<string, Record<string, unknown>>;
+      const research = variants.research;
+      const fields = research.fields as Record<string, unknown>;
+      fields.finding_label = {
+        type: "string",
+        required: false,
+        allow_null: true,
+      };
+    });
+
+    await updateRecord(root, "workspace/backlog/items/ITEM-0001.md", (record) => {
+      record.data.finding_label = "cross-variant";
+    });
+
+    const result = validateFixture(root);
+    expect(result.status).toBe("fail");
+    expectModuleDiagnostic(result, "backlog", codes.FM_UNKNOWN_FIELD, "ITEM-0001.md");
+  });
+});
+
+test("number fields must remain numeric", async () => {
   await withFixtureSandbox("frontmatter-number", async ({ root }) => {
     await updateRecord(
       root,
@@ -54,67 +152,67 @@ test.concurrent("number fields must remain numeric", async () => {
   });
 });
 
-test.concurrent("string fields must remain strings", async () => {
+test("string fields must remain strings", async () => {
   await withFixtureSandbox("frontmatter-string", async ({ root }) => {
-    await updateRecord(root, "workspace/backlog/stories/STORY-0001.md", (record) => {
+    await updateRecord(root, "workspace/backlog/items/ITEM-0001.md", (record) => {
       record.data.title = 101;
     });
 
     const result = validateFixture(root);
     expect(result.status).toBe("fail");
-    expectModuleDiagnostic(result, "backlog", codes.FM_TYPE_MISMATCH, "STORY-0001.md");
+    expectModuleDiagnostic(result, "backlog", codes.FM_TYPE_MISMATCH, "ITEM-0001.md");
   });
 });
 
-test.concurrent("id fields must be non-empty strings", async () => {
+test("id fields must be non-empty strings", async () => {
   await withFixtureSandbox("frontmatter-id-empty", async ({ root }) => {
-    await updateRecord(root, "workspace/backlog/stories/STORY-0001.md", (record) => {
+    await updateRecord(root, "workspace/backlog/items/ITEM-0001.md", (record) => {
       record.data.id = "";
     });
 
     const result = validateFixture(root);
     expect(result.status).toBe("fail");
-    expectModuleDiagnostic(result, "backlog", codes.FM_TYPE_MISMATCH, "STORY-0001.md");
+    expectModuleDiagnostic(result, "backlog", codes.FM_TYPE_MISMATCH, "ITEM-0001.md");
   });
 });
 
-test.concurrent("id fields reject non-string values", async () => {
+test("id fields reject non-string values", async () => {
   await withFixtureSandbox("frontmatter-id-type", async ({ root }) => {
-    await updateRecord(root, "workspace/backlog/stories/STORY-0001.md", (record) => {
+    await updateRecord(root, "workspace/backlog/items/ITEM-0001.md", (record) => {
       record.data.id = 101;
     });
 
     const result = validateFixture(root);
     expect(result.status).toBe("fail");
-    expectModuleDiagnostic(result, "backlog", codes.FM_TYPE_MISMATCH, "STORY-0001.md");
+    expectModuleDiagnostic(result, "backlog", codes.FM_TYPE_MISMATCH, "ITEM-0001.md");
   });
 });
 
-test.concurrent("non-null fields cannot be set to null", async () => {
+test("non-null fields cannot be set to null", async () => {
   await withFixtureSandbox("frontmatter-nullability", async ({ root }) => {
-    await updateRecord(root, "workspace/backlog/stories/STORY-0001.md", (record) => {
-      record.data.epic_ref = null;
+    await updateRecord(root, "workspace/backlog/items/ITEM-0001.md", (record) => {
+      record.data.owner_ref = null;
     });
 
     const result = validateFixture(root);
     expect(result.status).toBe("fail");
-    expectModuleDiagnostic(result, "backlog", codes.FM_TYPE_MISMATCH, "STORY-0001.md");
+    expectModuleDiagnostic(result, "backlog", codes.FM_TYPE_MISMATCH, "ITEM-0001.md");
   });
 });
 
-test.concurrent("enum fields must be strings before enum validation applies", async () => {
+test("enum fields must be strings before enum validation applies", async () => {
   await withFixtureSandbox("frontmatter-enum-type", async ({ root }) => {
-    await updateRecord(root, "workspace/backlog/stories/STORY-0001.md", (record) => {
+    await updateRecord(root, "workspace/backlog/items/ITEM-0001.md", (record) => {
       record.data.status = 101;
     });
 
     const result = validateFixture(root);
     expect(result.status).toBe("fail");
-    expectModuleDiagnostic(result, "backlog", codes.FM_TYPE_MISMATCH, "STORY-0001.md");
+    expectModuleDiagnostic(result, "backlog", codes.FM_TYPE_MISMATCH, "ITEM-0001.md");
   });
 });
 
-test.concurrent("date fields must use YYYY-MM-DD", async () => {
+test("date fields must use YYYY-MM-DD", async () => {
   await withFixtureSandbox("frontmatter-date-format", async ({ root }) => {
     await updateRecord(
       root,
@@ -130,7 +228,7 @@ test.concurrent("date fields must use YYYY-MM-DD", async () => {
   });
 });
 
-test.concurrent("date fields reject non-string non-Date values", async () => {
+test("date fields reject non-string non-Date values", async () => {
   await withFixtureSandbox("frontmatter-date-type", async ({ root }) => {
     await updateRecord(
       root,
@@ -146,7 +244,7 @@ test.concurrent("date fields reject non-string non-Date values", async () => {
   });
 });
 
-test.concurrent("list fields must remain arrays", async () => {
+test("list fields must remain arrays", async () => {
   await withFixtureSandbox("frontmatter-list-type", async ({ root }) => {
     await updateRecord(root, "workspace/people/persons/PPL-000101.md", (record) => {
       record.data.tags = "product";
@@ -158,7 +256,7 @@ test.concurrent("list fields must remain arrays", async () => {
   });
 });
 
-test.concurrent("list items must match the declared item type", async () => {
+test("list items must match the declared item type", async () => {
   await withFixtureSandbox("frontmatter-list-item", async ({ root }) => {
     await updateRecord(root, "workspace/people/persons/PPL-000101.md", (record) => {
       record.data.tags = ["product", 101];
