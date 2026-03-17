@@ -99,7 +99,7 @@ Once you have enough information, synthesize and present the design. Do NOT prod
 2. **Entities**: a list of each entity with a one-line description
 3. **Relationships**: how entities connect — parent chains and cross-references
 4. **Directory structure**: the path template for each entity, shown as a tree
-5. **Fields per entity**: a table showing field name, type, required/nullable, and for enums the allowed values
+5. **Fields per entity**: a table showing field name, type, nullability, and for enums the allowed values
 6. **Sections per entity**: the ordered list of sections with what goes in each
 
 ### Example proposal format
@@ -128,24 +128,24 @@ Directory structure:
 
 Fields:
   program:
-    id          id       required, not null
-    title       string   required, not null
-    status      enum     required, not null    [draft, active, completed]
+    id          id       declared, not null
+    title       string   declared, not null
+    status      enum     declared, not null    [draft, active, completed]
 
   experiment:
-    id          id       required, not null
-    program_ref ref      required, not null    → experiments/program
-    title       string   required, not null
-    status      enum     required, not null    [draft, active, paused, completed]
-    owner_ref   ref      required, nullable    → people/person
+    id          id       declared, not null
+    program_ref ref      declared, not null    → experiments/program
+    title       string   declared, not null
+    status      enum     declared, not null    [draft, active, paused, completed]
+    owner_ref   ref      declared, nullable    → people/person
 
   run:
-    id              id     required, not null
-    experiment_ref  ref    required, not null   → experiments/experiment
-    status          enum   required, not null   [queued, running, completed, failed]
-    outcome         enum   required, nullable   [positive, negative, inconclusive]
-    started_on      date   required, not null
-    ended_on        date   required, nullable
+    id              id     declared, not null
+    experiment_ref  ref    declared, not null   → experiments/experiment
+    status          enum   declared, not null   [queued, running, completed, failed]
+    outcome         enum   declared, nullable   [positive, negative, inconclusive]
+    started_on      date   declared, not null
+    ended_on        date   declared, nullable
 
 Sections:
   program:    HYPOTHESIS, SUCCESS_CRITERIA, NOTES

@@ -12,23 +12,19 @@ entities:
     fields:
       id:
         type: id
-        required: true
         allow_null: false
 
       display_name:
         type: string
-        required: true
         allow_null: false
 
       status:
         type: enum
-        required: true
         allow_null: false
         allowed_values: [prospect, active, paused, former]
 
     sections:
       - name: PROFILE
-        required: true
         allow_null: false
         content:
           allowed_blocks: [paragraph]
@@ -40,7 +36,6 @@ entities:
           exclude: experimental run logs or tactical work items
 
       - name: PRIORITIES
-        required: true
         allow_null: false
         content:
           allowed_blocks: [bullet_list, ordered_list]
@@ -52,7 +47,6 @@ entities:
           exclude: internal team-only implementation details
 
       - name: NOTES
-        required: true
         allow_null: true
         content:
           allowed_blocks: [paragraph]

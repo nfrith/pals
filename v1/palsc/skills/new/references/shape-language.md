@@ -89,21 +89,17 @@ entity-name:
   fields:                             # root/base fields present for every variant
     id:
       type: id
-      required: true
       allow_null: false
     title:
       type: string
-      required: true
       allow_null: false
     type:
       type: enum
-      required: true
       allow_null: false
       allowed_values: [app, research]
 
   section_definitions:                # reusable section definitions keyed by section name
     DESCRIPTION:
-      required: true
       allow_null: false
       content:
         allowed_blocks: [paragraph]
@@ -114,7 +110,6 @@ entity-name:
         include: what this item is and why it exists
         exclude: status history
     ACTIVITY_LOG:
-      required: true
       allow_null: false
       content:
         allowed_blocks: [bullet_list, ordered_list]
@@ -130,7 +125,6 @@ entity-name:
       fields:                         # variant-local fields added to the root/base set
         status:
           type: enum
-          required: true
           allow_null: false
           allowed_values: [draft, active, completed]
       sections: [DESCRIPTION, ACTIVITY_LOG]   # authoritative full section order for app records
@@ -139,7 +133,6 @@ entity-name:
       fields:
         status:
           type: enum
-          required: true
           allow_null: false
           allowed_values: [draft, findings-ready, completed]
       sections: [DESCRIPTION, ACTIVITY_LOG]
@@ -162,14 +155,13 @@ Examples:
 
 ### Field types
 
-Every entity must declare an `id` field of type `id`. All fields have `required` (boolean) and `allow_null` (boolean) except `id` which is always `required: true, allow_null: false`.
+Every entity must declare an `id` field of type `id`. Every declared field must appear in record frontmatter. `allow_null` controls whether the explicit value may be `null`; it does not allow omission.
 
 #### id
 
 ```yaml
 id:
   type: id
-  required: true
   allow_null: false
 ```
 
@@ -180,7 +172,6 @@ Primary key. Must be a non-empty string. Must match the filename stem.
 ```yaml
 title:
   type: string
-  required: true
   allow_null: false
 ```
 
@@ -189,7 +180,6 @@ title:
 ```yaml
 budget:
   type: number
-  required: true
   allow_null: true
 ```
 
@@ -198,7 +188,6 @@ budget:
 ```yaml
 started_on:
   type: date
-  required: true
   allow_null: false
 ```
 
@@ -209,7 +198,6 @@ Values must be `YYYY-MM-DD` format.
 ```yaml
 status:
   type: enum
-  required: true
   allow_null: false
   allowed_values: [draft, active, completed]
 ```
@@ -221,7 +209,6 @@ Must include `allowed_values` — a list of at least one string.
 ```yaml
 owner_ref:
   type: ref
-  required: true
   allow_null: true
   target:
     module: people          # target module id
@@ -239,7 +226,6 @@ The URI path encodes the full lineage: `pals://system_id/module/entity-type/enti
 ```yaml
 tags:
   type: list
-  required: true
   allow_null: true
   items:
     type: string
@@ -250,7 +236,6 @@ Items can be `type: string` or `type: ref` (with a `target`):
 ```yaml
 people:
   type: list
-  required: true
   allow_null: true
   items:
     type: ref
@@ -266,7 +251,6 @@ Plain entities define sections inline. Sections render as `## SECTION_NAME` head
 ```yaml
 sections:
   - name: DESCRIPTION
-    required: true
     allow_null: false
     content:
       allowed_blocks: [paragraph, bullet_list, ordered_list]
@@ -280,7 +264,7 @@ sections:
 
 Rules:
 - `name`: rendered as `## NAME` in the markdown file (`UPPER_SNAKE_CASE` is recommended, not required)
-- `required`: whether the section must be present
+- every declared section must be present in the record body
 - `allow_null`: if true, the section can contain the literal word `null` instead of real content
 - `content.allowed_blocks`: at least one of `paragraph`, `bullet_list`, `ordered_list`
 - `content.allow_subheadings/allow_blockquotes/allow_code_blocks`: boolean flags for additional block types
@@ -295,7 +279,6 @@ Variant entities define reusable section contracts in `section_definitions` and 
 ```yaml
 section_definitions:
   DESCRIPTION:
-    required: true
     allow_null: false
     content:
       allowed_blocks: [paragraph]
@@ -311,20 +294,18 @@ variants:
     fields:
       status:
         type: enum
-        required: true
         allow_null: false
         allowed_values: [draft, active, completed]
     sections: [DESCRIPTION, ACTIVITY_LOG]
 ```
 
 Rules:
-- `discriminator` must point to a root/base field that is `type: enum`, `required: true`, and `allow_null: false`
+- `discriminator` must point to a root/base field that is `type: enum` and `allow_null: false`
 - Variant keys form a bijection with the discriminator enum values: every enum value needs a variant, and extra variant keys are invalid
 - Variant-local field names cannot collide with root/base field names
 - Every section name referenced by a variant must exist in `section_definitions`
 - A variant's `sections` list is the authoritative full section order for records of that variant
-- `required` on a section definition applies only when that section appears in the selected variant
-- If the discriminator is missing, non-string, or invalid, the compiler emits `PAL-RV-FM-008`, validates only root/base fields, and does not guess variant-specific fields or body sections
+- If the discriminator is missing, non-string, or invalid, the compiler emits `PAL-RV-FM-008`, validates only root/base fields, emits `PAL-RV-BODY-004` for the body, and does not guess variant-specific fields or body sections
 
 ## Naming rules and conventions
 
@@ -359,5 +340,7 @@ This is the description content.
 ```
 
 - The `# Title` heading after frontmatter is informal — the compiler does not validate it
+- Each declared frontmatter field must appear explicitly, using YAML `null` when `allow_null: true` and no value is available
 - Each declared section appears as `## SECTION_NAME`
 - Nullable sections with no content use the literal word `null`
+- Empty string is not a valid stand-in for `null` on `type: string` fields

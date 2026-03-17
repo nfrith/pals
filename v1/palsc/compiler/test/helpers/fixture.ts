@@ -94,7 +94,7 @@ export async function updateRecord(
   const filePath = fixturePath(root, relativePath);
   const parsed = matter(await readFile(filePath, "utf-8"));
   const record = {
-    data: parsed.data as Record<string, unknown>,
+    data: structuredClone(parsed.data as Record<string, unknown>),
     content: parsed.content,
   };
   await transform(record);
@@ -170,6 +170,31 @@ export function expectModuleDiagnostic(
   return diagnostic;
 }
 
+export function expectNoModuleDiagnostic(
+  result: SystemValidationOutput,
+  moduleId: string,
+  code: string,
+  fileSuffix?: string,
+): void {
+  const moduleReport = findModuleReport(result, moduleId);
+  if (!moduleReport) {
+    throw new Error(
+      `Expected module report '${moduleId}'. Actual modules: ${result.modules.map((report) => report.module_id).join(", ") || "<none>"}`,
+    );
+  }
+
+  const diagnostic = moduleReport.diagnostics.find(
+    (item) => item.code === code && (!fileSuffix || item.file.endsWith(fileSuffix)),
+  );
+  if (!diagnostic) {
+    return;
+  }
+
+  throw new Error(
+    `Did not expect module diagnostic ${describeSearch(code, fileSuffix)} in module '${moduleId}'. Actual diagnostics: ${describeDiagnostics(moduleReport.diagnostics)}`,
+  );
+}
+
 function fixturePath(root: string, relativePath: string): string {
   return join(root, relativePath);
 }
@@ -185,7 +210,7 @@ async function updateYamlFile(
     throw new Error(`Expected YAML object at '${relativePath}', received ${describeYamlType(parsed)}`);
   }
 
-  const current = parsed;
+  const current = structuredClone(parsed);
   await transform(current);
   await writeFile(filePath, stringifyYaml(current));
 }

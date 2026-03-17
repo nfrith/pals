@@ -12,12 +12,10 @@ test("missing section definitions surface a shape diagnostic instead of crashing
     fields: {
       id: {
         type: "id",
-        required: true,
         allow_null: false,
       },
       type: {
         type: "enum",
-        required: true,
         allow_null: false,
         allowed_values: ["app"],
       },
@@ -47,6 +45,8 @@ test("missing section definitions surface a shape diagnostic instead of crashing
   );
 
   expect(result.sections).toBeNull();
+  expect(result.known_field_names).toEqual(["id", "type"]);
   expect(result.diagnostics).toHaveLength(1);
+  expect(result.body_diagnostics).toHaveLength(0);
   expect(result.diagnostics[0].code).toBe(codes.SHAPE_CONTRACT_INVALID);
 });

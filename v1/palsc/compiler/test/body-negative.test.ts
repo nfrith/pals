@@ -1,11 +1,11 @@
 import { expect, test } from "bun:test";
 import { codes } from "../src/diagnostics.ts";
-import { expectModuleDiagnostic, updateRecord, validateFixture, withFixtureSandbox } from "./helpers/fixture.ts";
+import { expectModuleDiagnostic, expectNoModuleDiagnostic, updateRecord, validateFixture, withFixtureSandbox } from "./helpers/fixture.ts";
 
 const itemPath = "workspace/backlog/items/ITEM-0001.md";
 const researchItemPath = "workspace/backlog/items/ITEM-0003.md";
 
-test.concurrent("missing required sections are rejected", async () => {
+test.concurrent("missing declared sections are rejected", async () => {
   await withFixtureSandbox("body-missing-section", async ({ root }) => {
     await updateRecord(root, itemPath, (record) => {
       record.content = `# ITEM-0001
@@ -27,6 +27,7 @@ Represent type as a discriminator.
     const result = validateFixture(root);
     expect(result.status).toBe("fail");
     expectModuleDiagnostic(result, "backlog", codes.BODY_MISSING_SECTION, "ITEM-0001.md");
+    expectNoModuleDiagnostic(result, "backlog", codes.BODY_ORDER_MISMATCH, "ITEM-0001.md");
   });
 });
 
@@ -39,6 +40,7 @@ test.concurrent("unknown sections are rejected", async () => {
     const result = validateFixture(root);
     expect(result.status).toBe("fail");
     expectModuleDiagnostic(result, "backlog", codes.BODY_UNKNOWN_SECTION, "ITEM-0001.md");
+    expectNoModuleDiagnostic(result, "backlog", codes.BODY_ORDER_MISMATCH, "ITEM-0001.md");
   });
 });
 
@@ -51,6 +53,29 @@ test.concurrent("sections from other variants are rejected", async () => {
     const result = validateFixture(root);
     expect(result.status).toBe("fail");
     expectModuleDiagnostic(result, "backlog", codes.BODY_UNKNOWN_SECTION, "ITEM-0001.md");
+    expectNoModuleDiagnostic(result, "backlog", codes.BODY_ORDER_MISMATCH, "ITEM-0001.md");
+  });
+});
+
+test.concurrent("unresolved variants emit a dedicated body diagnostic and suppress section checks", async () => {
+  await withFixtureSandbox("body-variant-unresolved", async ({ root }) => {
+    await updateRecord(root, itemPath, (record) => {
+      delete record.data.type;
+      record.content = `# ITEM-0001
+
+## TOTALLY_CUSTOM
+
+This body should not produce section diagnostics until type is fixed.
+`;
+    });
+
+    const result = validateFixture(root);
+    expect(result.status).toBe("fail");
+    expectModuleDiagnostic(result, "backlog", codes.BODY_VARIANT_UNRESOLVED, "ITEM-0001.md");
+    expectNoModuleDiagnostic(result, "backlog", codes.BODY_MISSING_SECTION, "ITEM-0001.md");
+    expectNoModuleDiagnostic(result, "backlog", codes.BODY_UNKNOWN_SECTION, "ITEM-0001.md");
+    expectNoModuleDiagnostic(result, "backlog", codes.BODY_ORDER_MISMATCH, "ITEM-0001.md");
+    expectNoModuleDiagnostic(result, "backlog", codes.BODY_CONSTRAINT_VIOLATION, "ITEM-0001.md");
   });
 });
 

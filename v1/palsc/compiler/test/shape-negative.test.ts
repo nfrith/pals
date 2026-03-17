@@ -83,14 +83,13 @@ test.concurrent("duplicate variant section names are rejected", async () => {
   });
 });
 
-test.concurrent("discriminator fields must be required non-null enums", async () => {
+test.concurrent("discriminator fields must be non-null enums", async () => {
   await withFixtureSandbox("shape-discriminator-field", async ({ root }) => {
     await updateShapeYaml(root, "backlog", 1, (shape) => {
       const entities = shape.entities as Record<string, Record<string, unknown>>;
       const itemFields = entities.item.fields as Record<string, Record<string, unknown>>;
       itemFields.type = {
         type: "string",
-        required: true,
         allow_null: false,
       };
     });
@@ -101,12 +100,12 @@ test.concurrent("discriminator fields must be required non-null enums", async ()
   });
 });
 
-test.concurrent("discriminator fields must remain required", async () => {
-  await withFixtureSandbox("shape-discriminator-required", async ({ root }) => {
+test.concurrent("legacy required keys on fields are rejected", async () => {
+  await withFixtureSandbox("shape-legacy-required-field", async ({ root }) => {
     await updateShapeYaml(root, "backlog", 1, (shape) => {
       const entities = shape.entities as Record<string, Record<string, unknown>>;
       const itemFields = entities.item.fields as Record<string, Record<string, unknown>>;
-      itemFields.type.required = false;
+      itemFields.type.required = true;
     });
 
     const result = validateFixture(root);
@@ -168,9 +167,36 @@ test.concurrent("variant fields cannot collide with root fields", async () => {
       const appFields = variants.app.fields as Record<string, unknown>;
       appFields.title = {
         type: "string",
-        required: false,
         allow_null: true,
       };
+    });
+
+    const result = validateFixture(root);
+    expect(result.status).toBe("fail");
+    expectModuleDiagnostic(result, "backlog", codes.SHAPE_INVALID, ".pals/modules/backlog/v1.yaml");
+  });
+});
+
+test.concurrent("legacy required keys on inline sections are rejected", async () => {
+  await withFixtureSandbox("shape-legacy-required-inline-section", async ({ root }) => {
+    await updateShapeYaml(root, "people", 1, (shape) => {
+      const entities = shape.entities as Record<string, Record<string, unknown>>;
+      const sections = entities.person.sections as Array<Record<string, unknown>>;
+      sections[0].required = true;
+    });
+
+    const result = validateFixture(root);
+    expect(result.status).toBe("fail");
+    expectModuleDiagnostic(result, "people", codes.SHAPE_INVALID, ".pals/modules/people/v1.yaml");
+  });
+});
+
+test.concurrent("legacy required keys on section definitions are rejected", async () => {
+  await withFixtureSandbox("shape-legacy-required-section-definition", async ({ root }) => {
+    await updateShapeYaml(root, "backlog", 1, (shape) => {
+      const entities = shape.entities as Record<string, Record<string, unknown>>;
+      const definitions = entities.item.section_definitions as Record<string, Record<string, unknown>>;
+      definitions.DESCRIPTION.required = true;
     });
 
     const result = validateFixture(root);
@@ -229,7 +255,6 @@ test.concurrent("parent ref fields must use ref type", async () => {
       const runFields = entities.run.fields as Record<string, Record<string, unknown>>;
       runFields.experiment_ref = {
         type: "string",
-        required: true,
         allow_null: false,
       };
     });
@@ -240,7 +265,7 @@ test.concurrent("parent ref fields must use ref type", async () => {
   });
 });
 
-test.concurrent("parent ref fields must stay required and non-null", async () => {
+test.concurrent("parent ref fields must stay non-null", async () => {
   await withFixtureSandbox("shape-parent-ref-nullability", async ({ root }) => {
     await updateShapeYaml(root, "experiments", 2, (shape) => {
       const entities = shape.entities as Record<string, Record<string, unknown>>;
@@ -286,7 +311,6 @@ test.concurrent("variant-local ref fields must also have declared dependencies",
       const appFields = variants.app.fields as Record<string, unknown>;
       appFields.client_ref = {
         type: "ref",
-        required: false,
         allow_null: true,
         target: {
           module: "client-registry",

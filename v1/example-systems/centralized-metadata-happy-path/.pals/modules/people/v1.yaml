@@ -12,30 +12,25 @@ entities:
     fields:
       id:
         type: id
-        required: true
         allow_null: false
 
       display_name:
         type: string
-        required: true
         allow_null: false
 
       status:
         type: enum
-        required: true
         allow_null: false
         allowed_values: [active, inactive]
 
       tags:
         type: list
-        required: true
         allow_null: true
         items:
           type: string
 
     sections:
       - name: PROFILE
-        required: true
         allow_null: false
         content:
           allowed_blocks: [paragraph]
@@ -47,7 +42,6 @@ entities:
           exclude: transient task updates
 
       - name: CONTACT
-        required: true
         allow_null: true
         content:
           allowed_blocks: [paragraph, bullet_list, ordered_list]
@@ -59,7 +53,6 @@ entities:
           exclude: private credentials or secrets
 
       - name: NOTES
-        required: true
         allow_null: true
         content:
           allowed_blocks: [paragraph]

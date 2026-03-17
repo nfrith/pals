@@ -15,23 +15,19 @@ entities:
     fields:
       id:
         type: id
-        required: true
         allow_null: false
 
       title:
         type: string
-        required: true
         allow_null: false
 
       type:
         type: enum
-        required: true
         allow_null: false
         allowed_values: [app, infra, client, event, s9-ops, personal-ops, research]
 
       owner_ref:
         type: ref
-        required: true
         allow_null: false
         target:
           module: people
@@ -39,7 +35,6 @@ entities:
 
       collaborator_refs:
         type: list
-        required: true
         allow_null: true
         items:
           type: ref
@@ -49,7 +44,6 @@ entities:
 
     section_definitions:
       DESCRIPTION:
-        required: true
         allow_null: false
         content:
           allowed_blocks: [paragraph]
@@ -61,7 +55,6 @@ entities:
           exclude: timestamped progress notes and variant-specific implementation detail that belongs elsewhere
 
       ACTIVITY_LOG:
-        required: true
         allow_null: false
         content:
           allowed_blocks: [bullet_list, ordered_list]
@@ -73,7 +66,6 @@ entities:
           exclude: evergreen requirements or long-form architectural rationale
 
       REQUIREMENTS:
-        required: true
         allow_null: true
         content:
           allowed_blocks: [bullet_list, ordered_list]
@@ -85,7 +77,6 @@ entities:
           exclude: session history and exploratory findings
 
       ARCHITECTURE:
-        required: true
         allow_null: true
         content:
           allowed_blocks: [paragraph, bullet_list, ordered_list]
@@ -97,7 +88,6 @@ entities:
           exclude: raw research conclusions and generic task history
 
       HYPOTHESIS:
-        required: true
         allow_null: true
         content:
           allowed_blocks: [paragraph]
@@ -109,7 +99,6 @@ entities:
           exclude: settled implementation plans
 
       FINDINGS:
-        required: true
         allow_null: true
         content:
           allowed_blocks: [paragraph, bullet_list, ordered_list]
@@ -125,7 +114,6 @@ entities:
         fields:
           status:
             type: enum
-            required: true
             allow_null: false
             allowed_values: [draft, scoped, active, blocked, delivered, completed, cancelled]
         sections:
@@ -137,7 +125,6 @@ entities:
         fields:
           status:
             type: enum
-            required: true
             allow_null: false
             allowed_values: [draft, scoped, active, blocked, completed, cancelled]
         sections:
@@ -148,7 +135,6 @@ entities:
         fields:
           status:
             type: enum
-            required: true
             allow_null: false
             allowed_values: [draft, scoped, active, blocked, delivered, completed, cancelled]
         sections:
@@ -159,7 +145,6 @@ entities:
         fields:
           status:
             type: enum
-            required: true
             allow_null: false
             allowed_values: [draft, scoped, active, blocked, completed, cancelled]
         sections:
@@ -170,7 +155,6 @@ entities:
         fields:
           status:
             type: enum
-            required: true
             allow_null: false
             allowed_values: [draft, active, blocked, completed, deferred, cancelled]
         sections:
@@ -181,7 +165,6 @@ entities:
         fields:
           status:
             type: enum
-            required: true
             allow_null: false
             allowed_values: [draft, active, blocked, completed, deferred, cancelled]
         sections:
@@ -192,7 +175,6 @@ entities:
         fields:
           status:
             type: enum
-            required: true
             allow_null: false
             allowed_values: [draft, active, blocked, findings-ready, completed, cancelled]
         sections:

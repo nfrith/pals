@@ -11,7 +11,6 @@ const targetSchema = z.object({
 });
 
 const commonFieldShape = {
-  required: z.boolean(),
   allow_null: z.boolean(),
 };
 
@@ -28,7 +27,6 @@ const listItemSchema = z.discriminatedUnion("type", [
 const fieldSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("id"),
-    required: z.literal(true),
     allow_null: z.literal(false),
   }),
   z.object({
@@ -62,7 +60,6 @@ const fieldSchema = z.discriminatedUnion("type", [
 
 const sectionSchema = z.object({
   name: nonEmptyString,
-  required: z.boolean(),
   allow_null: z.boolean(),
   content: z.object({
     allowed_blocks: z.array(z.enum(["paragraph", "bullet_list", "ordered_list"])).min(1),
@@ -77,7 +74,6 @@ const sectionSchema = z.object({
 });
 
 const sectionDefinitionSchema = z.object({
-  required: z.boolean(),
   allow_null: z.boolean(),
   content: z.object({
     allowed_blocks: z.array(z.enum(["paragraph", "bullet_list", "ordered_list"])).min(1),
@@ -174,10 +170,10 @@ const entitySchema = z.union([plainEntitySchema, variantEntitySchema]).superRefi
         path: ["discriminator"],
       });
     } else {
-      if (!discriminatorField.required || discriminatorField.allow_null) {
+      if (discriminatorField.allow_null) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
-          message: `discriminator field ${value.discriminator} must be required and non-null`,
+          message: `discriminator field ${value.discriminator} must be non-null`,
           path: ["discriminator"],
         });
       }
@@ -241,10 +237,10 @@ const entitySchema = z.union([plainEntitySchema, variantEntitySchema]).superRefi
         message: `parent ref field ${value.identity.parent.ref_field} must be type=ref`,
         path: ["identity", "parent", "ref_field"],
       });
-    } else if (!parentField.required || parentField.allow_null) {
+    } else if (parentField.allow_null) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message: `parent ref field ${value.identity.parent.ref_field} must be required and non-null`,
+        message: `parent ref field ${value.identity.parent.ref_field} must be non-null`,
         path: ["identity", "parent", "ref_field"],
       });
     }
@@ -325,3 +321,44 @@ export type SectionDefinitionShape = z.infer<typeof sectionDefinitionSchema>;
 export type EntityVariantShape = z.infer<typeof variantSchema>;
 export type FieldShape = z.infer<typeof fieldSchema>;
 export type SectionShape = z.infer<typeof sectionSchema>;
+
+interface RawShapeIssue {
+  path: Array<string | number>;
+  message: string;
+}
+
+export function findLegacyRequiredIssues(raw: unknown): RawShapeIssue[] {
+  const issues: RawShapeIssue[] = [];
+  walkShapeValue(raw, [], issues);
+  return issues;
+}
+
+function walkShapeValue(
+  value: unknown,
+  path: Array<string | number>,
+  issues: RawShapeIssue[],
+): void {
+  if (Array.isArray(value)) {
+    value.forEach((item, index) => walkShapeValue(item, path.concat(index), issues));
+    return;
+  }
+
+  if (!isRecord(value)) {
+    return;
+  }
+
+  if ("required" in value) {
+    issues.push({
+      path: path.concat("required"),
+      message: "legacy key 'required' is not allowed in pals-module@1",
+    });
+  }
+
+  for (const [key, nested] of Object.entries(value)) {
+    walkShapeValue(nested, path.concat(key), issues);
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}

@@ -14,23 +14,19 @@ entities:
     fields:
       id:
         type: id
-        required: true
         allow_null: false
 
       title:
         type: string
-        required: true
         allow_null: false
 
       status:
         type: enum
-        required: true
         allow_null: false
         allowed_values: [draft, active, completed]
 
       client_ref:
         type: ref
-        required: true
         allow_null: false
         target:
           module: client-registry
@@ -38,7 +34,6 @@ entities:
 
     sections:
       - name: HYPOTHESIS
-        required: true
         allow_null: false
         content:
           allowed_blocks: [paragraph]
@@ -50,7 +45,6 @@ entities:
           exclude: run-level observations
 
       - name: SUCCESS_CRITERIA
-        required: true
         allow_null: false
         content:
           allowed_blocks: [bullet_list, ordered_list]
@@ -62,7 +56,6 @@ entities:
           exclude: tactical implementation notes
 
       - name: NOTES
-        required: true
         allow_null: true
         content:
           allowed_blocks: [paragraph]
@@ -85,12 +78,10 @@ entities:
     fields:
       id:
         type: id
-        required: true
         allow_null: false
 
       program_ref:
         type: ref
-        required: true
         allow_null: false
         target:
           module: experiments
@@ -98,23 +89,19 @@ entities:
 
       title:
         type: string
-        required: true
         allow_null: false
 
       status:
         type: enum
-        required: true
         allow_null: false
         allowed_values: [draft, awaiting-funds, funded, active, paused, completed]
 
       budget:
         type: number
-        required: true
         allow_null: true
 
       owner_ref:
         type: ref
-        required: true
         allow_null: true
         target:
           module: people
@@ -122,7 +109,6 @@ entities:
 
     sections:
       - name: DESIGN
-        required: true
         allow_null: false
         content:
           allowed_blocks: [paragraph, bullet_list, ordered_list]
@@ -134,7 +120,6 @@ entities:
           exclude: final interpretation of results
 
       - name: METRICS
-        required: true
         allow_null: false
         content:
           allowed_blocks: [bullet_list, ordered_list]
@@ -146,7 +131,6 @@ entities:
           exclude: narrative-only notes
 
       - name: NOTES
-        required: true
         allow_null: true
         content:
           allowed_blocks: [paragraph]
@@ -169,12 +153,10 @@ entities:
     fields:
       id:
         type: id
-        required: true
         allow_null: false
 
       experiment_ref:
         type: ref
-        required: true
         allow_null: false
         target:
           module: experiments
@@ -182,29 +164,24 @@ entities:
 
       status:
         type: enum
-        required: true
         allow_null: false
         allowed_values: [queued, running, completed, failed]
 
       outcome:
         type: enum
-        required: true
         allow_null: true
         allowed_values: [positive, negative, inconclusive]
 
       started_on:
         type: date
-        required: true
         allow_null: false
 
       ended_on:
         type: date
-        required: true
         allow_null: true
 
     sections:
       - name: OBSERVATIONS
-        required: true
         allow_null: false
         content:
           allowed_blocks: [paragraph, bullet_list, ordered_list]
@@ -216,7 +193,6 @@ entities:
           exclude: final cross-run decision policy
 
       - name: DECISION
-        required: true
         allow_null: true
         content:
           allowed_blocks: [paragraph]
@@ -228,7 +204,6 @@ entities:
           exclude: module-wide strategy changes
 
       - name: NOTES
-        required: true
         allow_null: true
         content:
           allowed_blocks: [paragraph]

@@ -1,8 +1,8 @@
 import { expect, test } from "bun:test";
 import { codes } from "../src/diagnostics.ts";
-import { expectModuleDiagnostic, updateRecord, updateShapeYaml, validateFixture, withFixtureSandbox } from "./helpers/fixture.ts";
+import { expectModuleDiagnostic, expectNoModuleDiagnostic, updateRecord, updateShapeYaml, validateFixture, withFixtureSandbox } from "./helpers/fixture.ts";
 
-test("missing required frontmatter fields are rejected", async () => {
+test("missing declared frontmatter fields are rejected", async () => {
   await withFixtureSandbox("frontmatter-missing-field", async ({ root }) => {
     await updateRecord(root, "workspace/backlog/items/ITEM-0001.md", (record) => {
       delete record.data.title;
@@ -54,13 +54,16 @@ This body should be ignored because variant resolution failed.
     expect(result.status).toBe("fail");
     expectModuleDiagnostic(result, "backlog", codes.FM_MISSING_FIELD, "ITEM-0001.md");
     expectModuleDiagnostic(result, "backlog", codes.FM_VARIANT_UNRESOLVED, "ITEM-0001.md");
+    expectModuleDiagnostic(result, "backlog", codes.BODY_VARIANT_UNRESOLVED, "ITEM-0001.md");
+    expectNoModuleDiagnostic(result, "backlog", codes.FM_UNKNOWN_FIELD, "ITEM-0001.md");
 
     const backlogReport = result.modules.find((report) => report.module_id === "backlog");
     expect(backlogReport).toBeDefined();
     const bodyDiagnostics = backlogReport!.diagnostics.filter(
       (diagnostic) => diagnostic.file.endsWith("ITEM-0001.md") && diagnostic.phase === "record_body",
     );
-    expect(bodyDiagnostics).toHaveLength(0);
+    expect(bodyDiagnostics).toHaveLength(1);
+    expect(bodyDiagnostics[0].code).toBe(codes.BODY_VARIANT_UNRESOLVED);
   });
 });
 
@@ -74,6 +77,8 @@ test("non-string discriminators emit explicit unresolved-variant diagnostics", a
     expect(result.status).toBe("fail");
     expectModuleDiagnostic(result, "backlog", codes.FM_TYPE_MISMATCH, "ITEM-0001.md");
     expectModuleDiagnostic(result, "backlog", codes.FM_VARIANT_UNRESOLVED, "ITEM-0001.md");
+    expectModuleDiagnostic(result, "backlog", codes.BODY_VARIANT_UNRESOLVED, "ITEM-0001.md");
+    expectNoModuleDiagnostic(result, "backlog", codes.FM_UNKNOWN_FIELD, "ITEM-0001.md");
   });
 });
 
@@ -87,10 +92,12 @@ test("invalid discriminators emit explicit unresolved-variant diagnostics", asyn
     expect(result.status).toBe("fail");
     expectModuleDiagnostic(result, "backlog", codes.FM_ENUM_INVALID, "ITEM-0001.md");
     expectModuleDiagnostic(result, "backlog", codes.FM_VARIANT_UNRESOLVED, "ITEM-0001.md");
+    expectModuleDiagnostic(result, "backlog", codes.BODY_VARIANT_UNRESOLVED, "ITEM-0001.md");
+    expectNoModuleDiagnostic(result, "backlog", codes.FM_UNKNOWN_FIELD, "ITEM-0001.md");
   });
 });
 
-test("variant-local required fields are enforced", async () => {
+test("variant-local declared fields are enforced", async () => {
   await withFixtureSandbox("frontmatter-variant-required", async ({ root }) => {
     await updateShapeYaml(root, "backlog", 1, (shape) => {
       const entities = shape.entities as Record<string, Record<string, unknown>>;
@@ -100,7 +107,6 @@ test("variant-local required fields are enforced", async () => {
       const fields = app.fields as Record<string, unknown>;
       fields.delivery_scope = {
         type: "string",
-        required: true,
         allow_null: false,
       };
     });
@@ -121,7 +127,6 @@ test("fields from other variants are rejected", async () => {
       const fields = research.fields as Record<string, unknown>;
       fields.finding_label = {
         type: "string",
-        required: false,
         allow_null: true,
       };
     });
@@ -133,6 +138,18 @@ test("fields from other variants are rejected", async () => {
     const result = validateFixture(root);
     expect(result.status).toBe("fail");
     expectModuleDiagnostic(result, "backlog", codes.FM_UNKNOWN_FIELD, "ITEM-0001.md");
+  });
+});
+
+test("nullable declared fields cannot be omitted", async () => {
+  await withFixtureSandbox("frontmatter-missing-nullable-field", async ({ root }) => {
+    await updateRecord(root, "workspace/backlog/items/ITEM-0003.md", (record) => {
+      delete record.data.collaborator_refs;
+    });
+
+    const result = validateFixture(root);
+    expect(result.status).toBe("fail");
+    expectModuleDiagnostic(result, "backlog", codes.FM_MISSING_FIELD, "ITEM-0003.md");
   });
 });
 
@@ -156,6 +173,18 @@ test("string fields must remain strings", async () => {
   await withFixtureSandbox("frontmatter-string", async ({ root }) => {
     await updateRecord(root, "workspace/backlog/items/ITEM-0001.md", (record) => {
       record.data.title = 101;
+    });
+
+    const result = validateFixture(root);
+    expect(result.status).toBe("fail");
+    expectModuleDiagnostic(result, "backlog", codes.FM_TYPE_MISMATCH, "ITEM-0001.md");
+  });
+});
+
+test("string fields reject empty strings", async () => {
+  await withFixtureSandbox("frontmatter-string-empty", async ({ root }) => {
+    await updateRecord(root, "workspace/backlog/items/ITEM-0001.md", (record) => {
+      record.data.title = "";
     });
 
     const result = validateFixture(root);
@@ -265,5 +294,19 @@ test("list items must match the declared item type", async () => {
     const result = validateFixture(root);
     expect(result.status).toBe("fail");
     expectModuleDiagnostic(result, "people", codes.FM_ARRAY_ITEM, "PPL-000101.md");
+  });
+});
+
+test("truly undeclared fields still fail when the variant is unresolved", async () => {
+  await withFixtureSandbox("frontmatter-unresolved-unknown-field", async ({ root }) => {
+    await updateRecord(root, "workspace/backlog/items/ITEM-0001.md", (record) => {
+      delete record.data.type;
+      record.data.surprise = true;
+    });
+
+    const result = validateFixture(root);
+    expect(result.status).toBe("fail");
+    expectModuleDiagnostic(result, "backlog", codes.FM_VARIANT_UNRESOLVED, "ITEM-0001.md");
+    expectModuleDiagnostic(result, "backlog", codes.FM_UNKNOWN_FIELD, "ITEM-0001.md");
   });
 });
