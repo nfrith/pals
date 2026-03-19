@@ -2,6 +2,7 @@ import { z } from "zod";
 
 const entityName = z.string().regex(/^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/);
 const fieldName = z.string().regex(/^[a-z][a-z0-9_]*$/);
+const moduleMountPath = z.string().regex(/^[a-z][a-z0-9]*(?:-[a-z0-9]+)*(?:\/[a-z][a-z0-9]*(?:-[a-z0-9]+)*)*$/);
 const nonEmptyString = z.string().min(1);
 const positiveInt = z.number().int().positive();
 
@@ -281,35 +282,11 @@ export const moduleShapeSchema = z.object({
 export const systemConfigSchema = z.object({
   schema: z.literal("als-system@1"),
   system_id: nonEmptyString,
-  roots: z.array(entityName).min(1),
   modules: z.record(entityName, z.object({
-    root: entityName,
-    dir: entityName,
+    path: moduleMountPath,
     version: positiveInt,
     skill: nonEmptyString,
   })),
-}).superRefine((value, ctx) => {
-  const seenRoots = new Set<string>();
-  for (const [index, rootName] of value.roots.entries()) {
-    if (seenRoots.has(rootName)) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: `duplicate root ${rootName}`,
-        path: ["roots", index],
-      });
-    }
-    seenRoots.add(rootName);
-  }
-
-  for (const [moduleId, moduleConfig] of Object.entries(value.modules)) {
-    if (!seenRoots.has(moduleConfig.root)) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: `module ${moduleId} references unknown root ${moduleConfig.root}`,
-        path: ["modules", moduleId, "root"],
-      });
-    }
-  }
 });
 
 export type ModuleShape = z.infer<typeof moduleShapeSchema>;

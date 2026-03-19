@@ -1,0 +1,98 @@
+schema: als-module@1
+
+dependencies: []
+
+entities:
+  config:
+    path: configs/{id}.md
+
+    identity:
+      id_field: id
+
+    fields:
+      id:
+        type: id
+        allow_null: false
+
+      name:
+        type: string
+        allow_null: false
+
+      tool:
+        type: string
+        allow_null: false
+
+      status:
+        type: enum
+        allow_null: false
+        allowed_values: [active, deprecated, draft]
+
+    sections:
+      - name: PURPOSE
+        allow_null: false
+        content:
+          allowed_blocks: [paragraph]
+          allow_subheadings: false
+          allow_blockquotes: false
+          allow_code_blocks: false
+        guidance:
+          include: what this config does and why it exists
+          exclude: setup instructions or install steps
+
+      - name: NOTES
+        allow_null: true
+        content:
+          allowed_blocks: [paragraph, bullet_list]
+          allow_subheadings: false
+          allow_blockquotes: false
+          allow_code_blocks: false
+        guidance:
+          include: quirks, gotchas, or context for future edits
+          exclude: full change history
+
+  profile:
+    path: profiles/{id}.md
+
+    identity:
+      id_field: id
+
+    fields:
+      id:
+        type: id
+        allow_null: false
+
+      name:
+        type: string
+        allow_null: false
+
+      machine:
+        type: string
+        allow_null: false
+
+      status:
+        type: enum
+        allow_null: false
+        allowed_values: [active, archived]
+
+    sections:
+      - name: SETUP
+        allow_null: false
+        content:
+          allowed_blocks: [paragraph, bullet_list, ordered_list]
+          allow_subheadings: false
+          allow_blockquotes: false
+          allow_code_blocks: false
+        guidance:
+          include: what this profile provisions and the order of operations
+          exclude: individual config file details tracked in config entities
+
+      - name: NOTES
+        allow_null: true
+        content:
+          allowed_blocks: [paragraph, bullet_list]
+          allow_subheadings: false
+          allow_blockquotes: false
+          allow_code_blocks: false
+        guidance:
+          include: machine-specific quirks or environment constraints
+          exclude: general tool documentation

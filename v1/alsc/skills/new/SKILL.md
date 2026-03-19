@@ -16,7 +16,7 @@ Before producing any YAML, read `references/shape-language.md` in this skill's d
 Check whether `.als/system.yaml` exists in the working directory.
 
 - **If it does not exist**: this is a bootstrap. You will create the system from scratch. Proceed to Phase 2 — you need the interview before you can create anything.
-- **If it exists**: read it. Understand the system_id, the declared roots, and all existing modules. This context matters for the interview — the operator may want to reference entities from existing modules, and new modules must fit into the existing root structure. Proceed to Phase 2.
+- **If it exists**: read it. Understand the system_id and all existing modules, especially their mount paths. This context matters for the interview — the operator may want to reference entities from existing modules, and new modules must fit into the existing path layout without overlapping it. Proceed to Phase 2.
 
 ## Phase 2: The Interview
 
@@ -34,7 +34,9 @@ Listen carefully. Do not interrupt with clarifications yet. Let them talk. The f
 
 You also need to establish:
 - **System identity**: what should the `system_id` be? This names the whole system. Help them pick something short and meaningful.
-- **Roots**: what top-level directories organize their data? Most systems need just one (like `workspace`). Some need separation (like `workspace` + `clients`). Don't overcomplicate this — ask what natural groupings they have.
+- **Module mount path**: where should this module live relative to the system root? Examples: `backlog`, `workspace/people`, `section9/backlog`.
+
+For both bootstrap and existing systems, lock the new module's mount path before proposing YAML. It must be relative to the system root and must not overlap any existing module mount path.
 
 ### Decomposition
 
@@ -95,7 +97,7 @@ Once you have enough information, synthesize and present the design. Do NOT prod
 
 ### What to present
 
-1. **Module identity**: the module id, which root it lives under, its directory name
+1. **Module identity**: the module id and mount path
 2. **Entities**: a list of each entity with a one-line description
 3. **Relationships**: how entities connect — parent chains and cross-references
 4. **Directory structure**: the path template for each entity, shown as a tree
@@ -106,7 +108,7 @@ Once you have enough information, synthesize and present the design. Do NOT prod
 
 ```
 Module: experiments
-Root: workspace/experiments
+Path: workspace/experiments
 
 Entities:
   - program: a research program grouping related experiments
@@ -165,19 +167,17 @@ Once approved, create everything.
 
 1. Create `.als/` directory
 2. Create `.als/modules/` directory
-3. Create `.als/system.yaml` with the system_id, roots, and first module registration
-4. Create the root directories declared in `roots` (if they don't exist)
-5. Create the module's shape YAML at `.als/modules/{module_id}/v1.yaml`
-6. Create the module's data directory at `{root}/{dir}/`
-7. Create the subdirectory tree implied by the path templates (empty directories)
+3. Create `.als/system.yaml` with the system_id and first module registration
+4. Create the module's shape YAML at `.als/modules/{module_id}/v1.yaml`
+5. Create the module's data directory at `{path}/`
+6. Create the subdirectory tree implied by the path templates (empty directories)
 
 ### If adding to an existing system
 
 1. Create the module's shape YAML at `.als/modules/{module_id}/v1.yaml`
 2. Register the module in `.als/system.yaml` (add to the `modules` map)
-3. If the module uses a root that doesn't exist yet, add it to `roots` and create the directory
-4. Create the module's data directory at `{root}/{dir}/`
-5. Create the subdirectory tree implied by the path templates (empty directories)
+3. Create the module's data directory at `{path}/`
+4. Create the subdirectory tree implied by the path templates (empty directories)
 
 ### For the skill field
 

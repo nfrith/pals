@@ -36,6 +36,6 @@ test.concurrent("centralized metadata fixture validates clean", async () => {
 
     expect(result.status).toBe("pass");
     expect(result.summary.error_count).toBe(0);
-    expect(result.summary.modules_checked).toBe(4);
+    expect(result.summary.modules_checked).toBe(5);
   });
 });

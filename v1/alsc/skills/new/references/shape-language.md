@@ -4,31 +4,28 @@ This is the complete format specification for `als-module@1` shape files and `al
 
 ## system.yaml
 
-Lives at `.als/system.yaml`. Declares the system identity, root directories, and module registry.
+Lives at `.als/system.yaml`. Declares the system identity and module registry.
 
 ```yaml
 schema: als-system@1
 system_id: my-system                  # unique system identifier used in ref URIs
 
-roots:                                # top-level directories that hold module data
-  - workspace
-  - clients
-
 modules:
   people:                             # module id, kebab-case
-    root: workspace                   # which root this module lives under (must be in roots list)
-    dir: people                       # directory name within the root
+    path: workspace/people            # module mount path relative to the system root
     version: 1                        # currently deployed shape version
     skill: .claude/skills/people/SKILL.md   # placeholder for future skill path
 ```
 
 Rules:
 - `system_id`: non-empty string, used in ref URIs
-- `roots`: at least one, no duplicates, each must exist as a directory
-- `roots`, module ids, module `root`, and module `dir` values must match `^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$`
-- Module `root` must reference a declared root
-- Module `dir` is the directory name under that root — the module's data lives at `{root}/{dir}/`
-- No two modules may share the same `root`/`dir` combination
+- Module ids must match `^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$`
+- Module `path` is a normalized relative path from the system root made of one or more slash-separated slug segments
+- Each `path` segment must match `^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$`
+- Module paths cannot be absolute, contain empty segments, contain `.` or `..`, or contain hidden segments like `.pals`
+- The module's data lives at `{path}/`
+- The declared `path` must exist as a directory when validating
+- No two modules may have identical or overlapping mount paths
 - Shape files are inferred at `.als/modules/{module_id}/v{version}.yaml`
 
 ## Module shape YAML
@@ -312,7 +309,8 @@ Rules:
 
 ## Naming rules and conventions
 
-- Module ids, entity names, roots, module `root`, and module `dir` are compiler-enforced single-segment slugs matching `^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$`
+- Module ids and entity names are compiler-enforced single-segment slugs matching `^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$`
+- Module mount paths are slash-separated slug segments using that same segment regex
 - Field names are compiler-enforced and must match `^[a-z][a-z0-9_]*$`
 - `system_id` can be any non-empty string; `kebab-case` is recommended but not enforced
 - Section names can be any non-empty string; `UPPER_SNAKE_CASE` is recommended

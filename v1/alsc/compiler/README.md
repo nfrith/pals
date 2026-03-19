@@ -2,7 +2,7 @@
 
 Bun-based validator for the explicit centralized `.als/` metadata model.
 
-The system registry owns a single `system_id`, declares top-level roots, and each module resolves from `root + dir`.
+The system registry owns a single `system_id`, and each module declares one explicit mount path relative to the system root.
 
 Shape files are inferred by convention as `.als/modules/<module-id>/v<version>.yaml`.
 

@@ -162,7 +162,7 @@ export function validateSystem(systemRootInput: string, moduleFilter?: string): 
 
 function loadModuleState(systemRootAbs: string, systemConfig: SystemConfig, moduleId: string): ModuleWorkState {
   const registryEntry = systemConfig.modules[moduleId];
-  const modulePathAbs = resolve(systemRootAbs, registryEntry.root, registryEntry.dir);
+  const modulePathAbs = resolveModulePath(systemRootAbs, registryEntry.path);
   const modulePathRel = toRepoRelative(modulePathAbs);
   const shapePathAbs = resolve(systemRootAbs, inferredShapePath(moduleId, registryEntry.version));
   const shapePathRel = toRepoRelative(shapePathAbs);
@@ -1071,65 +1071,49 @@ function validateSystemLayout(
 ): CompilerDiagnostic[] {
   const diagnostics: CompilerDiagnostic[] = [];
 
-  for (const rootName of systemConfig.roots) {
-    const rootAbs = resolve(systemRootAbs, rootName);
-    const rootRel = toRepoRelative(rootAbs);
-    const rootStat = safeStat(rootAbs);
-
-    if (!rootStat) {
-      diagnostics.push(
-        diag(codes.SYSTEM_ROOT_INVALID, "error", "system_config", rootRel, `Declared root '${rootName}' does not exist`, {
-          field: rootName,
-          expected: "existing directory",
-          actual: "missing",
-        }),
-      );
-      continue;
-    }
-
-    if (!rootStat.isDirectory()) {
-      diagnostics.push(
-        diag(codes.SYSTEM_ROOT_INVALID, "error", "system_config", rootRel, `Declared root '${rootName}' is not a directory`, {
-          field: rootName,
-          expected: "directory",
-          actual: "file",
-        }),
-      );
-    }
-  }
-
-  const seenModuleLocations = new Map<string, string>();
+  const seenModulePaths: Array<{ module_id: string; path: string; segments: string[] }> = [];
   for (const [moduleId, registryEntry] of Object.entries(systemConfig.modules)) {
-    const locationKey = `${registryEntry.root}/${registryEntry.dir}`;
-    const existingModuleId = seenModuleLocations.get(locationKey);
-    if (existingModuleId) {
+    const modulePath = registryEntry.path;
+    const modulePathSegments = splitModuleMountPath(modulePath);
+    const overlappingModule = seenModulePaths.find((existing) => modulePathsOverlap(modulePathSegments, existing.segments));
+    if (overlappingModule) {
       diagnostics.push(
-        diag(codes.SYSTEM_MODULE_LOCATION_CONFLICT, "error", "system_config", locationKey, `Module '${moduleId}' duplicates location '${locationKey}' already used by '${existingModuleId}'`, {
-          module_id: moduleId,
-          expected: "unique root/dir location",
-          actual: locationKey,
-        }),
+        diag(
+          codes.SYSTEM_MODULE_PATH_CONFLICT,
+          "error",
+          "system_config",
+          modulePath,
+          `Module '${moduleId}' mount path '${modulePath}' overlaps with '${overlappingModule.module_id}' at '${overlappingModule.path}'`,
+          {
+            module_id: moduleId,
+            field: "path",
+            expected: "non-overlapping module path",
+            actual: modulePath,
+          },
+        ),
       );
     } else {
-      seenModuleLocations.set(locationKey, moduleId);
+      seenModulePaths.push({ module_id: moduleId, path: modulePath, segments: modulePathSegments });
     }
 
-    const modulePathAbs = resolve(systemRootAbs, registryEntry.root, registryEntry.dir);
+    const modulePathAbs = resolveModulePath(systemRootAbs, modulePath);
     const modulePathRel = toRepoRelative(modulePathAbs);
     const moduleStat = safeStat(modulePathAbs);
 
     if (!moduleStat) {
       diagnostics.push(
-        diag(codes.SYSTEM_MODULE_DIR_INVALID, "error", "system_config", modulePathRel, `Module '${moduleId}' directory does not exist`, {
+        diag(codes.SYSTEM_MODULE_PATH_INVALID, "error", "system_config", modulePathRel, `Module '${moduleId}' path does not exist`, {
           module_id: moduleId,
+          field: "path",
           expected: "existing directory",
           actual: "missing",
         }),
       );
     } else if (!moduleStat.isDirectory()) {
       diagnostics.push(
-        diag(codes.SYSTEM_MODULE_DIR_INVALID, "error", "system_config", modulePathRel, `Module '${moduleId}' path is not a directory`, {
+        diag(codes.SYSTEM_MODULE_PATH_INVALID, "error", "system_config", modulePathRel, `Module '${moduleId}' path is not a directory`, {
           module_id: moduleId,
+          field: "path",
           expected: "directory",
           actual: "file",
         }),
@@ -1164,6 +1148,30 @@ function validateSystemLayout(
 
 function inferredShapePath(moduleId: string, version: number): string {
   return `.als/modules/${moduleId}/v${version}.yaml`;
+}
+
+function resolveModulePath(systemRootAbs: string, modulePath: string): string {
+  return resolve(systemRootAbs, modulePath);
+}
+
+function splitModuleMountPath(modulePath: string): string[] {
+  return modulePath.split("/");
+}
+
+function modulePathsOverlap(left: string[], right: string[]): boolean {
+  return isPathPrefix(left, right) || isPathPrefix(right, left);
+}
+
+function isPathPrefix(prefix: string[], full: string[]): boolean {
+  if (prefix.length > full.length) return false;
+
+  for (let index = 0; index < prefix.length; index += 1) {
+    if (prefix[index] !== full[index]) {
+      return false;
+    }
+  }
+
+  return true;
 }
 
 function safeStat(pathAbs: string): ReturnType<typeof statSync> | null {
