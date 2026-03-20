@@ -27,6 +27,10 @@ function reservedPathDelta(root: string, relativePath: string): 0 | 1 {
   return existsSync(join(root, relativePath)) ? 0 : 1;
 }
 
+function isRootUser(): boolean {
+  return typeof process.getuid === "function" && process.getuid() === 0;
+}
+
 test.concurrent("invalid frontmatter syntax fails parsing", async () => {
   await withFixtureSandbox("discovery-parse-frontmatter", async ({ root }) => {
     await updateTextFile(root, "workspace/backlog/items/ITEM-0001.md", (current) =>
@@ -63,6 +67,7 @@ test.concurrent("reserved agent markdown files are ignored anywhere in module tr
     expect(moduleIgnoredCount(result, "experiments")).toBe(moduleIgnoredCount(baseline, "experiments") + experimentsDelta);
     expectNoModuleDiagnostic(result, "backlog", codes.PARSE_ENTITY_INFER, "AGENTS.md");
     expectNoModuleDiagnostic(result, "experiments", codes.PARSE_ENTITY_INFER, "CLAUDE.MD");
+    expectNoModuleDiagnostic(result, "experiments", codes.PARSE_MARKDOWN_EXTENSION_CASE, "CLAUDE.MD");
   });
 });
 
@@ -114,6 +119,7 @@ test.concurrent("non-reserved markdown files with uppercase extension fail clean
     const result = validateFixture(root);
     expect(result.status).toBe("fail");
     expect(result.summary.files_checked).toBe(baseline.summary.files_checked + 1);
+    expect(result.summary.files_failed).toBe(baseline.summary.files_failed + 1);
     expectModuleDiagnostic(result, "backlog", codes.PARSE_MARKDOWN_EXTENSION_CASE, "workspace/backlog/README.MD");
     expectNoModuleDiagnostic(result, "backlog", codes.PARSE_ENTITY_INFER, "README.MD");
   });
@@ -132,6 +138,7 @@ test.concurrent("record-like markdown files with uppercase extension fail before
     const result = validateFixture(root);
     expect(result.status).toBe("fail");
     expect(result.summary.files_checked).toBe(baseline.summary.files_checked + 1);
+    expect(result.summary.files_failed).toBe(baseline.summary.files_failed + 1);
     expectModuleDiagnostic(result, "backlog", codes.PARSE_MARKDOWN_EXTENSION_CASE, "ITEM-UPPER.MD");
     expectNoModuleDiagnostic(result, "backlog", codes.PARSE_ENTITY_INFER, "ITEM-UPPER.MD");
     expectNoModuleDiagnostic(result, "backlog", codes.PARSE_FRONTMATTER, "ITEM-UPPER.MD");
@@ -140,6 +147,8 @@ test.concurrent("record-like markdown files with uppercase extension fail before
 
 test.concurrent("unreadable directories fail cleanly and discovery continues", async () => {
   await withFixtureSandbox("discovery-unreadable-dir", async ({ root }) => {
+    if (isRootUser()) return;
+
     const lockedDir = join(root, "workspace/backlog/locked");
     await writePath(root, "workspace/backlog/locked/README.md", "# Hidden\n");
     await writePath(root, "workspace/backlog/README.md", "# Visible\n");

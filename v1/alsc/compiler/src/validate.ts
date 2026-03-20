@@ -1219,10 +1219,17 @@ function safeReadDir(pathAbs: string): { entries: Dirent[]; error: null } | { en
       error: null,
     };
   } catch (error) {
-    return {
-      entries: null,
-      error: error as NodeJS.ErrnoException,
-    };
+    if (error instanceof Error && "code" in error) {
+      const errorCode = (error as NodeJS.ErrnoException).code;
+      if (errorCode === "EACCES" || errorCode === "EPERM" || errorCode === "ENOENT" || errorCode === "ENOTDIR") {
+        return {
+          entries: null,
+          error: error as NodeJS.ErrnoException,
+        };
+      }
+    }
+
+    throw error;
   }
 }
 
@@ -1296,9 +1303,7 @@ function discoverMarkdownFiles(rootAbs: string, moduleId: string): MarkdownDisco
         continue;
       }
 
-      if (entry.name.endsWith(".md")) {
-        result.record_file_paths.push(fullPath);
-      }
+      result.record_file_paths.push(fullPath);
     }
   }
 
@@ -1438,6 +1443,8 @@ function buildModuleReport(
   filesIgnored: number,
   fileErrorMap: Map<string, boolean>,
 ): ModuleValidationReport {
+  // Directory discovery errors can still leave a module in status "fail" with files_failed: 0.
+  // That is intentional: the file counters remain file-based and exclude unreadable directory paths.
   const summary: ModuleValidationSummary = {
     files_checked: filesChecked,
     files_passed: filesChecked - [...fileErrorMap.values()].filter(Boolean).length,

@@ -7,7 +7,7 @@ Accepted
 ## Context
 
 - ALS v1 currently requires exact filesystem path matches against declared entity path templates such as `items/{id}.md`.
-- Reserved agent files introduced a narrow case-insensitive exception for `AGENTS.md` and `CLAUDE.md`.
+- SDR 004 introduced a narrow case-insensitive discovery exception for reserved agent files `AGENTS.md` and `CLAUDE.md`.
 - Non-reserved files with uppercase or mixed-case `.MD` extensions could disappear from discovery instead of failing validation.
 - Unreadable directories inside a module subtree could crash validation instead of producing structured diagnostics.
 
@@ -32,7 +32,7 @@ Accepted
 ## Compiler Impact
 
 - Discovery needs explicit diagnostics for unreadable directories and non-canonical non-reserved markdown extension casing.
-- Those discovery diagnostics occur in `parse` phase and use dedicated diagnostic codes.
+- Those discovery diagnostics occur in `parse` phase and use dedicated diagnostic codes `PAL-RV-PARSE-004` and `PAL-RV-PARSE-005`.
 - Non-canonical non-reserved markdown files count toward file-based validation summaries and fail those summaries.
 - Unreadable directories do not count toward file-based summaries because they are directory paths, not record file paths.
 
