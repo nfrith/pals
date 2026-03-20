@@ -4,7 +4,7 @@ dependencies: []
 
 entities:
   evaluation:
-    path: reviews/{id}.md
+    path: "{id}.md"
 
     identity:
       id_field: id
