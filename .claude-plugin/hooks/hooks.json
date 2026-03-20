@@ -1,0 +1,17 @@
+{
+  "description": "Runs ALS compiler against the affected module after file edits",
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash $CLAUDE_PLUGIN_ROOT/hooks/als-validate.sh",
+            "timeout": 15
+          }
+        ]
+      }
+    ]
+  }
+}
