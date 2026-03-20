@@ -27,7 +27,10 @@ Rules:
 - The module subtree may contain reserved non-record markdown files named `AGENTS.md` or `CLAUDE.md` at any depth
 - Matching for reserved agent files is case-insensitive, including the `.md` extension
 - Reserved agent files are ignored during ALS record validation and do not need entity path matches
+- Reserved agent files are the only case-insensitive markdown filename exception in module discovery
+- Other markdown files must use lowercase `.md`; non-reserved files like `README.MD` are invalid
 - Other markdown files in the module subtree remain subject to normal ALS discovery and validation rules
+- Validation fails cleanly if ALS cannot read a directory inside the module subtree during discovery
 - The declared `path` must exist as a directory when validating
 - No two modules may have identical or overlapping mount paths
 - Shape files are inferred at `.als/modules/{module_id}/v{version}.yaml`

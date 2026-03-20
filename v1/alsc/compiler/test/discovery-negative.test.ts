@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import { existsSync } from "node:fs";
+import { chmod } from "node:fs/promises";
 import { join } from "node:path";
 import { codes } from "../src/diagnostics.ts";
 import {
@@ -97,6 +98,61 @@ test.concurrent("non-reserved stray markdown files that match no entity are reje
     const result = validateFixture(root);
     expect(result.status).toBe("fail");
     expectModuleDiagnostic(result, "backlog", codes.PARSE_ENTITY_INFER, "workspace/backlog/README.md");
+  });
+});
+
+test.concurrent("non-reserved markdown files with uppercase extension fail cleanly", async () => {
+  await withFixtureSandbox("discovery-uppercase-markdown", async ({ root }) => {
+    const baseline = validateFixture(root);
+
+    await writePath(
+      root,
+      "workspace/backlog/README.MD",
+      "---\nid: STRAY-0002\ntitle: Uppercase\nstatus: draft\n---\n\n# Uppercase\n",
+    );
+
+    const result = validateFixture(root);
+    expect(result.status).toBe("fail");
+    expect(result.summary.files_checked).toBe(baseline.summary.files_checked + 1);
+    expectModuleDiagnostic(result, "backlog", codes.PARSE_MARKDOWN_EXTENSION_CASE, "workspace/backlog/README.MD");
+    expectNoModuleDiagnostic(result, "backlog", codes.PARSE_ENTITY_INFER, "README.MD");
+  });
+});
+
+test.concurrent("record-like markdown files with uppercase extension fail before entity inference", async () => {
+  await withFixtureSandbox("discovery-uppercase-record", async ({ root }) => {
+    const baseline = validateFixture(root);
+
+    await writePath(
+      root,
+      "workspace/backlog/items/ITEM-UPPER.MD",
+      "---\nid: ITEM-UPPER\ntitle: Uppercase\nstatus: draft\ntype: app\nowner_ref: null\npriority: 1\n---\n\n## DESCRIPTION\n\nValid body.\n\n## ACTIVITY_LOG\n\n- 2026-03-20: Created.\n",
+    );
+
+    const result = validateFixture(root);
+    expect(result.status).toBe("fail");
+    expect(result.summary.files_checked).toBe(baseline.summary.files_checked + 1);
+    expectModuleDiagnostic(result, "backlog", codes.PARSE_MARKDOWN_EXTENSION_CASE, "ITEM-UPPER.MD");
+    expectNoModuleDiagnostic(result, "backlog", codes.PARSE_ENTITY_INFER, "ITEM-UPPER.MD");
+    expectNoModuleDiagnostic(result, "backlog", codes.PARSE_FRONTMATTER, "ITEM-UPPER.MD");
+  });
+});
+
+test.concurrent("unreadable directories fail cleanly and discovery continues", async () => {
+  await withFixtureSandbox("discovery-unreadable-dir", async ({ root }) => {
+    const lockedDir = join(root, "workspace/backlog/locked");
+    await writePath(root, "workspace/backlog/locked/README.md", "# Hidden\n");
+    await writePath(root, "workspace/backlog/README.md", "# Visible\n");
+    await chmod(lockedDir, 0o000);
+
+    try {
+      const result = validateFixture(root);
+      expect(result.status).toBe("fail");
+      expectModuleDiagnostic(result, "backlog", codes.PARSE_DISCOVERY_UNREADABLE_DIR, "workspace/backlog/locked");
+      expectModuleDiagnostic(result, "backlog", codes.PARSE_ENTITY_INFER, "workspace/backlog/README.md");
+    } finally {
+      await chmod(lockedDir, 0o700);
+    }
   });
 });
 

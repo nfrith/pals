@@ -1,5 +1,5 @@
 import { basename, join, relative, resolve } from "node:path";
-import { readFileSync, readdirSync, statSync } from "node:fs";
+import { readFileSync, readdirSync, statSync, type Dirent } from "node:fs";
 import matter from "gray-matter";
 import { parse as parseYaml } from "yaml";
 import { ZodError } from "zod";
@@ -64,7 +64,9 @@ interface ModuleWorkState {
 
 interface MarkdownDiscoveryResult {
   record_file_paths: string[];
+  errored_file_paths: string[];
   ignored_file_paths: string[];
+  diagnostics: CompilerDiagnostic[];
 }
 
 export interface EffectiveEntityContract {
@@ -208,11 +210,13 @@ function loadModuleState(systemRootAbs: string, systemConfig: SystemConfig, modu
   const diagnostics: CompilerDiagnostic[] = [...shapeResult.diagnostics];
   diagnostics.push(...validateShapeContracts(context, systemConfig));
 
-  const discovery = discoverMarkdownFiles(context.module_path_abs);
+  const discovery = discoverMarkdownFiles(context.module_path_abs, context.module_id);
+  diagnostics.push(...discovery.diagnostics);
   const fileErrorMap = new Map<string, boolean>();
-  for (const fileAbs of discovery.record_file_paths) {
+  for (const fileAbs of discovery.record_file_paths.concat(discovery.errored_file_paths)) {
     fileErrorMap.set(toRepoRelative(fileAbs), false);
   }
+  markErroredFiles(fileErrorMap, discovery.diagnostics);
 
   const parsedRecords: ParsedRecord[] = [];
 
@@ -231,7 +235,7 @@ function loadModuleState(systemRootAbs: string, systemConfig: SystemConfig, modu
     module_version: registryEntry.version,
     shape_schema: context.shape.schema,
     diagnostics,
-    files_checked: discovery.record_file_paths.length,
+    files_checked: discovery.record_file_paths.length + discovery.errored_file_paths.length,
     files_ignored: discovery.ignored_file_paths.length,
     file_error_map: fileErrorMap,
     parsed_records: parsedRecords,
@@ -1208,14 +1212,53 @@ function safeStat(pathAbs: string): ReturnType<typeof statSync> | null {
   }
 }
 
-function discoverMarkdownFiles(rootAbs: string): MarkdownDiscoveryResult {
+function safeReadDir(pathAbs: string): { entries: Dirent[]; error: null } | { entries: null; error: NodeJS.ErrnoException } {
+  try {
+    return {
+      entries: readdirSync(pathAbs, { withFileTypes: true }),
+      error: null,
+    };
+  } catch (error) {
+    return {
+      entries: null,
+      error: error as NodeJS.ErrnoException,
+    };
+  }
+}
+
+function discoverMarkdownFiles(rootAbs: string, moduleId: string): MarkdownDiscoveryResult {
   const result: MarkdownDiscoveryResult = {
     record_file_paths: [],
+    errored_file_paths: [],
     ignored_file_paths: [],
+    diagnostics: [],
   };
 
   function walk(dir: string): void {
-    const entries = readdirSync(dir, { withFileTypes: true });
+    const readDirResult = safeReadDir(dir);
+    if (readDirResult.error) {
+      result.diagnostics.push(
+        diag(
+          codes.PARSE_DISCOVERY_UNREADABLE_DIR,
+          "error",
+          "parse",
+          toRepoRelative(dir),
+          `Could not read directory during discovery`,
+          {
+            module_id: moduleId,
+            expected: "readable directory",
+            actual: {
+              code: readDirResult.error.code ?? null,
+              message: readDirResult.error.message,
+            },
+            hint: "Check directory permissions and rerun validation.",
+          },
+        ),
+      );
+      return;
+    }
+
+    const entries = readDirResult.entries;
     for (const entry of entries) {
       const fullPath = join(dir, entry.name);
       if (entry.isDirectory()) {
@@ -1231,6 +1274,28 @@ function discoverMarkdownFiles(rootAbs: string): MarkdownDiscoveryResult {
         continue;
       }
 
+      if (!isMarkdownFileName(entry.name)) continue;
+
+      if (!hasCanonicalMarkdownExtension(entry.name)) {
+        result.errored_file_paths.push(fullPath);
+        result.diagnostics.push(
+          diag(
+            codes.PARSE_MARKDOWN_EXTENSION_CASE,
+            "error",
+            "parse",
+            toRepoRelative(fullPath),
+            `Non-reserved markdown files must use lowercase '.md' extension`,
+            {
+              module_id: moduleId,
+              expected: "lowercase .md extension",
+              actual: entry.name,
+              hint: "Rename the file to use lowercase '.md', or use AGENTS.md/CLAUDE.md if it is an agent instruction file.",
+            },
+          ),
+        );
+        continue;
+      }
+
       if (entry.name.endsWith(".md")) {
         result.record_file_paths.push(fullPath);
       }
@@ -1238,9 +1303,18 @@ function discoverMarkdownFiles(rootAbs: string): MarkdownDiscoveryResult {
   }
 
   walk(rootAbs);
+  result.errored_file_paths.sort();
   result.record_file_paths.sort();
   result.ignored_file_paths.sort();
   return result;
+}
+
+function isMarkdownFileName(fileName: string): boolean {
+  return fileName.toLowerCase().endsWith(".md");
+}
+
+function hasCanonicalMarkdownExtension(fileName: string): boolean {
+  return fileName.endsWith(".md");
 }
 
 function isReservedAgentMarkdownFile(fileName: string): boolean {
