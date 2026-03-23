@@ -17,6 +17,7 @@ This note captures where the ALS v1 pre-release work currently stands after the 
   - Validator output now has an explicit versioned contract.
   - Diagnostics now support machine-readable `reason` values for tooling.
   - Source-file `schema` was removed from authored ALS YAML to avoid a permanent second version knob.
+  - Versioned validator output is now in place, but output compatibility still requires explicit discipline if external tooling starts to depend on it.
 
 ## 2. Decisions Already Made
 
@@ -53,6 +54,12 @@ This note captures where the ALS v1 pre-release work currently stands after the 
 
 - There is still no actual ALS language-version upgrade toolchain.
 - There is still no first-class migration lifecycle in the language itself.
+- `declaration = presence` still means additive field and section changes act like operationally breaking rewrites until module-schema migration is real.
+- Public names are effectively API until ALS grows aliasing or other indirection:
+  - `system_id`
+  - module ids
+  - entity names
+  - section names
 - Identity-sensitive rewrites remain a real risk surface:
   - `system_id`
   - module ids
@@ -61,6 +68,7 @@ This note captures where the ALS v1 pre-release work currently stands after the 
   - path-template lineage placeholders
 - Partial validation is still not a trustworthy staged-rollout primitive.
 - Deprecation is still effectively binary because warnings are not yet a real lifecycle tool.
+- `skill` is still unresolved contract debt in `system.yaml`, separate from the migration problem.
 - The system still needs a practical answer for how far automation can go before semantic review is required.
 
 ## 5. Practical Reading Of The Current State

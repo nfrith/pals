@@ -5,29 +5,38 @@ modules:
   playbooks:
     path: operations/playbooks
     version: 1
-    skill: .claude/skills/playbooks-module/SKILL.md
+    skills:
+      - playbooks-module
 
   postmortems:
     path: operations/postmortems
     version: 1
-    skill: .claude/skills/postmortems-module/SKILL.md
+    skills:
+      - postmortems-module
 
   protocols:
     path: operations/protocols
     version: 1
-    skill: .claude/skills/protocols-module/SKILL.md
+    skills:
+      - protocols-module
 
   evaluations:
     path: governance/evaluations
     version: 1
-    skill: .claude/skills/evaluations-module/SKILL.md
+    skills:
+      - evaluations-module
 
   decisions:
     path: governance/decisions
     version: 1
-    skill: .claude/skills/decisions-module/SKILL.md
+    skills:
+      - decisions-module
 
   infra:
     path: infra
     version: 1
-    skill: .claude/skills/infra-module/SKILL.md
+    skills:
+      - provision-infra
+      - deploy-release
+      - inspect-infra
+      - maintain-infra
