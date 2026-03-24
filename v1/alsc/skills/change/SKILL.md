@@ -207,12 +207,14 @@ Create:
    - Populate every field and section completely.
    - Record `skill_paths` for the carried-forward active skill directories in `vN+1`.
    - If the module declares `skills: []`, use `skill_paths: []`.
+   - Set `primary_migration_script` to the repo-root-relative path of the primary migration artifact created in `vN+1/migrations/`.
    - Set manifest `status: staged`.
    - Do not leave unresolved questions in the manifest.
 
 5. **Always create one additional migration artifact.**
    - `MANIFEST.md` alone is invalid for `vN+1`.
    - The default extra artifact is a placeholder migration script such as `migrate_from_vN.py`.
+   - The artifact named by `primary_migration_script` is the canonical handoff target for later `migrate` work.
    - Treat script language as "best tool for the job," with Python as the default for simple placeholder stubs.
 
 6. **Capture migration intent, not execution.**
@@ -228,6 +230,7 @@ Create:
 
 - The script must clearly identify itself as a prepared migration asset, not an executed migration.
 - It may be a stub, but it must match the manifest's stated migration direction and target paths.
+- It should accept the ALS system root as its first positional argument and fail cleanly if that root or `.als/system.yaml` is missing.
 - It should fail cleanly when invoked against a missing target path.
 - It should not pretend the migration is already complete.
 

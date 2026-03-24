@@ -4,6 +4,7 @@ module_id: evaluations
 module_path: governance/evaluations
 skill_paths:
   - .als/modules/evaluations/v2/skills/evaluations-module
+primary_migration_script: .als/modules/evaluations/v2/migrations/migrate_from_v1.py
 from_version: 1
 to_version: 2
 change_class: schema_only

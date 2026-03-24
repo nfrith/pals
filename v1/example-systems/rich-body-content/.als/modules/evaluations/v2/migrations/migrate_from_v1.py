@@ -14,10 +14,37 @@ OWNER_BY_CATEGORY = {
 }
 
 
+def resolve_module_root(system_root: Path, module_id: str) -> Path:
+    system_config_path = system_root / ".als" / "system.yaml"
+    if not system_config_path.exists():
+        raise ValueError(f"expected ALS system root with .als/system.yaml, got: {system_root}")
+
+    in_modules = False
+    in_target = False
+
+    for raw_line in system_config_path.read_text().splitlines():
+        if raw_line == "modules:":
+            in_modules = True
+            continue
+
+        if not in_modules:
+            continue
+
+        if raw_line.startswith("  ") and not raw_line.startswith("    "):
+            in_target = raw_line.strip() == f"{module_id}:"
+            continue
+
+        if in_target and raw_line.startswith("    path: "):
+            module_path = raw_line.split(": ", 1)[1]
+            return system_root / module_path
+
+    raise ValueError(f"module '{module_id}' is missing from {system_config_path}")
+
+
 def split_frontmatter(text: str) -> tuple[list[str], list[str]]:
     lines = text.splitlines()
     if len(lines) < 3 or lines[0] != "---":
-      raise ValueError("record is missing YAML frontmatter start fence")
+        raise ValueError("record is missing YAML frontmatter start fence")
 
     try:
         closing_index = lines.index("---", 1)
@@ -98,15 +125,23 @@ def migrate_record(path: Path) -> bool:
 
 
 def main(argv: list[str]) -> int:
-    root = Path(argv[1]) if len(argv) > 1 else Path("governance/evaluations")
+    system_root = Path(argv[1]) if len(argv) > 1 else Path(".")
+
+    try:
+        root = resolve_module_root(system_root, "evaluations")
+    except ValueError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+
     if not root.exists():
-        print(f"error: path does not exist: {root}", file=sys.stderr)
+        print(f"error: module path does not exist: {root}", file=sys.stderr)
         return 1
 
     changed = 0
     for record_path in sorted(root.glob("*.md")):
         changed += int(migrate_record(record_path))
 
+    print(f"system root: {system_root.resolve()}")
     print(f"done: migrated {changed} record(s)")
     return 0
 

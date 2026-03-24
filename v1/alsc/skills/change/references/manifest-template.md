@@ -14,6 +14,7 @@ It does not imply that live records or `.als/system.yaml` have already been migr
 | `module_id` | string | yes | must match the ALS module id |
 | `module_path` | string | yes | live module data path from `.als/system.yaml` |
 | `skill_paths` | string[] | yes | active `vN+1` skill bundle paths carried or authored by this change; may be empty |
+| `primary_migration_script` | string | yes | repo-root-relative path to the canonical executable migration artifact under `.als/modules/<module_id>/v<to>/migrations/` |
 | `from_version` | integer | yes | active module version before cutover |
 | `to_version` | integer | yes | must equal `from_version + 1` |
 | `change_class` | enum | yes | `logic_only` \| `schema_only` \| `schema_and_logic` |
@@ -31,6 +32,7 @@ module_id: <module_id>
 module_path: <module-data-path>
 skill_paths:
   - .als/modules/<module_id>/v<to>/skills/<skill-id>
+primary_migration_script: .als/modules/<module_id>/v<to>/migrations/migrate_from_v<from>.py
 from_version: <int>
 to_version: <int>
 change_class: <logic_only|schema_only|schema_and_logic>
@@ -86,6 +88,7 @@ Author these sections in this exact order:
 ## Authoring Rules
 
 - `change` authors this manifest from scratch for `vN+1`; it does not copy the previous manifest.
+- `primary_migration_script` must point at a file inside the target bundle's `migrations/` directory.
 - `status: staged` means the next bundle is prepared and committed but the live system has not cut over.
 - `status: migrated` is reserved for later migration tooling once live records and the active version have actually moved.
 - All ambiguities must be resolved before the manifest is written.
