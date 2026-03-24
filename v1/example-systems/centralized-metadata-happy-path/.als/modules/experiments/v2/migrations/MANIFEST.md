@@ -2,7 +2,8 @@
 manifest_id: MUT-experiments-v1-to-v2-20260324-001
 module_id: experiments
 module_path: workspace/experiments
-skill_path: .als/modules/experiments/v2/skills/experiments-module
+skill_paths:
+  - .als/modules/experiments/v2/skills/experiments-module
 from_version: 1
 to_version: 2
 change_class: schema_only
