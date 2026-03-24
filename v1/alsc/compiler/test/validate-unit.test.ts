@@ -177,5 +177,5 @@ test("system config schema rejects duplicate skill ids inside one module", () =>
     throw new Error("Expected duplicate skill ids to fail schema validation");
   }
 
-  expect(result.error.issues.some((issue) => issue.path.join(".") === "modules.backlog.skills")).toBe(true);
+  expect(result.error.issues.some((issue) => issue.path.join(".") === "modules.backlog.skills.1")).toBe(true);
 });

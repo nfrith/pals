@@ -1,5 +1,7 @@
 # ALS v1 Current State And Next Steps
 
+This note is a point-in-time pre-release snapshot captured on 2026-03-24. It should not be maintained as a living status document. As the referenced work lands elsewhere and the open items are resolved, this note should be deleted rather than updated in place.
+
 This note captures where the ALS v1 pre-release work currently stands after the production-evolution review, the migration-model discussion, and the first round of compiler/spec changes.
 
 ---
@@ -68,7 +70,7 @@ This note captures where the ALS v1 pre-release work currently stands after the 
   - path-template lineage placeholders
 - Partial validation is still not a trustworthy staged-rollout primitive.
 - Deprecation is still effectively binary because warnings are not yet a real lifecycle tool.
-- `skill` is still unresolved contract debt in `system.yaml`, separate from the migration problem.
+- Skill bundles are now part of the ALS-authored source contract, but the broader lifecycle around skill projection, migration, and automation is still unfinished.
 - The system still needs a practical answer for how far automation can go before semantic review is required.
 
 ## 5. Practical Reading Of The Current State

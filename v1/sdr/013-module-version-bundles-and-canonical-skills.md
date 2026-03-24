@@ -20,7 +20,9 @@ Accepted
 - Skill ids use the same kebab-case slug grammar as module ids and map directly to directory names under `vN/skills/`.
 - Active skill entrypoints live at `.als/modules/<module_id>/vN/skills/<skill_id>/SKILL.md`.
 - Extra files inside a listed skill directory are allowed.
+- Only listed skill directories may appear directly under the active `vN/skills/` directory.
 - Unlisted skill directories under the active `vN/skills/` directory are invalid.
+- Loose non-directory entries at the active `vN/skills/` root are invalid.
 - A module declared at active `version: N` must have contiguous version-bundle history from `v1` through `vN`.
 - Every bundle `vK` where `K > 1` must contain inbound migration assets at `vK/migrations/`.
 - Required migration assets for `vK/migrations/` are:
@@ -44,6 +46,7 @@ Accepted
 - Rejected: flat active shape lookup at `.als/modules/<module_id>/vN.yaml`.
 - Rejected: gaps in required active version history such as `v1` and `v3` without `v2`.
 - Rejected: unlisted skill directories inside the active `skills/` directory.
+- Rejected: loose non-directory entries inside the active `skills/` directory root.
 - Rejected: treating harness projection directories as the canonical authored source of module skills.
 
 ## Compiler Impact

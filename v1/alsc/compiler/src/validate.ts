@@ -1544,6 +1544,22 @@ function validateActiveModuleSkills(
     }
   }
 
+  const skillsDir = safeReadDir(skillsPathAbs);
+  if (skillsDir.error) {
+    return diagnostics.concat(
+      diag(codes.SYSTEM_MODULE_SKILLS_INVALID, "error", "system_config", skillsPathRel, `Could not read active skills directory for module '${moduleId}'`, {
+        module_id: moduleId,
+        reason: reasons.SYSTEM_SKILLS_DIR_UNREADABLE,
+        expected: "readable directory",
+        actual: {
+          code: skillsDir.error.code ?? null,
+          message: skillsDir.error.message,
+        },
+        hint: "Check file permissions and directory structure for the active skills bundle.",
+      }),
+    );
+  }
+
   const expectedSkillIds = new Set(skills);
 
   for (const skillId of skills) {
@@ -1581,23 +1597,6 @@ function validateActiveModuleSkills(
   }
 
   if (!skillsStat || !skillsStat.isDirectory()) {
-    return diagnostics;
-  }
-
-  const skillsDir = safeReadDir(skillsPathAbs);
-  if (skillsDir.error) {
-    diagnostics.push(
-      diag(codes.SYSTEM_MODULE_SKILLS_INVALID, "error", "system_config", skillsPathRel, `Could not read active skills directory for module '${moduleId}'`, {
-        module_id: moduleId,
-        reason: reasons.SYSTEM_SKILLS_DIR_MISSING,
-        expected: "readable directory",
-        actual: {
-          code: skillsDir.error.code ?? null,
-          message: skillsDir.error.message,
-        },
-        hint: "Check file permissions and directory structure for the active skills bundle.",
-      }),
-    );
     return diagnostics;
   }
 
@@ -1955,7 +1954,9 @@ function parseYamlFile<T>(
         }),
       ),
     )
-    : collectRemovedSourceSchemaDiagnostics(raw, phase, fileRel, module_id);
+    : collectRemovedSourceSchemaDiagnostics(raw, phase, fileRel, module_id).concat(
+      collectRemovedSystemSkillDiagnostics(raw, fileRel),
+    );
   const parsed = schema.safeParse(raw);
   if (parsed.success && rawDiagnostics.length === 0) {
     return {
@@ -2035,8 +2036,6 @@ function resolveParseIssueReason(
     && issue.code === "custom"
     && issue.path[0] === "modules"
     && issue.path[2] === "skills"
-    && typeof issue.message === "string"
-    && issue.message.includes("duplicate skill")
   ) {
     return reasons.SYSTEM_SKILLS_DUPLICATE;
   }
@@ -2098,6 +2097,36 @@ function collectRemovedSourceSchemaDiagnostics(
       },
     ),
   ];
+}
+
+function collectRemovedSystemSkillDiagnostics(
+  raw: unknown,
+  fileRel: string,
+): CompilerDiagnostic[] {
+  if (!isPlainObject(raw) || !isPlainObject(raw.modules)) {
+    return [];
+  }
+
+  const diagnostics: CompilerDiagnostic[] = [];
+
+  for (const [moduleId, moduleConfig] of Object.entries(raw.modules)) {
+    if (!isPlainObject(moduleConfig) || !Object.hasOwn(moduleConfig, "skill")) {
+      continue;
+    }
+
+    diagnostics.push(
+      diag(codes.SYSTEM_INVALID, "error", "system_config", fileRel, "Module source field 'skill' has been removed from ALS v1 system configuration", {
+        module_id: moduleId,
+        field: `modules.${moduleId}.skill`,
+        reason: reasons.SYSTEM_SKILL_REMOVED,
+        expected: "module config using 'skills' array",
+        actual: moduleConfig.skill,
+        hint: "Replace 'skill' with 'skills: [<skill-id>]' and author the skill bundle under the active version directory.",
+      }),
+    );
+  }
+
+  return diagnostics;
 }
 
 function validateAlsVersionSupport(

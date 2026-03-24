@@ -523,14 +523,18 @@ export const moduleShapeSchema = z.object({
   }
 });
 
+const systemModuleConfigSchema = z.object({
+  path: moduleMountPath,
+  version: positiveInt,
+  skills: z.array(entityName),
+});
+
+export type SystemModuleConfig = z.infer<typeof systemModuleConfigSchema>;
+
 export const systemConfigSchema = z.object({
   als_version: positiveInt,
   system_id: nonEmptyString,
-  modules: z.record(entityName, z.object({
-    path: moduleMountPath,
-    version: positiveInt,
-    skills: z.array(entityName),
-  })),
+  modules: z.record(entityName, systemModuleConfigSchema),
 }).superRefine((value, ctx) => {
   const seenModulePaths: Array<{ module_id: string; path: string; segments: string[] }> = [];
 
@@ -557,16 +561,16 @@ export const systemConfigSchema = z.object({
     });
 
     const seenSkills = new Set<string>();
-    for (const skillId of moduleConfig.skills) {
+    moduleConfig.skills.forEach((skillId, skillIndex) => {
       if (seenSkills.has(skillId)) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
           message: `duplicate skill ${skillId}`,
-          path: ["modules", moduleId, "skills"],
+          path: ["modules", moduleId, "skills", skillIndex],
         });
       }
       seenSkills.add(skillId);
-    }
+    });
   }
 });
 

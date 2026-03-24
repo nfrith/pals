@@ -560,7 +560,7 @@ Rules:
 
 ## Naming rules and conventions
 
-- Module ids and entity names are compiler-enforced single-segment slugs matching `^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$`
+- Module ids, entity names, and skill ids are compiler-enforced single-segment slugs matching `^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$`
 - Module mount paths are slash-separated slug segments using that same segment regex
 - Field names are compiler-enforced and must match `^[a-z][a-z0-9_]*$`
 - `system_id` can be any non-empty string; `kebab-case` is recommended but not enforced

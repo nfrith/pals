@@ -37,19 +37,19 @@ The shapes in this fixture use:
 
 ## Skill Bundle Paint
 
-- This fixture also paints a proposed ALS-native module bundle layout under `.als/modules/<module>/v1/`.
+- This fixture also demonstrates the ALS-native module bundle layout under `.als/modules/<module>/v1/`.
 - Each module version is treated as a bundle that can hold both `shape.yaml` and `skills/`.
-- `system.yaml` now lists module-local skill ids rather than harness-specific file paths.
+- `system.yaml` lists module-local skill ids rather than harness-specific file paths.
 - Each skill lives in its own directory with `SKILL.md` as the entrypoint.
 - The directory form is intentional: skills may later grow supporting files such as `references/`, `assets/`, `scripts/`, or archived notes without changing the top-level module contract.
 - Harness folders like `.claude/` are treated as downstream projections, not the canonical source of module skills.
 
 ## Module v2 Paint
 
-- The `evaluations` module now also demonstrates a completed `v1 -> v2` cutover.
+- The `evaluations` module also demonstrates a completed `v1 -> v2` cutover.
 - `system.yaml` points `evaluations` at `version: 2`, so the live system snapshot is post-migration rather than merely prepared-for-migration.
 - `.als/modules/evaluations/v2/` carries the next shape, the unchanged skill bundle, and a `migrations/` directory owned by the `v2` bundle.
-- The painted schema change is intentionally modest:
+- The schema change shown here is intentionally modest:
   - frontmatter `decision` becomes `outcome`
   - a required `owner` field is introduced
   - the final body section name becomes `OUTCOME`
