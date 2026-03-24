@@ -43,3 +43,14 @@ The shapes in this fixture use:
 - Each skill lives in its own directory with `SKILL.md` as the entrypoint.
 - The directory form is intentional: skills may later grow supporting files such as `references/`, `assets/`, `scripts/`, or archived notes without changing the top-level module contract.
 - Harness folders like `.claude/` are treated as downstream projections, not the canonical source of module skills.
+
+## Module v2 Paint
+
+- The `evaluations` module now also demonstrates a completed `v1 -> v2` cutover.
+- `system.yaml` points `evaluations` at `version: 2`, so the live system snapshot is post-migration rather than merely prepared-for-migration.
+- `.als/modules/evaluations/v2/` carries the next shape, the unchanged skill bundle, and a `migrations/` directory owned by the `v2` bundle.
+- The painted schema change is intentionally modest:
+  - frontmatter `decision` becomes `outcome`
+  - a required `owner` field is introduced
+  - the final body section name becomes `OUTCOME`
+- The live evaluation records under `governance/evaluations/` are already shown in their migrated `v2` form.

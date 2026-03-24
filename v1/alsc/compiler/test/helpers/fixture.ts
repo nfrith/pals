@@ -112,7 +112,7 @@ export async function updateShapeYaml(
   version: number,
   transform: (current: Record<string, unknown>) => void | Promise<void>,
 ): Promise<void> {
-  await updateYamlFile(root, `.als/modules/${moduleId}/v${version}.yaml`, transform);
+  await updateYamlFile(root, `.als/modules/${moduleId}/v${version}/shape.yaml`, transform);
 }
 
 export async function updateRecord(

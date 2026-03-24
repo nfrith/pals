@@ -17,7 +17,7 @@ test.concurrent("stale top-level schema fields in shape files are rejected", asy
 
     const result = validateFixture(root);
     expect(result.status).toBe("fail");
-    const diagnostic = expectModuleDiagnostic(result, "backlog", codes.SHAPE_INVALID, ".als/modules/backlog/v1.yaml");
+    const diagnostic = expectModuleDiagnostic(result, "backlog", codes.SHAPE_INVALID, ".als/modules/backlog/v1/shape.yaml");
     expect(diagnostic.reason).toBe(reasons.MODULE_SHAPE_SCHEMA_REMOVED);
   });
 });
@@ -46,11 +46,11 @@ test.concurrent("stale schema diagnostics do not suppress other shape parse erro
 
 test.concurrent("malformed shape yaml fails parsing cleanly", async () => {
   await withFixtureSandbox("shape-yaml-parse-error", async ({ root }) => {
-    await updateTextFile(root, ".als/modules/backlog/v1.yaml", () => "dependencies: [broken\n");
+    await updateTextFile(root, ".als/modules/backlog/v1/shape.yaml", () => "dependencies: [broken\n");
 
     const result = validateFixture(root);
     expect(result.status).toBe("fail");
-    const diagnostic = expectModuleDiagnostic(result, "backlog", codes.SHAPE_INVALID, ".als/modules/backlog/v1.yaml");
+    const diagnostic = expectModuleDiagnostic(result, "backlog", codes.SHAPE_INVALID, ".als/modules/backlog/v1/shape.yaml");
     expect(diagnostic.message).toContain("Failed to parse YAML");
   });
 });
@@ -64,7 +64,7 @@ test.concurrent("duplicate dependencies are rejected", async () => {
 
     const result = validateFixture(root);
     expect(result.status).toBe("fail");
-    expectModuleDiagnostic(result, "experiments", codes.SHAPE_INVALID, ".als/modules/experiments/v2.yaml");
+    expectModuleDiagnostic(result, "experiments", codes.SHAPE_INVALID, ".als/modules/experiments/v2/shape.yaml");
   });
 });
 
@@ -77,7 +77,7 @@ test.concurrent("dependencies must point at declared modules", async () => {
 
     const result = validateFixture(root);
     expect(result.status).toBe("fail");
-    expectModuleDiagnostic(result, "backlog", codes.SHAPE_CONTRACT_INVALID, ".als/modules/backlog/v1.yaml");
+    expectModuleDiagnostic(result, "backlog", codes.SHAPE_CONTRACT_INVALID, ".als/modules/backlog/v1/shape.yaml");
   });
 });
 
@@ -92,7 +92,7 @@ test.concurrent("entity shapes must declare an id field", async () => {
 
     const result = validateFixture(root);
     expect(result.status).toBe("fail");
-    expectModuleDiagnostic(result, "backlog", codes.SHAPE_INVALID, ".als/modules/backlog/v1.yaml");
+    expectModuleDiagnostic(result, "backlog", codes.SHAPE_INVALID, ".als/modules/backlog/v1/shape.yaml");
   });
 });
 
@@ -106,7 +106,7 @@ test.concurrent("id fields cannot allow null", async () => {
 
     const result = validateFixture(root);
     expect(result.status).toBe("fail");
-    expectModuleDiagnostic(result, "backlog", codes.SHAPE_INVALID, ".als/modules/backlog/v1.yaml");
+    expectModuleDiagnostic(result, "backlog", codes.SHAPE_INVALID, ".als/modules/backlog/v1/shape.yaml");
   });
 });
 
@@ -119,7 +119,7 @@ test.concurrent("entity paths must include the id placeholder", async () => {
 
     const result = validateFixture(root);
     expect(result.status).toBe("fail");
-    expectModuleDiagnostic(result, "backlog", codes.SHAPE_INVALID, ".als/modules/backlog/v1.yaml");
+    expectModuleDiagnostic(result, "backlog", codes.SHAPE_INVALID, ".als/modules/backlog/v1/shape.yaml");
   });
 });
 
@@ -134,7 +134,7 @@ test.concurrent("duplicate variant section names are rejected", async () => {
 
     const result = validateFixture(root);
     expect(result.status).toBe("fail");
-    expectModuleDiagnostic(result, "backlog", codes.SHAPE_INVALID, ".als/modules/backlog/v1.yaml");
+    expectModuleDiagnostic(result, "backlog", codes.SHAPE_INVALID, ".als/modules/backlog/v1/shape.yaml");
   });
 });
 
@@ -151,7 +151,7 @@ test.concurrent("discriminator fields must be non-null enums", async () => {
 
     const result = validateFixture(root);
     expect(result.status).toBe("fail");
-    expectModuleDiagnostic(result, "backlog", codes.SHAPE_INVALID, ".als/modules/backlog/v1.yaml");
+    expectModuleDiagnostic(result, "backlog", codes.SHAPE_INVALID, ".als/modules/backlog/v1/shape.yaml");
   });
 });
 
@@ -165,7 +165,7 @@ test.concurrent("legacy required keys on fields are rejected", async () => {
 
     const result = validateFixture(root);
     expect(result.status).toBe("fail");
-    expectModuleDiagnostic(result, "backlog", codes.SHAPE_INVALID, ".als/modules/backlog/v1.yaml");
+    expectModuleDiagnostic(result, "backlog", codes.SHAPE_INVALID, ".als/modules/backlog/v1/shape.yaml");
   });
 });
 
@@ -179,7 +179,7 @@ test.concurrent("discriminator fields cannot allow null", async () => {
 
     const result = validateFixture(root);
     expect(result.status).toBe("fail");
-    expectModuleDiagnostic(result, "backlog", codes.SHAPE_INVALID, ".als/modules/backlog/v1.yaml");
+    expectModuleDiagnostic(result, "backlog", codes.SHAPE_INVALID, ".als/modules/backlog/v1/shape.yaml");
   });
 });
 
@@ -193,7 +193,7 @@ test.concurrent("variant keys must match the discriminator enum values", async (
 
     const result = validateFixture(root);
     expect(result.status).toBe("fail");
-    expectModuleDiagnostic(result, "backlog", codes.SHAPE_INVALID, ".als/modules/backlog/v1.yaml");
+    expectModuleDiagnostic(result, "backlog", codes.SHAPE_INVALID, ".als/modules/backlog/v1/shape.yaml");
   });
 });
 
@@ -210,7 +210,7 @@ test.concurrent("extra variant keys outside the discriminator enum are rejected"
 
     const result = validateFixture(root);
     expect(result.status).toBe("fail");
-    expectModuleDiagnostic(result, "backlog", codes.SHAPE_INVALID, ".als/modules/backlog/v1.yaml");
+    expectModuleDiagnostic(result, "backlog", codes.SHAPE_INVALID, ".als/modules/backlog/v1/shape.yaml");
   });
 });
 
@@ -228,7 +228,7 @@ test.concurrent("variant fields cannot collide with root fields", async () => {
 
     const result = validateFixture(root);
     expect(result.status).toBe("fail");
-    expectModuleDiagnostic(result, "backlog", codes.SHAPE_INVALID, ".als/modules/backlog/v1.yaml");
+    expectModuleDiagnostic(result, "backlog", codes.SHAPE_INVALID, ".als/modules/backlog/v1/shape.yaml");
   });
 });
 
@@ -243,7 +243,7 @@ test.concurrent("legacy required keys on inline sections are rejected", async ()
 
     const result = validateFixture(root);
     expect(result.status).toBe("fail");
-    expectModuleDiagnostic(result, "people", codes.SHAPE_INVALID, ".als/modules/people/v1.yaml");
+    expectModuleDiagnostic(result, "people", codes.SHAPE_INVALID, ".als/modules/people/v1/shape.yaml");
   });
 });
 
@@ -257,7 +257,7 @@ test.concurrent("legacy required keys on section definitions are rejected", asyn
 
     const result = validateFixture(root);
     expect(result.status).toBe("fail");
-    expectModuleDiagnostic(result, "backlog", codes.SHAPE_INVALID, ".als/modules/backlog/v1.yaml");
+    expectModuleDiagnostic(result, "backlog", codes.SHAPE_INVALID, ".als/modules/backlog/v1/shape.yaml");
   });
 });
 
@@ -272,7 +272,7 @@ test.concurrent("variant sections must reference declared section definitions", 
 
     const result = validateFixture(root);
     expect(result.status).toBe("fail");
-    expectModuleDiagnostic(result, "backlog", codes.SHAPE_INVALID, ".als/modules/backlog/v1.yaml");
+    expectModuleDiagnostic(result, "backlog", codes.SHAPE_INVALID, ".als/modules/backlog/v1/shape.yaml");
   });
 });
 
@@ -286,7 +286,7 @@ test.concurrent("parent entities must exist in the same shape file", async () =>
 
     const result = validateFixture(root);
     expect(result.status).toBe("fail");
-    expectModuleDiagnostic(result, "experiments", codes.SHAPE_INVALID, ".als/modules/experiments/v2.yaml");
+    expectModuleDiagnostic(result, "experiments", codes.SHAPE_INVALID, ".als/modules/experiments/v2/shape.yaml");
   });
 });
 
@@ -300,7 +300,7 @@ test.concurrent("parent ref fields must be declared", async () => {
 
     const result = validateFixture(root);
     expect(result.status).toBe("fail");
-    expectModuleDiagnostic(result, "experiments", codes.SHAPE_INVALID, ".als/modules/experiments/v2.yaml");
+    expectModuleDiagnostic(result, "experiments", codes.SHAPE_INVALID, ".als/modules/experiments/v2/shape.yaml");
   });
 });
 
@@ -317,7 +317,7 @@ test.concurrent("parent ref fields must use ref type", async () => {
 
     const result = validateFixture(root);
     expect(result.status).toBe("fail");
-    expectModuleDiagnostic(result, "experiments", codes.SHAPE_INVALID, ".als/modules/experiments/v2.yaml");
+    expectModuleDiagnostic(result, "experiments", codes.SHAPE_INVALID, ".als/modules/experiments/v2/shape.yaml");
   });
 });
 
@@ -331,7 +331,7 @@ test.concurrent("parent ref fields must stay non-null", async () => {
 
     const result = validateFixture(root);
     expect(result.status).toBe("fail");
-    expectModuleDiagnostic(result, "experiments", codes.SHAPE_INVALID, ".als/modules/experiments/v2.yaml");
+    expectModuleDiagnostic(result, "experiments", codes.SHAPE_INVALID, ".als/modules/experiments/v2/shape.yaml");
   });
 });
 
@@ -343,7 +343,7 @@ test.concurrent("cross-module ref targets must have declared dependencies", asyn
 
     const result = validateFixture(root);
     expect(result.status).toBe("fail");
-    expectModuleDiagnostic(result, "experiments", codes.SHAPE_CONTRACT_INVALID, ".als/modules/experiments/v2.yaml");
+    expectModuleDiagnostic(result, "experiments", codes.SHAPE_CONTRACT_INVALID, ".als/modules/experiments/v2/shape.yaml");
   });
 });
 
@@ -355,7 +355,7 @@ test.concurrent("cross-module ref lists must also have declared dependencies", a
 
     const result = validateFixture(root);
     expect(result.status).toBe("fail");
-    expectModuleDiagnostic(result, "backlog", codes.SHAPE_CONTRACT_INVALID, ".als/modules/backlog/v1.yaml");
+    expectModuleDiagnostic(result, "backlog", codes.SHAPE_CONTRACT_INVALID, ".als/modules/backlog/v1/shape.yaml");
   });
 });
 
@@ -377,7 +377,7 @@ test.concurrent("variant-local ref fields must also have declared dependencies",
 
     const result = validateFixture(root);
     expect(result.status).toBe("fail");
-    expectModuleDiagnostic(result, "backlog", codes.SHAPE_CONTRACT_INVALID, ".als/modules/backlog/v1.yaml");
+    expectModuleDiagnostic(result, "backlog", codes.SHAPE_CONTRACT_INVALID, ".als/modules/backlog/v1/shape.yaml");
   });
 });
 
@@ -396,7 +396,7 @@ test.concurrent("table blocks must use a supported syntax", async () => {
 
     const result = validateFixture(root);
     expect(result.status).toBe("fail");
-    expectModuleDiagnostic(result, "research", codes.SHAPE_INVALID, ".als/modules/research/v1.yaml");
+    expectModuleDiagnostic(result, "research", codes.SHAPE_INVALID, ".als/modules/research/v1/shape.yaml");
   });
 });
 
@@ -415,6 +415,6 @@ test.concurrent("table blocks must declare syntax explicitly", async () => {
 
     const result = validateFixture(root);
     expect(result.status).toBe("fail");
-    expectModuleDiagnostic(result, "planning", codes.SHAPE_INVALID, ".als/modules/planning/v1.yaml");
+    expectModuleDiagnostic(result, "planning", codes.SHAPE_INVALID, ".als/modules/planning/v1/shape.yaml");
   });
 });

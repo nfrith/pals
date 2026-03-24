@@ -5,24 +5,29 @@ modules:
   people:
     path: workspace/people
     version: 1
-    skill: .claude/skills/people-module/SKILL.md
+    skills:
+      - people-module
 
   backlog:
     path: workspace/backlog
     version: 1
-    skill: .claude/skills/backlog-module/SKILL.md
+    skills:
+      - backlog-module
 
   experiments:
     path: workspace/experiments
     version: 2
-    skill: .claude/skills/experiments-module/SKILL.md
+    skills:
+      - experiments-module
 
   client-registry:
     path: clients/registry
     version: 1
-    skill: .claude/skills/client-registry-module/SKILL.md
+    skills:
+      - client-registry-module
 
   dotfiles:
     path: dotfiles
     version: 1
-    skill: .claude/skills/dotfiles-module/SKILL.md
+    skills:
+      - dotfiles-module

@@ -5,6 +5,8 @@ import { codes, reasons } from "../src/diagnostics.ts";
 import {
   expectSystemDiagnostic,
   mkdirPath,
+  removePath,
+  renamePath,
   updateSystemYaml,
   validateFixture,
   withFixtureSandbox,
@@ -116,13 +118,13 @@ test.concurrent("missing inferred shape files are rejected", async () => {
 
     const result = validateFixture(root);
     expect(result.status).toBe("fail");
-    expectSystemDiagnostic(result, codes.SHAPE_FILE_MISSING, ".als/modules/client-registry/v9.yaml");
+    expectSystemDiagnostic(result, codes.SYSTEM_MODULE_BUNDLE_INVALID, ".als/modules/client-registry/v9");
   });
 });
 
 test.concurrent("inferred shape paths must be files", async () => {
   await withFixtureSandbox("system-shape-path-file", async ({ root }) => {
-    await mkdirPath(root, ".als/modules/client-registry/v9.yaml");
+    await mkdirPath(root, ".als/modules/client-registry/v9/shape.yaml");
     await updateSystemYaml(root, (config) => {
       const modules = config.modules as Record<string, Record<string, unknown>>;
       modules["client-registry"].version = 9;
@@ -130,7 +132,7 @@ test.concurrent("inferred shape paths must be files", async () => {
 
     const result = validateFixture(root);
     expect(result.status).toBe("fail");
-    expectSystemDiagnostic(result, codes.SHAPE_FILE_MISSING, ".als/modules/client-registry/v9.yaml");
+    expectSystemDiagnostic(result, codes.SHAPE_FILE_MISSING, ".als/modules/client-registry/v9/shape.yaml");
   });
 });
 
@@ -221,6 +223,119 @@ test.concurrent("stale schema diagnostics do not suppress other system parse err
           && diagnostic.field === "als_version",
       ),
     ).toBe(true);
+  });
+});
+
+test.concurrent("singular skill is rejected now that system config requires skills arrays", async () => {
+  await withFixtureSandbox("system-singular-skill-removed", async ({ root }) => {
+    await updateSystemYaml(root, (config) => {
+      const modules = config.modules as Record<string, Record<string, unknown>>;
+      modules.backlog.skill = "backlog-module";
+      delete modules.backlog.skills;
+    });
+
+    const result = validateFixture(root);
+    expect(result.status).toBe("fail");
+    const diagnostic = expectSystemDiagnostic(result, codes.SYSTEM_INVALID, ".als/system.yaml");
+    expect(diagnostic.field).toBe("modules.backlog.skills");
+  });
+});
+
+test.concurrent("modules may declare empty skills arrays and omit the skills directory", async () => {
+  await withFixtureSandbox("system-empty-skills", async ({ root }) => {
+    await updateSystemYaml(root, (config) => {
+      const modules = config.modules as Record<string, Record<string, unknown>>;
+      modules.backlog.skills = [];
+    });
+    await removePath(root, ".als/modules/backlog/v1/skills");
+
+    const result = validateFixture(root);
+    expect(result.status).toBe("pass");
+  });
+});
+
+test.concurrent("gaps in active module version history are rejected", async () => {
+  await withFixtureSandbox("system-version-history-gap", async ({ root }) => {
+    await renamePath(root, ".als/modules/experiments/v2", ".als/modules/experiments/v3");
+    await updateSystemYaml(root, (config) => {
+      const modules = config.modules as Record<string, Record<string, unknown>>;
+      modules.experiments.version = 3;
+    });
+
+    const result = validateFixture(root);
+    expect(result.status).toBe("fail");
+    const diagnostic = expectSystemDiagnostic(result, codes.SYSTEM_MODULE_BUNDLE_INVALID, ".als/modules/experiments/v2");
+    expect(diagnostic.reason).toBe(reasons.SYSTEM_MODULE_BUNDLE_MISSING);
+  });
+});
+
+test.concurrent("future staged version bundles above the active version are ignored", async () => {
+  await withFixtureSandbox("system-future-version-staged", async ({ root }) => {
+    await mkdirPath(root, ".als/modules/experiments/v3");
+    await writePath(root, ".als/modules/experiments/v3/README.md", "staged future bundle");
+
+    const result = validateFixture(root);
+    expect(result.status).toBe("pass");
+  });
+});
+
+test.concurrent("missing migration directories are rejected for active versions above v1", async () => {
+  await withFixtureSandbox("system-migration-dir-missing", async ({ root }) => {
+    await removePath(root, ".als/modules/experiments/v2/migrations");
+
+    const result = validateFixture(root);
+    expect(result.status).toBe("fail");
+    const diagnostic = expectSystemDiagnostic(result, codes.SYSTEM_MODULE_MIGRATIONS_INVALID, ".als/modules/experiments/v2/migrations");
+    expect(diagnostic.reason).toBe(reasons.SYSTEM_MIGRATIONS_DIR_MISSING);
+  });
+});
+
+test.concurrent("missing migration manifests are rejected", async () => {
+  await withFixtureSandbox("system-migration-manifest-missing", async ({ root }) => {
+    await removePath(root, ".als/modules/experiments/v2/migrations/MANIFEST.md");
+
+    const result = validateFixture(root);
+    expect(result.status).toBe("fail");
+    const diagnostic = expectSystemDiagnostic(result, codes.SYSTEM_MODULE_MIGRATIONS_INVALID, ".als/modules/experiments/v2/migrations/MANIFEST.md");
+    expect(diagnostic.reason).toBe(reasons.SYSTEM_MIGRATION_MANIFEST_MISSING);
+  });
+});
+
+test.concurrent("migration bundles must include an artifact besides MANIFEST.md", async () => {
+  await withFixtureSandbox("system-migration-artifact-missing", async ({ root }) => {
+    await removePath(root, ".als/modules/experiments/v2/migrations/migrate_from_v1.py");
+
+    const result = validateFixture(root);
+    expect(result.status).toBe("fail");
+    const diagnostic = expectSystemDiagnostic(result, codes.SYSTEM_MODULE_MIGRATIONS_INVALID, ".als/modules/experiments/v2/migrations");
+    expect(diagnostic.reason).toBe(reasons.SYSTEM_MIGRATION_ASSET_MISSING);
+  });
+});
+
+test.concurrent("listed skills must provide a SKILL.md entrypoint", async () => {
+  await withFixtureSandbox("system-skill-entrypoint-missing", async ({ root }) => {
+    await removePath(root, ".als/modules/backlog/v1/skills/backlog-module/SKILL.md");
+
+    const result = validateFixture(root);
+    expect(result.status).toBe("fail");
+    const diagnostic = expectSystemDiagnostic(result, codes.SYSTEM_MODULE_SKILLS_INVALID, ".als/modules/backlog/v1/skills/backlog-module/SKILL.md");
+    expect(diagnostic.reason).toBe(reasons.SYSTEM_SKILL_ENTRY_MISSING);
+  });
+});
+
+test.concurrent("unlisted skill directories in the active bundle are rejected", async () => {
+  await withFixtureSandbox("system-unlisted-skill-dir", async ({ root }) => {
+    await mkdirPath(root, ".als/modules/backlog/v1/skills/archive-module");
+    await writePath(
+      root,
+      ".als/modules/backlog/v1/skills/archive-module/SKILL.md",
+      "---\nname: archive-module\ndescription: extra skill\n---\n",
+    );
+
+    const result = validateFixture(root);
+    expect(result.status).toBe("fail");
+    const diagnostic = expectSystemDiagnostic(result, codes.SYSTEM_MODULE_SKILLS_INVALID, ".als/modules/backlog/v1/skills/archive-module");
+    expect(diagnostic.reason).toBe(reasons.SYSTEM_SKILLS_UNLISTED_DIRECTORY);
   });
 });
 

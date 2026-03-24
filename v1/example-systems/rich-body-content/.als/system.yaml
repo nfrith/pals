@@ -22,7 +22,7 @@ modules:
 
   evaluations:
     path: governance/evaluations
-    version: 1
+    version: 2
     skills:
       - evaluations-module
 

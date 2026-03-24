@@ -48,7 +48,7 @@ test("missing section definitions surface a shape diagnostic instead of crashing
       module_id: "backlog",
       entity_name: "item",
       record_file: "workspace/backlog/items/ITEM-0001.md",
-      shape_file: ".als/modules/backlog/v1.yaml",
+      shape_file: ".als/modules/backlog/v1/shape.yaml",
     },
   );
 
@@ -67,12 +67,12 @@ test("system config schema rejects duplicate module mount paths", () => {
       backlog: {
         path: "workspace/backlog",
         version: 1,
-        skill: ".claude/skills/backlog/SKILL.md",
+        skills: ["backlog"],
       },
       archive: {
         path: "workspace/backlog",
         version: 1,
-        skill: ".claude/skills/archive/SKILL.md",
+        skills: ["archive"],
       },
     },
   });
@@ -93,12 +93,12 @@ test("system config schema rejects overlapping module mount paths", () => {
       backlog: {
         path: "workspace/backlog",
         version: 1,
-        skill: ".claude/skills/backlog/SKILL.md",
+        skills: ["backlog"],
       },
       workspace: {
         path: "workspace",
         version: 1,
-        skill: ".claude/skills/workspace/SKILL.md",
+        skills: ["workspace"],
       },
     },
   });
@@ -157,4 +157,25 @@ test("variant entity shapes can omit body without crashing schema validation", (
 
     expect(result.success).toBe(true);
   }).not.toThrow();
+});
+
+test("system config schema rejects duplicate skill ids inside one module", () => {
+  const result = systemConfigSchema.safeParse({
+    als_version: 1,
+    system_id: "test-system",
+    modules: {
+      backlog: {
+        path: "workspace/backlog",
+        version: 1,
+        skills: ["backlog", "backlog"],
+      },
+    },
+  });
+
+  expect(result.success).toBe(false);
+  if (result.success) {
+    throw new Error("Expected duplicate skill ids to fail schema validation");
+  }
+
+  expect(result.error.issues.some((issue) => issue.path.join(".") === "modules.backlog.skills")).toBe(true);
 });

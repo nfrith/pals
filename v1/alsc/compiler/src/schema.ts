@@ -529,7 +529,7 @@ export const systemConfigSchema = z.object({
   modules: z.record(entityName, z.object({
     path: moduleMountPath,
     version: positiveInt,
-    skill: nonEmptyString,
+    skills: z.array(entityName),
   })),
 }).superRefine((value, ctx) => {
   const seenModulePaths: Array<{ module_id: string; path: string; segments: string[] }> = [];
@@ -555,6 +555,18 @@ export const systemConfigSchema = z.object({
       path: moduleConfig.path,
       segments: modulePathSegments,
     });
+
+    const seenSkills = new Set<string>();
+    for (const skillId of moduleConfig.skills) {
+      if (seenSkills.has(skillId)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `duplicate skill ${skillId}`,
+          path: ["modules", moduleId, "skills"],
+        });
+      }
+      seenSkills.add(skillId);
+    }
   }
 });
 

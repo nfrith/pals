@@ -8,9 +8,10 @@ This fixture is an alternate clean ALS-style system built from the same domain d
 2. `.als/system.yaml` owns the single `system_id` for canonical ALS refs.
 3. `.als/system.yaml` also declares one active `als_version` for the whole system.
 4. Each module declares one explicit mount path relative to the system root, such as `workspace/backlog`, `clients/registry`, or `dotfiles`.
-5. Shape files are inferred by convention as `.als/modules/<module-id>/v<version>.yaml`.
+5. Shape files are inferred by convention as `.als/modules/<module-id>/v<version>/shape.yaml`.
 6. Authored source YAML does not carry a separate top-level `schema` header.
 7. Module shape files contain only module contents, not repeated registry metadata.
+8. Canonical module skills live under the module version bundle rather than under a harness-specific directory.
 
 ## Intent
 
@@ -19,16 +20,18 @@ Use this fixture to evaluate a middle path between:
 1. Per-directory metadata (`MODULE.md` + `.schema/` everywhere).
 2. One giant whole-system contract file.
 
-This model centralizes metadata at the system root, but keeps ownership module-scoped with one versioned shape file per module version.
+This model centralizes metadata at the system root, but keeps ownership module-scoped with one version bundle per module version.
 ALS language upgrades are intended to cut over the whole system version, while module `version` remains the schema-evolution surface for module data.
 
 ## Layout
 
 1. `.als/system.yaml`
-2. `.als/modules/<module>/vN.yaml`
-3. `<module-path>/...` data records
+2. `.als/modules/<module>/vN/shape.yaml`
+3. `.als/modules/<module>/vN/skills/<skill>/SKILL.md`
+4. `.als/modules/<module>/vN/migrations/` for `N > 1`
+5. `<module-path>/...` data records
 
-In this trimmed `v1` fixture, skill paths still exist as metadata in `.als/system.yaml`, but the example-system-local skill files are intentionally omitted.
+This fixture now treats `.als/` as the canonical source for module skills. Harness projections such as `.claude/` are downstream concerns rather than authored ALS source.
 
 ## Tradeoff This Fixture Is Testing
 

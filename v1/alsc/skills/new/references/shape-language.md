@@ -14,7 +14,8 @@ modules:
   people:                             # module id, kebab-case
     path: workspace/people            # module mount path relative to the system root
     version: 1                        # currently deployed shape version
-    skill: .claude/skills/people/SKILL.md   # placeholder for future skill path
+    skills:                           # active skill ids for the active module version
+      - people-module
 ```
 
 Rules:
@@ -25,6 +26,8 @@ Rules:
 - Module ids must match `^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$`
 - Module `path` is a normalized relative path from the system root made of one or more slash-separated slug segments
 - Each `path` segment must match `^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$`
+- Module `skills` is a required array of module-local skill ids and may be empty
+- Each skill id must match `^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$`
 - Module paths cannot be absolute, contain empty segments, contain `.` or `..`, or contain hidden segments like `.pals`
 - The module's data lives at `{path}/`
 - The module subtree may contain reserved non-record markdown files named `AGENTS.md` or `CLAUDE.md` at any depth
@@ -36,13 +39,21 @@ Rules:
 - Validation fails cleanly if ALS cannot read a directory inside the module subtree during discovery
 - The declared `path` must exist as a directory when validating
 - No two modules may have identical or overlapping mount paths
-- Shape files are inferred at `.als/modules/{module_id}/v{version}.yaml`
+- Module versions are directory bundles at `.als/modules/{module_id}/v{version}/`
+- Active shape files are inferred at `.als/modules/{module_id}/v{version}/shape.yaml`
+- A module declared at `version: N` must have contiguous bundle history from `v1` through `vN`
+- Bundles above the active version may exist for staged future work and are ignored by default validation
+- If `skills` is non-empty, the active bundle must contain `skills/{skill_id}/SKILL.md` for every listed skill id
+- If `skills` is empty, the active bundle may omit `skills/` entirely
+- Unlisted skill directories under the active bundle's `skills/` directory are invalid
+- Extra files inside a listed skill directory are allowed
+- Every bundle `vK` where `K > 1` must contain `migrations/MANIFEST.md` plus at least one additional migration artifact
 - Authored ALS v1 source YAML does not include a top-level `schema` field.
 - Validators reject stale authored `schema` fields so removed syntax does not linger in systems or prompts.
 
-## Module shape YAML
+## Module version bundle
 
-Lives at `.als/modules/{module_id}/v{version}.yaml`.
+Lives at `.als/modules/{module_id}/v{version}/`.
 
 ```yaml
 dependencies:                         # other modules this one references
@@ -53,6 +64,9 @@ entities:
 ```
 
 Rules:
+- Every required module version bundle contains `shape.yaml`
+- The active skill interface is declared in `.als/system.yaml`, but the canonical skill bundles live under `skills/{skill_id}/SKILL.md`
+- Migration assets for `vK > 1` live under `migrations/` in the target bundle `vK`
 - `dependencies`: list modules whose entities are referenced by this module's ref fields. If a ref targets another module, that module must be listed here.
 - `entities`: keyed by entity name matching `^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$`
 - Authored ALS v1 shape files do not include a top-level `schema` field.

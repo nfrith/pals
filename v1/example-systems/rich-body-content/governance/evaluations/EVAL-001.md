@@ -2,7 +2,8 @@
 id: EVAL-001
 title: Object Storage Provider Comparison
 category: infrastructure
-decision: approved
+owner: platform-infra
+outcome: approved
 decided_on: 2026-02-28
 ---
 
@@ -138,7 +139,7 @@ At current usage: $40 storage + $0.032 read ops + $192 APAC egress + $72 other e
 
 No significant cost advantage over S3 and lacks our existing AWS integration.
 
-## DECISION
+## OUTCOME
 
 Adopt Cloudflare R2 as the primary storage layer for new data. Keep S3 for existing data and compliance-sensitive workloads until R2's audit logging matures.
 

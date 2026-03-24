@@ -5,29 +5,35 @@ modules:
   people:
     path: workspace/people
     version: 1
-    skill: .claude/skills/people/SKILL.md
+    skills:
+      - people
 
   incident-response:
     path: workspace/incident-response
     version: 1
-    skill: .claude/skills/incident-response/SKILL.md
+    skills:
+      - incident-response
 
   operations:
     path: workspace/operations
     version: 1
-    skill: .claude/skills/operations/SKILL.md
+    skills:
+      - operations
 
   research:
     path: workspace/research
     version: 1
-    skill: .claude/skills/research/SKILL.md
+    skills:
+      - research
 
   planning:
     path: workspace/planning
     version: 1
-    skill: .claude/skills/planning/SKILL.md
+    skills:
+      - planning
 
   evals:
     path: workspace/evals
     version: 1
-    skill: .claude/skills/evals/SKILL.md
+    skills:
+      - evals

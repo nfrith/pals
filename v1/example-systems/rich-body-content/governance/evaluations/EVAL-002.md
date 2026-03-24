@@ -2,7 +2,8 @@
 id: EVAL-002
 title: Structured Logging Library Selection
 category: library
-decision: approved
+owner: developer-experience
+outcome: approved
 decided_on: 2026-03-10
 ---
 
@@ -137,7 +138,7 @@ Every log call downstream automatically includes `requestId` and `userId` withou
 
 Tested Pino v9.1 on Bun 1.1.x: core logging works. File transport works. Pino-pretty works. The only gap is pino-http (HTTP request logging middleware) which depends on Node-specific stream APIs that Bun has not fully implemented.
 
-## DECISION
+## OUTCOME
 
 Adopt Pino as the standard structured logging library across all services.
 

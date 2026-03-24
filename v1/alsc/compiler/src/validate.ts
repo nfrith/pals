@@ -1385,24 +1385,246 @@ function validateSystemLayout(
       );
     }
 
-    const shapePathAbs = resolve(systemRootAbs, inferredShapePath(moduleId, registryEntry.version));
-    const shapePathRel = toRepoRelative(shapePathAbs);
-    const shapeStat = safeStat(shapePathAbs);
+    diagnostics.push(...validateRequiredModuleBundles(systemRootAbs, moduleId, registryEntry.version));
+    diagnostics.push(...validateActiveModuleSkills(systemRootAbs, moduleId, registryEntry.version, registryEntry.skills));
+  }
 
-    if (!shapeStat) {
+  return diagnostics;
+}
+
+function inferredShapePath(moduleId: string, version: number): string {
+  return `${inferredModuleBundlePath(moduleId, version)}/shape.yaml`;
+}
+
+function inferredModuleBundlePath(moduleId: string, version: number): string {
+  return `.als/modules/${moduleId}/v${version}`;
+}
+
+function inferredSkillsPath(moduleId: string, version: number): string {
+  return `${inferredModuleBundlePath(moduleId, version)}/skills`;
+}
+
+function inferredSkillEntryPath(moduleId: string, version: number, skillId: string): string {
+  return `${inferredSkillsPath(moduleId, version)}/${skillId}/SKILL.md`;
+}
+
+function inferredMigrationsPath(moduleId: string, version: number): string {
+  return `${inferredModuleBundlePath(moduleId, version)}/migrations`;
+}
+
+function validateRequiredModuleBundles(systemRootAbs: string, moduleId: string, activeVersion: number): CompilerDiagnostic[] {
+  const diagnostics: CompilerDiagnostic[] = [];
+
+  for (let version = 1; version <= activeVersion; version += 1) {
+    const bundlePath = inferredModuleBundlePath(moduleId, version);
+    const bundlePathAbs = resolve(systemRootAbs, bundlePath);
+    const bundlePathRel = toRepoRelative(bundlePathAbs);
+    const bundleStat = safeStat(bundlePathAbs);
+
+    if (!bundleStat) {
       diagnostics.push(
-        diag(codes.SHAPE_FILE_MISSING, "error", "module_shape", shapePathRel, `Inferred shape file for module '${moduleId}' does not exist`, {
+        diag(codes.SYSTEM_MODULE_BUNDLE_INVALID, "error", "system_config", bundlePathRel, `Required module version bundle for module '${moduleId}' does not exist`, {
           module_id: moduleId,
-          expected: inferredShapePath(moduleId, registryEntry.version),
+          reason: reasons.SYSTEM_MODULE_BUNDLE_MISSING,
+          expected: "existing directory",
           actual: "missing",
+          hint: `Author contiguous version bundles from v1 through v${activeVersion}.`,
         }),
       );
-    } else if (!shapeStat.isFile()) {
+      continue;
+    }
+
+    if (!bundleStat.isDirectory()) {
       diagnostics.push(
-        diag(codes.SHAPE_FILE_MISSING, "error", "module_shape", shapePathRel, `Inferred shape path for module '${moduleId}' is not a file`, {
+        diag(codes.SYSTEM_MODULE_BUNDLE_INVALID, "error", "system_config", bundlePathRel, `Required module version bundle for module '${moduleId}' is not a directory`, {
           module_id: moduleId,
+          reason: reasons.SYSTEM_MODULE_BUNDLE_NOT_DIRECTORY,
+          expected: "directory",
+          actual: "file",
+          hint: "Store each module version as a directory bundle containing shape.yaml and related assets.",
+        }),
+      );
+      continue;
+    }
+
+    diagnostics.push(...validateShapeFilePresence(systemRootAbs, moduleId, version));
+
+    if (version > 1) {
+      diagnostics.push(...validateMigrationAssets(systemRootAbs, moduleId, version));
+    }
+  }
+
+  return diagnostics;
+}
+
+function validateShapeFilePresence(systemRootAbs: string, moduleId: string, version: number): CompilerDiagnostic[] {
+  const shapePath = inferredShapePath(moduleId, version);
+  const shapePathAbs = resolve(systemRootAbs, shapePath);
+  const shapePathRel = toRepoRelative(shapePathAbs);
+  const shapeStat = safeStat(shapePathAbs);
+
+  if (!shapeStat) {
+    return [
+      diag(codes.SHAPE_FILE_MISSING, "error", "module_shape", shapePathRel, `Inferred shape file for module '${moduleId}' does not exist`, {
+        module_id: moduleId,
+        reason: reasons.SYSTEM_SHAPE_FILE_MISSING,
+        expected: shapePath,
+        actual: "missing",
+        hint: "Add shape.yaml to the required module version bundle.",
+      }),
+    ];
+  }
+
+  if (!shapeStat.isFile()) {
+    return [
+      diag(codes.SHAPE_FILE_MISSING, "error", "module_shape", shapePathRel, `Inferred shape path for module '${moduleId}' is not a file`, {
+        module_id: moduleId,
+        reason: reasons.SYSTEM_SHAPE_FILE_NOT_FILE,
+        expected: "file",
+        actual: "directory",
+        hint: "Store the module shape at shape.yaml inside the version bundle.",
+      }),
+    ];
+  }
+
+  return [];
+}
+
+function validateActiveModuleSkills(
+  systemRootAbs: string,
+  moduleId: string,
+  activeVersion: number,
+  skills: string[],
+): CompilerDiagnostic[] {
+  const diagnostics: CompilerDiagnostic[] = [];
+  const skillsPath = inferredSkillsPath(moduleId, activeVersion);
+  const skillsPathAbs = resolve(systemRootAbs, skillsPath);
+  const skillsPathRel = toRepoRelative(skillsPathAbs);
+  const skillsStat = safeStat(skillsPathAbs);
+
+  if (skills.length === 0) {
+    if (!skillsStat) {
+      return [];
+    }
+
+    if (!skillsStat.isDirectory()) {
+      return [
+        diag(codes.SYSTEM_MODULE_SKILLS_INVALID, "error", "system_config", skillsPathRel, `Active skills path for module '${moduleId}' is not a directory`, {
+          module_id: moduleId,
+          reason: reasons.SYSTEM_SKILLS_DIR_NOT_DIRECTORY,
+          expected: "directory or missing path",
+          actual: "file",
+          hint: "Either omit skills/ entirely for skills: [] or store active skills as directories.",
+        }),
+      ];
+    }
+  } else {
+    if (!skillsStat) {
+      return [
+        diag(codes.SYSTEM_MODULE_SKILLS_INVALID, "error", "system_config", skillsPathRel, `Active skills directory for module '${moduleId}' does not exist`, {
+          module_id: moduleId,
+          reason: reasons.SYSTEM_SKILLS_DIR_MISSING,
+          expected: "existing directory",
+          actual: "missing",
+          hint: "Add skills/<skill-id>/SKILL.md for every listed active skill.",
+        }),
+      ];
+    }
+
+    if (!skillsStat.isDirectory()) {
+      return [
+        diag(codes.SYSTEM_MODULE_SKILLS_INVALID, "error", "system_config", skillsPathRel, `Active skills path for module '${moduleId}' is not a directory`, {
+          module_id: moduleId,
+          reason: reasons.SYSTEM_SKILLS_DIR_NOT_DIRECTORY,
+          expected: "directory",
+          actual: "file",
+          hint: "Store active skills under skills/<skill-id>/SKILL.md.",
+        }),
+      ];
+    }
+  }
+
+  const expectedSkillIds = new Set(skills);
+
+  for (const skillId of skills) {
+    const entryPath = inferredSkillEntryPath(moduleId, activeVersion, skillId);
+    const entryPathAbs = resolve(systemRootAbs, entryPath);
+    const entryPathRel = toRepoRelative(entryPathAbs);
+    const entryStat = safeStat(entryPathAbs);
+
+    if (!entryStat) {
+      diagnostics.push(
+        diag(codes.SYSTEM_MODULE_SKILLS_INVALID, "error", "system_config", entryPathRel, `Active skill entrypoint for module '${moduleId}' does not exist`, {
+          module_id: moduleId,
+          field: skillId,
+          reason: reasons.SYSTEM_SKILL_ENTRY_MISSING,
+          expected: entryPath,
+          actual: "missing",
+          hint: "Add SKILL.md to the listed skill bundle.",
+        }),
+      );
+      continue;
+    }
+
+    if (!entryStat.isFile()) {
+      diagnostics.push(
+        diag(codes.SYSTEM_MODULE_SKILLS_INVALID, "error", "system_config", entryPathRel, `Active skill entrypoint for module '${moduleId}' is not a file`, {
+          module_id: moduleId,
+          field: skillId,
+          reason: reasons.SYSTEM_SKILL_ENTRY_NOT_FILE,
           expected: "file",
           actual: "directory",
+          hint: "Each listed skill bundle must contain a SKILL.md entrypoint file.",
+        }),
+      );
+    }
+  }
+
+  if (!skillsStat || !skillsStat.isDirectory()) {
+    return diagnostics;
+  }
+
+  const skillsDir = safeReadDir(skillsPathAbs);
+  if (skillsDir.error) {
+    diagnostics.push(
+      diag(codes.SYSTEM_MODULE_SKILLS_INVALID, "error", "system_config", skillsPathRel, `Could not read active skills directory for module '${moduleId}'`, {
+        module_id: moduleId,
+        reason: reasons.SYSTEM_SKILLS_DIR_MISSING,
+        expected: "readable directory",
+        actual: {
+          code: skillsDir.error.code ?? null,
+          message: skillsDir.error.message,
+        },
+        hint: "Check file permissions and directory structure for the active skills bundle.",
+      }),
+    );
+    return diagnostics;
+  }
+
+  for (const entry of skillsDir.entries) {
+    const entryPathRel = toRepoRelative(resolve(skillsPathAbs, entry.name));
+    if (!entry.isDirectory()) {
+      diagnostics.push(
+        diag(codes.SYSTEM_MODULE_SKILLS_INVALID, "error", "system_config", entryPathRel, `Unexpected non-directory entry in active skills directory for module '${moduleId}'`, {
+          module_id: moduleId,
+          reason: reasons.SYSTEM_SKILLS_UNEXPECTED_ROOT_FILE,
+          expected: "listed skill directories only",
+          actual: entry.name,
+          hint: "Move supporting files inside a listed skill directory instead of the skills/ root.",
+        }),
+      );
+      continue;
+    }
+
+    if (!expectedSkillIds.has(entry.name)) {
+      diagnostics.push(
+        diag(codes.SYSTEM_MODULE_SKILLS_INVALID, "error", "system_config", entryPathRel, `Unlisted skill directory '${entry.name}' exists for module '${moduleId}'`, {
+          module_id: moduleId,
+          field: entry.name,
+          reason: reasons.SYSTEM_SKILLS_UNLISTED_DIRECTORY,
+          expected: [...expectedSkillIds],
+          actual: entry.name,
+          hint: "List the skill in .als/system.yaml or remove it from the active bundle.",
         }),
       );
     }
@@ -1411,8 +1633,91 @@ function validateSystemLayout(
   return diagnostics;
 }
 
-function inferredShapePath(moduleId: string, version: number): string {
-  return `.als/modules/${moduleId}/v${version}.yaml`;
+function validateMigrationAssets(systemRootAbs: string, moduleId: string, version: number): CompilerDiagnostic[] {
+  const diagnostics: CompilerDiagnostic[] = [];
+  const migrationsPath = inferredMigrationsPath(moduleId, version);
+  const migrationsPathAbs = resolve(systemRootAbs, migrationsPath);
+  const migrationsPathRel = toRepoRelative(migrationsPathAbs);
+  const migrationsStat = safeStat(migrationsPathAbs);
+
+  if (!migrationsStat) {
+    return [
+      diag(codes.SYSTEM_MODULE_MIGRATIONS_INVALID, "error", "system_config", migrationsPathRel, `Required migrations directory for module '${moduleId}' version v${version} does not exist`, {
+        module_id: moduleId,
+        reason: reasons.SYSTEM_MIGRATIONS_DIR_MISSING,
+        expected: "existing directory",
+        actual: "missing",
+        hint: "Author inbound migration assets on the target version bundle for every vK where K > 1.",
+      }),
+    ];
+  }
+
+  if (!migrationsStat.isDirectory()) {
+    return [
+      diag(codes.SYSTEM_MODULE_MIGRATIONS_INVALID, "error", "system_config", migrationsPathRel, `Required migrations path for module '${moduleId}' version v${version} is not a directory`, {
+        module_id: moduleId,
+        reason: reasons.SYSTEM_MIGRATIONS_DIR_NOT_DIRECTORY,
+        expected: "directory",
+        actual: "file",
+        hint: "Store inbound migration assets under vK/migrations/ on the target version bundle.",
+      }),
+    ];
+  }
+
+  const manifestPath = `${migrationsPath}/MANIFEST.md`;
+  const manifestPathAbs = resolve(systemRootAbs, manifestPath);
+  const manifestPathRel = toRepoRelative(manifestPathAbs);
+  const manifestStat = safeStat(manifestPathAbs);
+
+  if (!manifestStat) {
+    diagnostics.push(
+      diag(codes.SYSTEM_MODULE_MIGRATIONS_INVALID, "error", "system_config", manifestPathRel, `Migration manifest for module '${moduleId}' version v${version} does not exist`, {
+        module_id: moduleId,
+        reason: reasons.SYSTEM_MIGRATION_MANIFEST_MISSING,
+        expected: manifestPath,
+        actual: "missing",
+        hint: "Add MANIFEST.md to the target bundle's migrations directory.",
+      }),
+    );
+  } else if (!manifestStat.isFile()) {
+    diagnostics.push(
+      diag(codes.SYSTEM_MODULE_MIGRATIONS_INVALID, "error", "system_config", manifestPathRel, `Migration manifest for module '${moduleId}' version v${version} is not a file`, {
+        module_id: moduleId,
+        reason: reasons.SYSTEM_MIGRATION_MANIFEST_NOT_FILE,
+        expected: "file",
+        actual: "directory",
+        hint: "Store the migration manifest as MANIFEST.md.",
+      }),
+    );
+  }
+
+  const artifactScan = findAdditionalMigrationArtifact(migrationsPathAbs);
+  if (artifactScan.error) {
+    diagnostics.push(
+      diag(codes.SYSTEM_MODULE_MIGRATIONS_INVALID, "error", "system_config", migrationsPathRel, `Could not read migration assets for module '${moduleId}' version v${version}`, {
+        module_id: moduleId,
+        reason: reasons.SYSTEM_MIGRATION_ASSET_MISSING,
+        expected: "readable migration artifact directory",
+        actual: {
+          code: artifactScan.error.code ?? null,
+          message: artifactScan.error.message,
+        },
+        hint: "Check file permissions inside the migrations directory.",
+      }),
+    );
+  } else if (!artifactScan.found) {
+    diagnostics.push(
+      diag(codes.SYSTEM_MODULE_MIGRATIONS_INVALID, "error", "system_config", migrationsPathRel, `Migration assets for module '${moduleId}' version v${version} must include at least one file besides MANIFEST.md`, {
+        module_id: moduleId,
+        reason: reasons.SYSTEM_MIGRATION_ASSET_MISSING,
+        expected: "MANIFEST.md plus at least one additional migration artifact",
+        actual: "MANIFEST.md only",
+        hint: "Add a script, prompt bundle, or another executable migration artifact beside MANIFEST.md.",
+      }),
+    );
+  }
+
+  return diagnostics;
 }
 
 function resolveModulePath(systemRootAbs: string, modulePath: string): string {
@@ -1725,6 +2030,17 @@ function resolveParseIssueReason(
     return reasons.SYSTEM_ALS_VERSION_INVALID;
   }
 
+  if (
+    phase === "system_config"
+    && issue.code === "custom"
+    && issue.path[0] === "modules"
+    && issue.path[2] === "skills"
+    && typeof issue.message === "string"
+    && issue.message.includes("duplicate skill")
+  ) {
+    return reasons.SYSTEM_SKILLS_DUPLICATE;
+  }
+
   return undefined;
 }
 
@@ -1887,6 +2203,40 @@ function markErroredFiles(fileErrorMap: Map<string, boolean>, diagnostics: Compi
     if (!fileErrorMap.has(diagnostic.file)) continue;
     fileErrorMap.set(diagnostic.file, true);
   }
+}
+
+function findAdditionalMigrationArtifact(
+  directoryAbs: string,
+): { found: boolean; error: NodeJS.ErrnoException | null } {
+  const readDirResult = safeReadDir(directoryAbs);
+  if (readDirResult.error) {
+    return { found: false, error: readDirResult.error };
+  }
+
+  for (const entry of readDirResult.entries) {
+    const entryPathAbs = resolve(directoryAbs, entry.name);
+
+    if (entry.isFile()) {
+      if (entry.name !== "MANIFEST.md") {
+        return { found: true, error: null };
+      }
+      continue;
+    }
+
+    if (!entry.isDirectory()) {
+      continue;
+    }
+
+    const nested = findAdditionalMigrationArtifact(entryPathAbs);
+    if (nested.error) {
+      return nested;
+    }
+    if (nested.found) {
+      return nested;
+    }
+  }
+
+  return { found: false, error: null };
 }
 
 function toRepoRelative(pathAbs: string): string {

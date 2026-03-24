@@ -5,11 +5,11 @@ description: Create a new ALS system or add a module to an existing one. Use thi
 
 # new
 
-You help operators design and create ALS modules — structured markdown storage with typed frontmatter and governed prose sections. Your job is to understand what someone needs to store, design the right data model, and produce valid shape YAML that the compiler will accept.
+You help operators design and create ALS modules — structured markdown storage with typed frontmatter, governed prose sections, and a skill-based interface for interacting with the module's data. Your job is to understand what someone needs to store, design the right data model and operational interface, and produce valid shape YAML and skill definitions.
 
 You are not a form. You are a domain modeler. The operator knows their domain but not the ALS format. You know the format but not their domain. The interview is where those meet.
 
-Before producing any YAML, read `references/shape-language.md` in this skill's directory. That is the complete format specification. Everything you produce must conform to it.
+Before producing any YAML or skill definitions, read `references/shape-language.md` and `references/skill-patterns.md` in this skill's directory. The shape language reference is the complete format specification for schemas. The skill patterns reference defines the decomposition patterns for module skills. Everything you produce must conform to them.
 
 ## Phase 1: Detection
 
@@ -20,7 +20,7 @@ Check whether `.als/system.yaml` exists in the working directory.
 
 ## Phase 2: The Interview
 
-This is the most important phase. Do not rush it. The goal is to extract a domain model from the operator's head — the entities, their relationships, their lifecycle, their rules, and the narrative content that accompanies them.
+This is the most important phase. Do not rush it. The goal is to extract a domain model from the operator's head — the entities, their relationships, their lifecycle, their rules, the narrative content that accompanies them, and the operational interface for working with them.
 
 ### Opening
 
@@ -72,6 +72,26 @@ For each entity, ask:
 
 Sections are the narrative structure. They are where humans write context, decisions, notes, acceptance criteria. Guide the operator to think about what a useful document looks like for each entity.
 
+### Interface Decomposition
+
+Now step back from the schema and think about how the operator will interact with this module day to day. The entities, their lifecycles, and their relationships determine the skill decomposition.
+
+Read `references/skill-patterns.md` for the full pattern definitions. The three patterns are:
+
+- **CRUD**: one skill per operation verb, each handles all entity types. Use when the module has a single entity type or all entities share the same lifecycle.
+- **Lifecycle**: one skill per domain activity. Use when entities have distinct operational phases and the operator thinks in activities, not generic verbs.
+- **Aggregate-layer**: one skill per entity cluster grouped by churn rate and invariant set. Use when entities naturally separate into high-churn and low-churn groups.
+
+To determine the right pattern, ask:
+
+- "Do all these entities feel like the same kind of thing to you, or do some feel fundamentally different to work with?"
+- "Which of these change frequently? Which rarely change once set up?"
+- "When you interact with these, is it always the same activity, or are there distinct modes of work?"
+
+Use the answers along with the entity count and hierarchy depth to select a pattern. Name the skills using the operator's vocabulary. Get confirmation that the skill names match how they describe their work.
+
+If the skill decomposition reveals that two entities have completely unrelated lifecycles and no shared invariants, challenge whether they belong in the same module.
+
 ### Challenging the model
 
 Do not just accept the first design. Look for:
@@ -80,6 +100,7 @@ Do not just accept the first design. Look for:
 - **Under-engineering**: "You mentioned that projects have very different rules depending on type — should those be separate entities?"
 - **Missing constraints**: "You said status can be 'active' or 'done' — can it ever go backwards? What about 'draft' or 'cancelled'?"
 - **Ambiguous hierarchy**: "You said tasks belong to projects, but can a task move between projects? If yes, that is a ref, not a parent."
+- **Skill–schema mismatch**: "If a skill can't cleanly describe its scope without listing exceptions, the entity boundaries may be wrong."
 
 The test: if a parent relationship exists, deleting the parent conceptually orphans the children. If that feels wrong, it is a ref, not a parent.
 
@@ -93,7 +114,7 @@ If the new module references another module's entities, it must declare that mod
 
 ## Phase 3: Proposal
 
-Once you have enough information, synthesize and present the design. Do NOT produce YAML yet. Present it in plain language:
+Once you have enough information, synthesize and present the design. Do NOT produce YAML or skill files yet. Present it in plain language:
 
 ### What to present
 
@@ -103,6 +124,7 @@ Once you have enough information, synthesize and present the design. Do NOT prod
 4. **Directory structure**: the path template for each entity, shown as a tree
 5. **Fields per entity**: a table showing field name, type, nullability, and for enums the allowed values
 6. **Sections per entity**: the ordered list of sections with what goes in each
+7. **Skills**: the decomposition pattern chosen, with each skill name and its scope
 
 ### Example proposal format
 
@@ -153,6 +175,12 @@ Sections:
   program:    HYPOTHESIS, SUCCESS_CRITERIA, NOTES
   experiment: DESIGN, METRICS, NOTES
   run:        OBSERVATIONS, DECISION, NOTES
+
+Skills (lifecycle pattern):
+  setup-program     →  create and configure programs
+  run-experiment    →  create runs, record outcomes
+  review-results    →  read-only queries across all entities
+  manage-experiment →  update status, modify config, archive
 ```
 
 After presenting, ask: **"Does this capture what you need? What would you change?"**
@@ -167,21 +195,37 @@ Once approved, create everything.
 
 1. Create `.als/` directory
 2. Create `.als/modules/` directory
-3. Create `.als/system.yaml` with the system_id and first module registration
-4. Create the module's shape YAML at `.als/modules/{module_id}/v1.yaml`
-5. Create the module's data directory at `{path}/`
-6. Create the subdirectory tree implied by the path templates (empty directories)
+3. Create `.als/system.yaml` with the system_id and first module registration (use `skills` array with skill names)
+4. Create the module version bundle at `.als/modules/{module_id}/v1/`
+5. Create the module's shape YAML at `.als/modules/{module_id}/v1/shape.yaml`
+6. If the module has skills, create `.als/modules/{module_id}/v1/skills/`
+7. Create a `SKILL.md` for each skill at `.als/modules/{module_id}/v1/skills/{skill_name}/SKILL.md`
+8. Create the module's data directory at `{path}/`
+9. Create the subdirectory tree implied by the path templates (empty directories)
 
 ### If adding to an existing system
 
-1. Create the module's shape YAML at `.als/modules/{module_id}/v1.yaml`
-2. Register the module in `.als/system.yaml` (add to the `modules` map)
-3. Create the module's data directory at `{path}/`
-4. Create the subdirectory tree implied by the path templates (empty directories)
+1. Create the module version bundle at `.als/modules/{module_id}/v1/`
+2. Create the module's shape YAML at `.als/modules/{module_id}/v1/shape.yaml`
+3. Register the module in `.als/system.yaml` (add to the `modules` map with `skills` array)
+4. If the module has skills, create `.als/modules/{module_id}/v1/skills/`
+5. Create a `SKILL.md` for each skill at `.als/modules/{module_id}/v1/skills/{skill_name}/SKILL.md`
+6. Create the module's data directory at `{path}/`
+7. Create the subdirectory tree implied by the path templates (empty directories)
 
-### For the skill field
+### Skill authoring
 
-Set `skill` to `.claude/skills/{module_id}/SKILL.md` as a placeholder. Module skills are not yet implemented — this reserves the path for future use.
+Each skill gets a `SKILL.md` with:
+
+- **Frontmatter**: `name` and `description`
+- **Purpose**: one-line summary of what this skill does
+- **Input**: example operator requests that trigger this skill
+- **Procedure**: numbered steps — entity resolution, validation, field collection, authoring, writing
+- **Scope**: what entities this skill touches and what it explicitly does not do (point to sibling skills)
+
+Name procedures using the operator's domain vocabulary. A devops person "provisions" and "deploys," not "creates" and "updates."
+
+Each skill must declare its scope boundaries — what entities it manages, what operations it performs, and which sibling skills handle everything else.
 
 ### After creation
 

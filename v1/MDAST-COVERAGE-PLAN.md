@@ -26,8 +26,8 @@ This is an inventory and implementation-planning document, not a spec decision r
 
 Representative shape examples:
 
-- `v1/example-systems/centralized-metadata-happy-path/.als/modules/backlog/v1.yaml`
-- `v1/example-systems/centralized-metadata-happy-path/.als/modules/experiments/v2.yaml`
+- `v1/example-systems/centralized-metadata-happy-path/.als/modules/backlog/v1/shape.yaml`
+- `v1/example-systems/centralized-metadata-happy-path/.als/modules/experiments/v2/shape.yaml`
 
 ## Status legend
 
@@ -224,5 +224,5 @@ That is also a valid outcome, but it should be made explicit.
 - Current shape-language docs:
   - `v1/alsc/skills/new/references/shape-language.md`
 - Current reference system shapes:
-  - `v1/example-systems/centralized-metadata-happy-path/.als/modules/backlog/v1.yaml`
-  - `v1/example-systems/centralized-metadata-happy-path/.als/modules/experiments/v2.yaml`
+  - `v1/example-systems/centralized-metadata-happy-path/.als/modules/backlog/v1/shape.yaml`
+  - `v1/example-systems/centralized-metadata-happy-path/.als/modules/experiments/v2/shape.yaml`

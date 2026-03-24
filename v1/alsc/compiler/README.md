@@ -5,7 +5,9 @@ Bun-based validator for the explicit centralized `.als/` metadata model.
 The system registry owns a single `system_id`, and each module declares one explicit mount path relative to the system root.
 Each system also declares one active `als_version`. This compiler currently supports `als_version: 1` only and treats ALS upgrades as whole-system cutovers rather than mixed-version rollouts.
 
-Shape files are inferred by convention as `.als/modules/<module-id>/v<version>.yaml`.
+Shape files are inferred by convention as `.als/modules/<module-id>/v<version>/shape.yaml`.
+Each active module version may also carry canonical skill bundles under `skills/`.
+Every required module version above `v1` must also carry inbound migration assets under `migrations/`.
 Authored ALS source YAML does not carry a top-level `schema` field.
 
 ## Usage
