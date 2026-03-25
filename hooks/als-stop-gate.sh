@@ -35,7 +35,5 @@ done
 
 # Systems broken — block stop
 reason="ALS validation gate: ${#failed[@]} system(s) still have errors. Fix all validation errors before finishing."
-echo "$all_output" | jq -s --arg reason "$reason" \
-  '{decision: "block", reason: $reason, hookSpecificOutput: {hookEventName: "Stop", additionalContext: .}}' 2>/dev/null \
-|| echo "{\"decision\":\"block\",\"reason\":\"$reason\"}"
+echo "{\"decision\":\"block\",\"reason\":\"$reason\"}"
 exit 2
