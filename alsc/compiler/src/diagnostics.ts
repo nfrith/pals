@@ -101,6 +101,7 @@ export const reasons = {
   BODY_MARKDOWN_FLOW_HTML_UNSUPPORTED: "body.markdown.flow_html_unsupported",
   BODY_MARKDOWN_INLINE_HTML_UNSUPPORTED: "body.markdown.inline_html_unsupported",
   BODY_MARKDOWN_THEMATIC_BREAK_UNSUPPORTED: "body.markdown.thematic_break_unsupported",
+  FRONTMATTER_LIST_ITEM_DUPLICATE: "frontmatter.list_item.duplicate",
 } as const;
 
 export function diag(

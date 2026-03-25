@@ -110,6 +110,20 @@ test.concurrent("id fields cannot allow null", async () => {
   });
 });
 
+test.concurrent("scalar enums must declare unique allowed values", async () => {
+  await withFixtureSandbox("shape-enum-duplicate-allowed-values", async ({ root }) => {
+    await updateShapeYaml(root, "people", 1, (shape) => {
+      const entities = shape.entities as Record<string, Record<string, unknown>>;
+      const personFields = entities.person.fields as Record<string, Record<string, unknown>>;
+      personFields.status.allowed_values = ["active", "active"];
+    });
+
+    const result = validateFixture(root);
+    expect(result.status).toBe("fail");
+    expectModuleDiagnostic(result, "people", codes.SHAPE_INVALID, ".als/modules/people/v1/shape.yaml");
+  });
+});
+
 test.concurrent("entity paths must include the id placeholder", async () => {
   await withFixtureSandbox("shape-path-id-placeholder", async ({ root }) => {
     await updateShapeYaml(root, "backlog", 1, (shape) => {
@@ -120,6 +134,47 @@ test.concurrent("entity paths must include the id placeholder", async () => {
     const result = validateFixture(root);
     expect(result.status).toBe("fail");
     expectModuleDiagnostic(result, "backlog", codes.SHAPE_INVALID, ".als/modules/backlog/v1/shape.yaml");
+  });
+});
+
+test.concurrent("list enum items must declare allowed values", async () => {
+  await withFixtureSandbox("shape-list-enum-missing-allowed-values", async ({ root }) => {
+    await updateShapeYaml(root, "people", 1, (shape) => {
+      const entities = shape.entities as Record<string, Record<string, unknown>>;
+      const personFields = entities.person.fields as Record<string, Record<string, unknown>>;
+      personFields.tags = {
+        type: "list",
+        allow_null: true,
+        items: {
+          type: "enum",
+        },
+      };
+    });
+
+    const result = validateFixture(root);
+    expect(result.status).toBe("fail");
+    expectModuleDiagnostic(result, "people", codes.SHAPE_INVALID, ".als/modules/people/v1/shape.yaml");
+  });
+});
+
+test.concurrent("list enum items must also declare unique allowed values", async () => {
+  await withFixtureSandbox("shape-list-enum-duplicate-allowed-values", async ({ root }) => {
+    await updateShapeYaml(root, "people", 1, (shape) => {
+      const entities = shape.entities as Record<string, Record<string, unknown>>;
+      const personFields = entities.person.fields as Record<string, Record<string, unknown>>;
+      personFields.tags = {
+        type: "list",
+        allow_null: true,
+        items: {
+          type: "enum",
+          allowed_values: ["product", "product"],
+        },
+      };
+    });
+
+    const result = validateFixture(root);
+    expect(result.status).toBe("fail");
+    expectModuleDiagnostic(result, "people", codes.SHAPE_INVALID, ".als/modules/people/v1/shape.yaml");
   });
 });
 

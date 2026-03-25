@@ -1,6 +1,21 @@
 import { expect, test } from "bun:test";
-import { codes } from "../src/diagnostics.ts";
+import { codes, reasons } from "../src/diagnostics.ts";
 import { expectModuleDiagnostic, expectNoModuleDiagnostic, updateRecord, updateShapeYaml, validateFixture, withFixtureSandbox } from "./helpers/fixture.ts";
+
+async function configurePeopleTagsAsEnumList(root: string, allowedValues = ["product", "orchestration", "research"]): Promise<void> {
+  await updateShapeYaml(root, "people", 1, (shape) => {
+    const entities = shape.entities as Record<string, Record<string, unknown>>;
+    const personFields = entities.person.fields as Record<string, Record<string, unknown>>;
+    personFields.tags = {
+      type: "list",
+      allow_null: true,
+      items: {
+        type: "enum",
+        allowed_values: allowedValues,
+      },
+    };
+  });
+}
 
 test("missing declared frontmatter fields are rejected", async () => {
   await withFixtureSandbox("frontmatter-missing-field", async ({ root }) => {
@@ -306,6 +321,94 @@ test("list items must match the declared item type", async () => {
     const result = validateFixture(root);
     expect(result.status).toBe("fail");
     expectModuleDiagnostic(result, "people", codes.FM_ARRAY_ITEM, "PPL-000101.md");
+  });
+});
+
+test("enum list items must be declared enum members", async () => {
+  await withFixtureSandbox("frontmatter-list-enum-invalid", async ({ root }) => {
+    await configurePeopleTagsAsEnumList(root);
+    await updateRecord(root, "workspace/people/persons/PPL-000101.md", (record) => {
+      record.data.tags = ["product", "delivery"];
+    });
+
+    const result = validateFixture(root);
+    expect(result.status).toBe("fail");
+    const diagnostic = expectModuleDiagnostic(result, "people", codes.FM_ENUM_INVALID, "PPL-000101.md");
+    expect(diagnostic.field).toBe("tags[1]");
+    expect(diagnostic.actual).toBe("delivery");
+  });
+});
+
+test("enum list items reject non-string values", async () => {
+  await withFixtureSandbox("frontmatter-list-enum-type", async ({ root }) => {
+    await configurePeopleTagsAsEnumList(root);
+    await updateRecord(root, "workspace/people/persons/PPL-000101.md", (record) => {
+      record.data.tags = ["product", 101];
+    });
+
+    const result = validateFixture(root);
+    expect(result.status).toBe("fail");
+    const diagnostic = expectModuleDiagnostic(result, "people", codes.FM_ARRAY_ITEM, "PPL-000101.md");
+    expect(diagnostic.field).toBe("tags[1]");
+    expect(diagnostic.reason).toBeNull();
+  });
+});
+
+test("enum list items reject null values", async () => {
+  await withFixtureSandbox("frontmatter-list-enum-null", async ({ root }) => {
+    await configurePeopleTagsAsEnumList(root);
+    await updateRecord(root, "workspace/people/persons/PPL-000101.md", (record) => {
+      record.data.tags = ["product", null];
+    });
+
+    const result = validateFixture(root);
+    expect(result.status).toBe("fail");
+    const diagnostic = expectModuleDiagnostic(result, "people", codes.FM_ARRAY_ITEM, "PPL-000101.md");
+    expect(diagnostic.field).toBe("tags[1]");
+    expect(diagnostic.reason).toBeNull();
+    expect(diagnostic.actual).toBe("object");
+  });
+});
+
+test("enum list items reject duplicate declared values", async () => {
+  await withFixtureSandbox("frontmatter-list-enum-duplicate", async ({ root }) => {
+    await configurePeopleTagsAsEnumList(root);
+    await updateRecord(root, "workspace/people/persons/PPL-000101.md", (record) => {
+      record.data.tags = ["product", "orchestration", "product"];
+    });
+
+    const result = validateFixture(root);
+    expect(result.status).toBe("fail");
+    const diagnostic = expectModuleDiagnostic(result, "people", codes.FM_ARRAY_ITEM, "PPL-000101.md");
+    expect(diagnostic.field).toBe("tags[2]");
+    expect(diagnostic.reason).toBe(reasons.FRONTMATTER_LIST_ITEM_DUPLICATE);
+    expect(diagnostic.actual).toBe("product");
+  });
+});
+
+test("invalid enum list items do not also emit duplicate diagnostics", async () => {
+  await withFixtureSandbox("frontmatter-list-enum-invalid-duplicate", async ({ root }) => {
+    await configurePeopleTagsAsEnumList(root);
+    await updateRecord(root, "workspace/people/persons/PPL-000101.md", (record) => {
+      record.data.tags = ["delivery", "delivery"];
+    });
+
+    const result = validateFixture(root);
+    expect(result.status).toBe("fail");
+    const peopleReport = result.modules.find((report) => report.module_id === "people");
+    expect(peopleReport).toBeDefined();
+    expect(
+      peopleReport!.diagnostics.filter(
+        (diagnostic) => diagnostic.file.endsWith("PPL-000101.md") && diagnostic.code === codes.FM_ENUM_INVALID,
+      ),
+    ).toHaveLength(2);
+    expect(
+      peopleReport!.diagnostics.some(
+        (diagnostic) =>
+          diagnostic.file.endsWith("PPL-000101.md")
+          && diagnostic.reason === reasons.FRONTMATTER_LIST_ITEM_DUPLICATE,
+      ),
+    ).toBe(false);
   });
 });
 

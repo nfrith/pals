@@ -128,9 +128,27 @@ const commonFieldShape = {
   allow_null: z.boolean(),
 };
 
+const allowedValuesSchema = z.array(nonEmptyString).min(1).superRefine((value, ctx) => {
+  const seenValues = new Set<string>();
+  for (const [index, entry] of value.entries()) {
+    if (seenValues.has(entry)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `duplicate allowed value ${entry}`,
+        path: [index],
+      });
+    }
+    seenValues.add(entry);
+  }
+});
+
 const listItemSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("string"),
+  }),
+  z.object({
+    type: z.literal("enum"),
+    allowed_values: allowedValuesSchema,
   }),
   z.object({
     type: z.literal("ref"),
@@ -158,7 +176,7 @@ const fieldSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("enum"),
     ...commonFieldShape,
-    allowed_values: z.array(nonEmptyString).min(1),
+    allowed_values: allowedValuesSchema,
   }),
   z.object({
     type: z.literal("ref"),

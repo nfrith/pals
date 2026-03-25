@@ -519,6 +519,8 @@ function validateFieldValue(
           }),
         );
       } else {
+        const seenEnumValues = fieldShape.items.type === "enum" ? new Set<string>() : null;
+        const allowedEnumValues = fieldShape.items.type === "enum" ? new Set(fieldShape.items.allowed_values) : null;
         value.forEach((item, index) => {
           if (fieldShape.items.type === "string") {
             if (typeof item !== "string") {
@@ -531,6 +533,41 @@ function validateFieldValue(
                   actual: typeof item,
                 }),
               );
+            }
+          } else if (fieldShape.items.type === "enum") {
+            if (typeof item !== "string") {
+              diagnostics.push(
+                diag(codes.FM_ARRAY_ITEM, "error", "record_frontmatter", record.file_rel, `Field '${fieldName}[${index}]' must be a string (enum member)`, {
+                  module_id: record.module_id,
+                  entity: record.entity_name,
+                  field: `${fieldName}[${index}]`,
+                  expected: "string (enum member)",
+                  actual: typeof item,
+                }),
+              );
+            } else if (!allowedEnumValues!.has(item)) {
+              diagnostics.push(
+                diag(codes.FM_ENUM_INVALID, "error", "record_frontmatter", record.file_rel, `Field '${fieldName}[${index}]' has invalid enum value '${item}'`, {
+                  module_id: record.module_id,
+                  entity: record.entity_name,
+                  field: `${fieldName}[${index}]`,
+                  expected: fieldShape.items.allowed_values,
+                  actual: item,
+                }),
+              );
+            } else if (seenEnumValues!.has(item)) {
+              diagnostics.push(
+                diag(codes.FM_ARRAY_ITEM, "error", "record_frontmatter", record.file_rel, `Field '${fieldName}[${index}]' duplicates enum value '${item}'`, {
+                  module_id: record.module_id,
+                  entity: record.entity_name,
+                  field: `${fieldName}[${index}]`,
+                  reason: reasons.FRONTMATTER_LIST_ITEM_DUPLICATE,
+                  expected: "unique enum list item",
+                  actual: item,
+                }),
+              );
+            } else {
+              seenEnumValues!.add(item);
             }
           } else {
             diagnostics.push(...validateRefContract(record, context, `${fieldName}[${index}]`, { type: "ref", allow_null: false, target: fieldShape.items.target }, item));

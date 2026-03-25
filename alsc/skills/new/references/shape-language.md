@@ -262,7 +262,7 @@ status:
   allowed_values: [draft, active, completed]
 ```
 
-Must include `allowed_values` — a list of at least one string.
+Must include `allowed_values` — a list of at least one unique string.
 
 #### ref
 
@@ -291,7 +291,7 @@ tags:
     type: string
 ```
 
-Items can be `type: string` or `type: ref` (with a `target`):
+Items can be `type: string`, `type: ref` (with a `target`), or `type: enum` (with `allowed_values`):
 
 ```yaml
 people:
@@ -303,6 +303,20 @@ people:
       module: people
       entity: person
 ```
+
+```yaml
+folders:
+  type: list
+  allow_null: false
+  items:
+    type: enum
+    allowed_values: [lotf, aitw, claude-cowork]
+```
+
+- `list<enum>` validates each item as a string enum member.
+- `list<enum>` rejects duplicate members.
+- `list<string>` and `list<ref>` do not enforce uniqueness.
+- Empty lists are allowed. `allow_null` only controls whether the field value may be `null`.
 
 ### Body regions
 
