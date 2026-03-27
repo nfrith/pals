@@ -66,6 +66,39 @@ CLASSICAL SOFTWARE                              ALS
 
 The compiler validates everything. Skills provide the interface.
 
+## Migrations
+
+ALS codifies schema migrations the same way classical software does — prepare, test, execute, flip.
+
+```
+CLASSICAL SOFTWARE
+
+  v1                          Migration                        v2
+┌──────────┐                                               ┌──────────┐
+│ App Logic│───────────── Update code ────────────────────▶│ App Logic│
+└──────────┘                                               └──────────┘
+┌──────────┐    Write DDL ──▶ Test on staging ──▶ Run on   ┌──────────┐
+│ Database │─────────────────────────────────────production▶│ Database │
+│  Schema  │                                               │  Schema  │
+│  Tables  │                                               │  Tables  │
+└──────────┘                                               └──────────┘
+
+
+ALS
+
+  v1                          Migration                        v2
+┌──────────┐                                               ┌──────────┐
+│  Skills  │───────────── Update skills ──────────────────▶│  Skills  │
+└──────────┘                                               └──────────┘
+┌──────────┐    Update shape ▶ Dry-run on clone ▶ Run on   ┌──────────┐
+│Filesystem│─────────────────────────────────────  live   ─▶│Filesystem│
+│shape.yaml│                                               │shape.yaml│
+│ Records  │                                               │ Records  │
+└──────────┘                                               └──────────┘
+```
+
+`change` prepares the next version bundle. `migrate` tests it on a disposable clone, then executes the live cutover. Every migration is versioned, manifested, and auditable.
+
 ## Project Status
 
 - **v1 is the current focus.** Lessons from v0 were applied — several hard-to-implement features were removed from the initial scope and will be reintroduced later.
