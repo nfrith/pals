@@ -28,6 +28,32 @@ ALS defines **structure** for your data and **process** for your workflows.
 
 > Skills become the process entry point — the mechanism that enforces how your agent interacts with that data.
 
+## Creating a System
+
+An operator or agent describes their domain. ALS interviews, models, and produces both artifacts in one motion.
+
+```
+              ┌───────────────────┐
+              │ Operator or Agent │
+              │  describes domain │
+              └─────────┬─────────┘
+                        │
+                        ▼
+                 ┌─────────────┐
+                 │    /new     │
+                 │  Interview  │
+                 └──────┬──────┘
+                        │
+              ┌─────────┴─────────┐
+              │                   │
+              ▼                   ▼
+       ┌────────────┐     ┌────────────┐
+       │  SKILL.md  │     │ shape.yaml │
+       └────────────┘     └────────────┘
+
+  Define your structure. Build the process that enforces it.
+```
+
 ## How It Works
 
 ALS applies the same two-layer architecture that classical software uses — but built on markdown files and agent skills instead of code and databases.
