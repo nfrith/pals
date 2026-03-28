@@ -1,8 +1,8 @@
 <div align="center">
 
-# PALS — Personal Agent Language Specification
+# ALS — Agent Language Specification
 
-A strict specification language for personal agent systems.
+A strict specification language for agent systems.
 
 **Under active development. Not yet released.**
 
