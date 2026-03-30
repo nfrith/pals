@@ -5,7 +5,7 @@ description: Run the ALS compiler to validate a system's modules, schemas, and r
 
 # validate
 
-Compiler setup: !`cd ${CLAUDE_PLUGIN_ROOT}/alsc/compiler && ([ -d node_modules ] && echo "deps ready" || bun install) 2>&1`
+Compiler setup: !`bash ${CLAUDE_PLUGIN_ROOT}/hooks/ensure-deps.sh`
 
 If the setup output above shows an error about `bun` not being found, stop and tell the operator: "ALS requires Bun to run the compiler. Install it by running `! curl -fsSL https://bun.sh/install | bash` then restart your shell." Do not proceed until Bun is available.
 
