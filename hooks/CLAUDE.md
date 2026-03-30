@@ -25,4 +25,5 @@ If no breadcrumb file exists (session didn't touch ALS files), exits immediately
 ## Requirements
 
 - Bun must be installed and on `$PATH`.
+- jq must be installed and on `$PATH`.
 - The plugin must be loaded so `CLAUDE_PLUGIN_ROOT` resolves.

@@ -12,7 +12,10 @@ Before running the compiler, verify the runtime environment.
 1. Run `which bun` to check if Bun is on PATH.
    - If not found, tell the operator: "ALS requires Bun to run the compiler. You can install it by typing `! curl -fsSL https://bun.sh/install | bash` and then restarting your shell." Do not proceed until Bun is available.
 
-2. Run `cd ${CLAUDE_PLUGIN_ROOT}/alsc/compiler && bun install` to ensure compiler dependencies are installed. This is idempotent and fast when dependencies already exist.
+2. Run `which jq` to check if jq is on PATH.
+   - If not found, tell the operator: "ALS hooks require jq. Install it with your package manager (e.g. `! sudo apt-get install -y jq` or `! brew install jq`)." Do not proceed until jq is available.
+
+3. Run `cd ${CLAUDE_PLUGIN_ROOT}/alsc/compiler && bun install` to ensure compiler dependencies are installed. This is idempotent and fast when dependencies already exist.
 
 You run the ALS compiler against a system to check that all shape files, records, and references are valid.
 

@@ -32,7 +32,7 @@ The current public preview is centered on two usable surfaces:
 
 ## Install
 
-ALS is distributed as a Claude Code plugin. Requires [Bun](https://bun.sh) >= 1.3.0.
+ALS is distributed as a Claude Code plugin. Requires [Bun](https://bun.sh) >= 1.3.0 and [jq](https://jqlang.github.io/jq/).
 
 ```bash
 # Add the ALS plugin to Claude Code

@@ -37,6 +37,7 @@ Requirements:
 
 - [Claude Code](https://claude.ai/code)
 - [Bun](https://bun.sh) >= 1.3.0
+- [jq](https://jqlang.github.io/jq/) (used by plugin hooks)
 
 ## Explicit Non-Guarantees
 
