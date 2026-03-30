@@ -1,44 +1,34 @@
-# Compiler
+# ALS Compiler
 
-Bun-based validator for the explicit centralized `.als/` metadata model.
+Bun-based validator for ALS systems. Validates module shapes, records, refs, and body structure, and projects active skill bundles into Claude Code.
 
-The system registry owns a single `system_id`, and each module declares one explicit mount path relative to the system root.
-Each system also declares one active `als_version`. This compiler currently supports `als_version: 1` only and treats ALS upgrades as whole-system cutovers rather than mixed-version rollouts.
+This compiler is part of the [ALS plugin](../../README.md) and is invoked by plugin skills and hooks. It is not published as a standalone package.
 
-Shape files are inferred by convention as `.als/modules/<module-id>/v<version>/shape.yaml`.
-Each active module version may also carry canonical skill bundles under `skills/`.
-Active skill ids must be globally unique across the live system.
-Every required module version above `v1` must also carry inbound migration assets under `migrations/`.
-Authored ALS source YAML does not carry a top-level `schema` field.
+## Commands
 
-## Usage
+Validate an ALS system:
 
 ```bash
-cd alsc/compiler
-bun run src/index.ts ../../example-systems/centralized-metadata-happy-path
+bun src/cli.ts validate <system-root>
+bun src/cli.ts validate <system-root> <module-id>
 ```
 
-Optional module filter:
+Deploy active Claude skills from the validated ALS system:
 
 ```bash
-bun run src/index.ts ../../example-systems/centralized-metadata-happy-path backlog
+bun src/cli.ts deploy claude <system-root>
+bun src/cli.ts deploy claude --dry-run --require-empty-targets <system-root> <module-id>
 ```
 
-Filtered runs remain trustworthy for the selected module: the validator resolves refs against the selected module plus its transitive declared dependency closure, and it fails cleanly if hidden dependency context is not reliable enough to trust.
+When invoked through the plugin, skills call these via `bun ${CLAUDE_PLUGIN_ROOT}/alsc/compiler/src/index.ts`.
 
-Claude projection:
+## Current Contract
 
-```bash
-cd alsc/compiler
-bun run src/deploy.ts ../../example-systems/centralized-metadata-happy-path
-```
-
-Collision-preflight for `/new`-style empty targets:
-
-```bash
-cd alsc/compiler
-bun run src/deploy.ts --dry-run --require-empty-targets ../../example-systems/centralized-metadata-happy-path backlog
-```
+- ALS currently supports `als_version: 1` only.
+- Validation output is versioned as `als-validation-output@1`.
+- Filtered validation remains trustworthy for the selected module by loading its declared dependency closure.
+- Claude projection is the only harness projection surfaced by this preview.
+- ALS does not yet ship a language-version upgrade CLI or a real warning and deprecation lifecycle.
 
 ## Output Contract
 
@@ -48,7 +38,11 @@ The validator emits JSON shaped as `als-validation-output@1`.
 - `als_version` is the active ALS language version declared by `.als/system.yaml`.
 - `module_filter` is `null` for full-system validation and the selected module id for filtered runs.
 - `compiler_contract.supported_als_versions` lists the ALS language versions this compiler accepts today.
-- `compiler_contract.upgrade_mode` is currently `whole-system-cutover`: one system targets one ALS version at a time.
-- `compiler_contract.upgrade_assistance` is currently `hybrid-assisted`: official ALS upgrades may combine deterministic rewrites with supervised agent guidance.
-- Diagnostics remain author-facing, but `code` and nullable `reason` are the machine-readable contract for automation. Tooling must not key on `message` text.
-- `reason` coverage is being rolled out incrementally. Older diagnostics may still emit `null` until each call site is upgraded.
+- `compiler_contract.upgrade_mode` is currently `whole-system-cutover`.
+- `compiler_contract.upgrade_assistance` is currently `hybrid-assisted`.
+- Diagnostics remain author-facing, but `code` and nullable `reason` are the machine-readable contract for automation.
+- `reason` coverage is incremental; some diagnostics may still emit `null`.
+
+## License
+
+Elastic License 2.0 (ELv2). See [LICENSE](LICENSE).

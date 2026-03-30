@@ -1,0 +1,51 @@
+name: Compiler Bug
+description: Report a compiler, validation, or CLI bug in the ALS research preview.
+title: "[bug] "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ALS is a research preview. Please include exact versions and the smallest reproducible system or fixture you can share.
+  - type: input
+    id: als_version
+    attributes:
+      label: ALS preview version
+      description: Example: `0.1.0-beta.1`
+    validations:
+      required: true
+  - type: input
+    id: bun_version
+    attributes:
+      label: Bun version
+      description: Output of `bun --version`
+    validations:
+      required: true
+  - type: input
+    id: command
+    attributes:
+      label: Command run
+      description: Include the exact `alsc ...` command
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: Paste the JSON output or terminal error when possible
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Minimal reproduction
+      description: Describe the smallest reproducible ALS system, fixture, or file set
+    validations:
+      required: true

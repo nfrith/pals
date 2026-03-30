@@ -1,22 +1,19 @@
-# ALS Validation Hook — Deployment Constraint
+# ALS Validation Hooks
 
-The `als-validate.sh` hook has a **hardcoded compiler path**:
+The `als-validate.sh` and `als-stop-gate.sh` hooks resolve the compiler path via `${CLAUDE_PLUGIN_ROOT}`:
 
 ```
-/Users/0xnfrith/nfrith/pals-v0/alsc/compiler
+${CLAUDE_PLUGIN_ROOT}/alsc/compiler
 ```
 
-This means the hook only works on machines where the pals-v0 repo is checked out at that exact path. This is intentional for now — ALS is in active development and not distributed yet.
+This requires ALS to be installed as a Claude Code plugin so that `CLAUDE_PLUGIN_ROOT` is set by the runtime.
 
-## What this affects
+## What the hooks do
 
-- The hook works in pals-v0 directly (development)
-- The hook works in `~/worktrees/main` (PRD agent base) because it's on the same machine
-- The hook will NOT work on other machines or in CI without updating the compiler path
+- **als-validate.sh** (PostToolUse) — after Write/Edit operations, validates the affected module and blocks further edits if validation fails.
+- **als-stop-gate.sh** (Stop) — before Claude finishes, validates all ALS systems under `$PWD` and blocks stop if any system has errors.
 
-## When to revisit
+## Requirements
 
-When ALS ships externally (target: ~2 weeks from 2026-03-20), this hardcoded path must be replaced with one of:
-- A globally installed `alsc` binary (preferred)
-- A path resolved from `$CLAUDE_PLUGIN_ROOT` (if the compiler is bundled with the plugin)
-- An environment variable for the compiler location
+- Bun must be installed and on `$PATH`.
+- The plugin must be loaded so `CLAUDE_PLUGIN_ROOT` resolves.

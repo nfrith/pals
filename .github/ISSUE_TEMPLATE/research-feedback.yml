@@ -1,0 +1,34 @@
+name: Research Feedback
+description: Share how ALS fits or misses your real-world use case.
+title: "[feedback] "
+labels:
+  - research
+body:
+  - type: textarea
+    id: use_case
+    attributes:
+      label: Use case
+      description: What are you trying to model or enforce with ALS?
+    validations:
+      required: true
+  - type: textarea
+    id: worked
+    attributes:
+      label: What already worked
+      description: Which parts of ALS were already useful?
+    validations:
+      required: true
+  - type: textarea
+    id: blocked
+    attributes:
+      label: What blocked you
+      description: Which missing lifecycle, validation, or projection capability mattered first?
+    validations:
+      required: true
+  - type: textarea
+    id: direction
+    attributes:
+      label: Direction signal
+      description: What should ALS optimize for next?
+    validations:
+      required: true

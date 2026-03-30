@@ -1,0 +1,43 @@
+name: Breaking Upgrade Report
+description: Report authored-system breakage between ALS preview releases.
+title: "[upgrade-breakage] "
+labels:
+  - breaking-change
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this template when a preview-to-preview update breaks an authored ALS system.
+  - type: input
+    id: from_version
+    attributes:
+      label: From preview version
+    validations:
+      required: true
+  - type: input
+    id: to_version
+    attributes:
+      label: To preview version
+    validations:
+      required: true
+  - type: textarea
+    id: impacted_surface
+    attributes:
+      label: Impacted authored surface
+      description: Which files, fields, sections, or refs broke?
+    validations:
+      required: true
+  - type: textarea
+    id: manual_rewrite
+    attributes:
+      label: Manual rewrite required
+      description: Describe the rewrite you had to make, or the rewrite you expected ALS to explain
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Diagnostics or output
+      description: Paste the exact JSON output or errors if possible
+    validations:
+      required: true

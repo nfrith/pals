@@ -4,7 +4,7 @@
 # If any system fails validation, blocks Claude from stopping.
 set -euo pipefail
 
-COMPILER="/Users/0xnfrith/nfrith/pals-v0/alsc/compiler"
+COMPILER="${CLAUDE_PLUGIN_ROOT}/alsc/compiler"
 
 # Bail if compiler isn't available
 command -v bun &>/dev/null || exit 0
