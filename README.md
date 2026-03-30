@@ -91,67 +91,34 @@ When you need to add a field, rename a section, modify the shape, or update a sk
 
 ## How It Works
 
-ALS applies the same two-layer architecture that classical software uses — but built on markdown files and agent skills instead of code and databases.
+An ALS system is a directory with a `.als/` metadata tree and module data alongside it.
 
 ```
-CLASSICAL SOFTWARE                              ALS
-
-┌───────────────────────┐           ┌───────────────────────┐
-│   App / Business Logic│           │        Skills          │
-└───────────────────────┘           └───────────────────────┘
-
-┌───────────────────────┐           ┌───────────────────────┐
-│       Database        │           │      Filesystem        │
-│                       │           │                        │
-│  ┌─────────────────┐  │           │  ┌──────────────────┐  │
-│  │     Schema      │  │           │  │    shape.yaml    │  │
-│  └─────────────────┘  │           │  └──────────────────┘  │
-│                       │           │                        │
-│  ┌────────┐┌────────┐ │           │  ┌────────┐┌────────┐  │
-│  │ users  ││ orders │ │           │  │backlog ││ exper~ │  │
-│  │--------││--------│ │           │  │--------││--------│  │
-│  │ id     ││ id     │ │           │  │ items/ ││ prog~/ │  │
-│  │ name   ││ user_id│ │           │  │ ├ 001  ││ ├ PRG/ │  │
-│  │ email  ││ amount │ │           │  │ └ 002  ││ │ └run/│  │
-│  │        ││ status │ │           │  │        ││ └ PRG/ │  │
-│  └────────┘└────────┘ │           │  └────────┘└────────┘  │
-│                       │           │                        │
-└───────────────────────┘           └───────────────────────┘
-
-              Same architecture. Different primitives.
+my-system/
+├── .als/
+│   ├── system.yaml                    # system identity and module registry
+│   └── modules/
+│       └── backlog/
+│           └── v1/
+│               ├── shape.yaml         # schema: fields, sections, body contract
+│               └── skills/
+│                   ├── backlog-create/
+│                   │   └── SKILL.md   # skill: how to create records
+│                   └── backlog-get/
+│                       └── SKILL.md   # skill: how to read records
+│
+└── workspace/
+    └── backlog/                       # module data lives here
+        └── items/
+            ├── ITEM-001.md            # record: typed frontmatter + governed prose
+            └── ITEM-002.md
 ```
 
-**Databases** have schemas that define what valid data looks like. Tables hold rows. Foreign keys encode relationships.
+**`shape.yaml`** defines what valid records look like — fields, types, nullability, enums, refs, and the exact body sections each record must contain.
 
-**ALS** has shapes that define what valid data looks like. Directories hold markdown records. Filesystem paths encode relationships.
+**`SKILL.md`** defines how agents interact with the data — the procedures, scope boundaries, and domain vocabulary for each operation.
 
-The compiler validates everything. Skills provide the interface.
-
-### Creating a System
-
-An operator or agent describes their domain. ALS interviews, models, and produces both artifacts in one motion.
-
-```
-              ┌───────────────────┐
-              │ Operator or Agent │
-              │  describes domain │
-              └─────────┬─────────┘
-                        │
-                        ▼
-                 ┌─────────────┐
-                 │    /new     │
-                 │  Interview  │
-                 └──────┬──────┘
-                        │
-              ┌─────────┴─────────┐
-              │                   │
-              ▼                   ▼
-       ┌────────────┐     ┌────────────┐
-       │  SKILL.md  │     │ shape.yaml │
-       └────────────┘     └────────────┘
-
-  Define your structure. Build the process that enforces it.
-```
+**Records** are markdown files with YAML frontmatter. The compiler validates them against the shape. Skills provide the interface for creating and modifying them.
 
 ### Migrations
 
