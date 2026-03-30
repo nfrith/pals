@@ -34,7 +34,16 @@ The current public preview is centered on two usable surfaces:
 
 ALS is distributed as a Claude Code plugin. Requires [Bun](https://bun.sh) >= 1.3.0 and [jq](https://jqlang.github.io/jq/).
 
-1. Open Claude Code and type `/plugin`
+### Option A: From the terminal
+
+```bash
+claude plugin marketplace add https://github.com/nfrith/als
+claude plugin install als@als-marketplace
+```
+
+### Option B: From inside Claude Code
+
+1. Type `/plugin`
 2. Navigate to the **Marketplaces** tab and select **+ Add Marketplace**
 3. Enter `https://github.com/nfrith/als` as the marketplace source
 4. Go to the **Discover** tab, select **als**, press `Space` to toggle, then `i` to install
