@@ -41,6 +41,107 @@ claude plugin add als
 
 Once installed, ALS skills (`/validate`, `/new`, `/change`, `/deploy`) are available inside Claude Code sessions.
 
+## How to Use
+
+*Coming soon.*
+
+## How It Works
+
+ALS applies the same two-layer architecture that classical software uses — but built on markdown files and agent skills instead of code and databases.
+
+```
+CLASSICAL SOFTWARE                              ALS
+
+┌───────────────────────┐           ┌───────────────────────┐
+│   App / Business Logic│           │        Skills          │
+└───────────────────────┘           └───────────────────────┘
+
+┌───────────────────────┐           ┌───────────────────────┐
+│       Database        │           │      Filesystem        │
+│                       │           │                        │
+│  ┌─────────────────┐  │           │  ┌──────────────────┐  │
+│  │     Schema      │  │           │  │    shape.yaml    │  │
+│  └─────────────────┘  │           │  └──────────────────┘  │
+│                       │           │                        │
+│  ┌────────┐┌────────┐ │           │  ┌────────┐┌────────┐  │
+│  │ users  ││ orders │ │           │  │backlog ││ exper~ │  │
+│  │--------││--------│ │           │  │--------││--------│  │
+│  │ id     ││ id     │ │           │  │ items/ ││ prog~/ │  │
+│  │ name   ││ user_id│ │           │  │ ├ 001  ││ ├ PRG/ │  │
+│  │ email  ││ amount │ │           │  │ └ 002  ││ │ └run/│  │
+│  │        ││ status │ │           │  │        ││ └ PRG/ │  │
+│  └────────┘└────────┘ │           │  └────────┘└────────┘  │
+│                       │           │                        │
+└───────────────────────┘           └───────────────────────┘
+
+              Same architecture. Different primitives.
+```
+
+**Databases** have schemas that define what valid data looks like. Tables hold rows. Foreign keys encode relationships.
+
+**ALS** has shapes that define what valid data looks like. Directories hold markdown records. Filesystem paths encode relationships.
+
+The compiler validates everything. Skills provide the interface.
+
+### Creating a System
+
+An operator or agent describes their domain. ALS interviews, models, and produces both artifacts in one motion.
+
+```
+              ┌───────────────────┐
+              │ Operator or Agent │
+              │  describes domain │
+              └─────────┬─────────┘
+                        │
+                        ▼
+                 ┌─────────────┐
+                 │    /new     │
+                 │  Interview  │
+                 └──────┬──────┘
+                        │
+              ┌─────────┴─────────┐
+              │                   │
+              ▼                   ▼
+       ┌────────────┐     ┌────────────┐
+       │  SKILL.md  │     │ shape.yaml │
+       └────────────┘     └────────────┘
+
+  Define your structure. Build the process that enforces it.
+```
+
+### Migrations
+
+ALS codifies schema migrations the same way classical software does — prepare, test, execute, flip.
+
+```
+CLASSICAL SOFTWARE
+
+  v1                          Migration                        v2
+┌──────────┐                                               ┌──────────┐
+│ App Logic│───────────── Update code ────────────────────▶│ App Logic│
+└──────────┘                                               └──────────┘
+┌──────────┐    Write DDL ──▶ Test on staging ──▶ Run on   ┌──────────┐
+│ Database │─────────────────────────────────────production▶│ Database │
+│  Schema  │                                               │  Schema  │
+│  Tables  │                                               │  Tables  │
+└──────────┘                                               └──────────┘
+
+
+ALS
+
+  v1                          Migration                        v2
+┌──────────┐                                               ┌──────────┐
+│  Skills  │───────────── Update skills ──────────────────▶│  Skills  │
+└──────────┘                                               └──────────┘
+┌──────────┐    Update shape ▶ Dry-run on clone ▶ Run on   ┌──────────┐
+│Filesystem│─────────────────────────────────────  live   ─▶│Filesystem│
+│shape.yaml│                                               │shape.yaml│
+│ Records  │                                               │ Records  │
+└──────────┘                                               └──────────┘
+```
+
+`change` prepares the next version bundle. `migrate` tests it on a disposable clone, then executes the live cutover. Every migration is versioned, manifested, and auditable.
+
 ## Preview Contract
 
 This is a research preview, not a stability release.
