@@ -91,27 +91,36 @@ When you need to add a field, rename a section, modify the shape, or update a sk
 
 ## How It Works
 
-An ALS system is a directory with a `.als/` metadata tree and module data alongside it.
+An ALS system is a directory with a `.als/` metadata tree and module data alongside it. Modules can mount at any path — top-level or nested.
 
 ```
 my-system/
 ├── .als/
 │   ├── system.yaml                    # system identity and module registry
 │   └── modules/
-│       └── backlog/
+│       ├── backlog/
+│       │   └── v1/
+│       │       ├── shape.yaml         # schema: fields, sections, body contract
+│       │       └── skills/
+│       │           ├── backlog-create/
+│       │           │   └── SKILL.md   # skill: how to create records
+│       │           └── backlog-get/
+│       │               └── SKILL.md   # skill: how to read records
+│       └── people/
 │           └── v1/
-│               ├── shape.yaml         # schema: fields, sections, body contract
+│               ├── shape.yaml
 │               └── skills/
-│                   ├── backlog-create/
-│                   │   └── SKILL.md   # skill: how to create records
-│                   └── backlog-get/
-│                       └── SKILL.md   # skill: how to read records
+│                   └── people-module/
+│                       └── SKILL.md
+│
+├── backlog/                           # module mounted at root level
+│   └── items/
+│       ├── ITEM-001.md                # record: typed frontmatter + governed prose
+│       └── ITEM-002.md
 │
 └── workspace/
-    └── backlog/                       # module data lives here
-        └── items/
-            ├── ITEM-001.md            # record: typed frontmatter + governed prose
-            └── ITEM-002.md
+    └── people/                        # module mounted under workspace/
+        └── PPL-001.md
 ```
 
 **`shape.yaml`** defines what valid records look like — fields, types, nullability, enums, refs, and the exact body sections each record must contain.
@@ -119,6 +128,44 @@ my-system/
 **`SKILL.md`** defines how agents interact with the data — the procedures, scope boundaries, and domain vocabulary for each operation.
 
 **Records** are markdown files with YAML frontmatter. The compiler validates them against the shape. Skills provide the interface for creating and modifying them.
+
+## Philosophy
+
+ALS applies the same two-layer architecture that classical software uses — but built on markdown files and agent skills instead of code and databases.
+
+```
+CLASSICAL SOFTWARE                              ALS
+
+┌───────────────────────┐           ┌───────────────────────┐
+│   App / Business Logic│           │        Skills          │
+└───────────────────────┘           └───────────────────────┘
+
+┌───────────────────────┐           ┌───────────────────────┐
+│       Database        │           │      Filesystem        │
+│                       │           │                        │
+│  ┌─────────────────┐  │           │  ┌──────────────────┐  │
+│  │     Schema      │  │           │  │    shape.yaml    │  │
+│  └─────────────────┘  │           │  └──────────────────┘  │
+│                       │           │                        │
+│  ┌────────┐┌────────┐ │           │  ┌────────┐┌────────┐  │
+│  │ users  ││ orders │ │           │  │backlog ││ exper~ │  │
+│  │--------││--------│ │           │  │--------││--------│  │
+│  │ id     ││ id     │ │           │  │ items/ ││ prog~/ │  │
+│  │ name   ││ user_id│ │           │  │ ├ 001  ││ ├ PRG/ │  │
+│  │ email  ││ amount │ │           │  │ └ 002  ││ │ └run/│  │
+│  │        ││ status │ │           │  │        ││ └ PRG/ │  │
+│  └────────┘└────────┘ │           │  └────────┘└────────┘  │
+│                       │           │                        │
+└───────────────────────┘           └───────────────────────┘
+
+              Same architecture. Different primitives.
+```
+
+**Databases** have schemas that define what valid data looks like. Tables hold rows. Foreign keys encode relationships.
+
+**ALS** has shapes that define what valid data looks like. Directories hold markdown records. Filesystem paths encode relationships.
+
+The compiler validates everything. Skills provide the interface.
 
 ### Migrations
 
