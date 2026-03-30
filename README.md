@@ -57,13 +57,11 @@ The ALS plugin adds skills to Claude Code — slash commands that guide Claude t
 
 ### `/new` — Create a system or module
 
-Describe what you want to track. ALS interviews you to understand the domain — entities, fields, relationships, lifecycle — then produces the shape file, skill definitions, and sample records.
+Describe what you want to track. ALS interviews you to understand the domain — entities, fields, relationships, lifecycle — then produces the shape file and skill definitions.
 
 ```
 /new I need to track client projects with status, owner, and deliverables
 ```
-
-For an existing system, `/new` adds a module to it. For a fresh directory, it bootstraps the whole system.
 
 ### `/validate` — Check your system
 
@@ -71,22 +69,21 @@ Runs the compiler against your ALS system and reports errors.
 
 ```
 /validate
+# Validate a specific module:
 /validate backlog
 ```
 
-Without a module argument, validates everything. With one, validates just that module.
+### `/change` and `/migrate` — Evolve your schema
 
-### `/change` — Prepare a schema change
+When you need to add a field, rename a section, modify the shape, or update a skill definition, the process is two steps: prepare, then execute.
 
-When you need to add a field, rename a section, or modify the shape, `/change` prepares the next version bundle. It interviews you about the change, authors `vN+1`, and stages the migration assets — without touching live data.
+**`/change`** prepares the next version bundle. It interviews you about the change, authors `vN+1`, and stages the migration assets — without touching live data.
 
 ```
 /change backlog add a priority field
 ```
 
-### `/migrate` — Execute the migration
-
-After `/change` has prepared a version bundle, `/migrate` validates it, dry-runs on a disposable clone, and performs the live cutover atomically.
+**`/migrate`** takes the prepared bundle and executes it. It validates the staged version, dry-runs on a disposable clone, and performs the live cutover atomically.
 
 ```
 /migrate backlog
