@@ -25,7 +25,7 @@ for (const invalidPath of [
   "/clients/registry",
   "clients//registry",
   "clients/../registry",
-  ".pals/registry",
+  ".als/registry",
   "clients/.cache",
 ]) {
   test.concurrent(`module paths must be normalized relative slug paths (${invalidPath})`, async () => {

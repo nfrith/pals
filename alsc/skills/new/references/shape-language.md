@@ -29,7 +29,7 @@ Rules:
 - Module `skills` is a required array of live active skill ids and may be empty
 - Each skill id must match `^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$`
 - Active skill ids must be globally unique across the live system
-- Module paths cannot be absolute, contain empty segments, contain `.` or `..`, or contain hidden segments like `.pals`
+- Module paths cannot be absolute, contain empty segments, contain `.` or `..`, or contain hidden segments like `.als`
 - The module's data lives at `{path}/`
 - The module subtree may contain reserved non-record markdown files named `AGENTS.md` or `CLAUDE.md` at any depth
 - Matching for reserved agent files is case-insensitive, including the `.md` extension
