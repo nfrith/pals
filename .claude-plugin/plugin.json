@@ -1,11 +1,5 @@
 {
   "name": "als",
-  "version": "0.1.0-beta.1",
-  "description": "ALS tools and skills — create modules, validate systems, and prepare schema changes",
-  "skills": "./skills",
-  "hooks": [
-    "./hooks/post-edit-validate.json",
-    "./hooks/post-edit-breadcrumb.json",
-    "./hooks/stop-validate.json"
-  ]
+  "version": "0.1.0-beta.2",
+  "description": "ALS tools and skills — create modules, validate systems, and prepare schema changes"
 }
