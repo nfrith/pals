@@ -9,7 +9,7 @@
   "plugins": [
     {
       "name": "als",
-      "source": "./",
+      "source": "./als-plugin",
       "description": "ALS tools and skills — create modules, validate systems, and deploy Claude skills",
       "version": "0.1.0-beta.1",
       "author": {
