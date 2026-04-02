@@ -22,6 +22,7 @@ Use this fixture to evaluate a middle path between:
 
 This model centralizes metadata at the system root, but keeps ownership module-scoped with one version bundle per module version.
 ALS language upgrades are intended to cut over the whole system version, while module `version` remains the schema-evolution surface for module data.
+The backlog module in this fixture also demonstrates discriminator-selected contracts: `type` changes both the allowed frontmatter fields and the required body sections.
 
 ## Layout
 
@@ -39,6 +40,7 @@ This fixture now treats `.als/` as the canonical source for module skills and ch
 - Better: one obvious place to inspect system shape, lower schema duplication, cleaner data tree.
 - Better: a single `system_id` owns canonical identity, while module paths describe file placement directly.
 - Better: existing directory trees can be adopted incrementally without inventing extra placement metadata.
+- Better: the backlog example shows one entity shape with shared identity plus variant-local frontmatter and variant-local section sets.
 - Better: section content rules are explicit enough for AST-based validation instead of loose `prose`/`list` heuristics.
 - Worse: metadata is farther from records, and module edits usually touch `.als/` plus skill content.
 - Explicit non-goal: this fixture does not make one monolithic file authoritative for the entire system.

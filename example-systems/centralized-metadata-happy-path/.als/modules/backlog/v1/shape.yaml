@@ -132,6 +132,33 @@ entities:
             type: enum
             allow_null: false
             allowed_values: [draft, scoped, active, blocked, delivered, completed, cancelled]
+          delivery_track:
+            type: enum
+            allow_null: false
+            allowed_values: [net-new, enhancement, hardening]
+          target_release:
+            type: string
+            allow_null: false
+          design_doc:
+            type: file_path
+            allow_null: false
+            base: system_root
+          launch_date:
+            type: date
+            allow_null: false
+          reviewer_refs:
+            type: list
+            allow_null: false
+            items:
+              type: ref
+              target:
+                module: people
+                entity: person
+          success_metrics:
+            type: list
+            allow_null: false
+            items:
+              type: string
         sections:
           - DESCRIPTION
           - REQUIREMENTS

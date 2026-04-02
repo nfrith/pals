@@ -123,7 +123,7 @@ my-system/
         └── PPL-001.md
 ```
 
-**`shape.yaml`** defines what valid records look like — fields, types, nullability, enums, refs, and the exact body sections each record must contain.
+**`shape.yaml`** defines what valid records look like — fields, types, nullability, enums, refs, and the exact body sections each record must contain. Variant entities can also use a discriminator to select additional frontmatter fields and a variant-specific body contract.
 
 **`SKILL.md`** defines how agents interact with the data — the procedures, scope boundaries, and domain vocabulary for each operation.
 

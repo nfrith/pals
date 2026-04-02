@@ -188,6 +188,13 @@ entity-name:
           type: enum
           allow_null: false
           allowed_values: [draft, active, completed]
+        delivery_track:
+          type: enum
+          allow_null: false
+          allowed_values: [net-new, enhancement, hardening]
+        target_release:
+          type: string
+          allow_null: false
       sections: [DESCRIPTION, ACTIVITY_LOG]   # authoritative full h2 section order for app records
 
     research:
@@ -196,14 +203,56 @@ entity-name:
           type: enum
           allow_null: false
           allowed_values: [draft, findings-ready, completed]
+        research_question:
+          type: string
+          allow_null: false
       sections: [DESCRIPTION, ACTIVITY_LOG]
 ```
 
 Rules:
 - Plain entities declare their full body contract in `body`.
 - Variant entities continue to use `section_definitions` plus each variant's `sections` list for authoritative `h2` section order.
+- `variants.<variant>.fields` declare frontmatter fields, not section metadata. Once the discriminator resolves, the effective frontmatter contract is the root/base `fields` plus that variant's `fields`.
 - Variant entities may also declare shared `body.title` and shared `body.preamble` at the entity root.
 - Variant entities may omit `body` entirely when they do not declare a shared title or shared preamble.
+
+#### Variant-local frontmatter
+
+The discriminator chooses both the body contract and the variant-local frontmatter contract.
+The examples below are illustrative. They show the contract shape, not an exact mirror of any one fixture.
+
+For `type: app`, the frontmatter contract is:
+
+- root/base fields such as `id`, `title`, and `type`
+- app fields such as variant-scoped `status`, `delivery_track`, and `target_release`
+
+For `type: research`, the frontmatter contract is:
+
+- root/base fields such as `id`, `title`, and `type`
+- research fields such as variant-scoped `status` and `research_question`
+
+Illustrative example records:
+
+```yaml
+---
+id: ITEM-001
+title: Ship backlog variants
+type: app
+status: active
+delivery_track: enhancement
+target_release: 2026-Q2
+---
+```
+
+```yaml
+---
+id: ITEM-002
+title: Evaluate backlog rollups
+type: research
+status: findings-ready
+research_question: Should rollup buckets stay outside the compiler?
+---
+```
 
 ### Path templates
 
@@ -628,6 +677,7 @@ Rules:
 - `discriminator` must point to a root/base field that is `type: enum` and `allow_null: false`.
 - Variant keys form a bijection with the discriminator enum values: every enum value needs a variant, and extra variant keys are invalid.
 - Variant-local field names cannot collide with root/base field names.
+- When the discriminator resolves successfully, only the selected variant's frontmatter fields are added to the root/base field contract for that record.
 - Every section name referenced by a variant must exist in `section_definitions`.
 - A variant's `sections` list is the authoritative full `h2` section order for records of that variant.
 - Shared `body.title` and shared `body.preamble`, when declared, apply to every variant of the entity.

@@ -7,6 +7,7 @@ This is where individual work items live as `ITEM-NNNN.md` files.
 The `type` field is the first decision. Everything downstream — available sections, valid statuses, what the item even means — flows from that choice. Read the variant before writing anything.
 
 Research items are not app items with different labels. Research items have HYPOTHESIS and FINDINGS. App items have REQUIREMENTS and ARCHITECTURE. Don't mix them.
+`status` is variant-scoped even though every current variant has one. App items also carry app-only frontmatter. In this fixture that includes `delivery_track`, `target_release`, `design_doc`, `launch_date`, `reviewer_refs`, and `success_metrics`. Treat those as part of the app contract, not optional notes.
 
 ## Refs
 
