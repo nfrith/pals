@@ -4,6 +4,7 @@ dependencies:
 
 entities:
   incident-report:
+    source_format: markdown
     path: reports/{id}.md
 
     identity:

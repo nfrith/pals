@@ -3,6 +3,7 @@ dependencies:
 
 entities:
   program:
+    source_format: markdown
     path: programs/{id}/{id}.md
 
     identity:
@@ -61,6 +62,7 @@ entities:
             exclude: required acceptance details
 
   experiment:
+    source_format: markdown
     path: programs/{program}/experiments/{id}/{id}.md
 
     identity:
@@ -138,6 +140,7 @@ entities:
             exclude: decision outcomes from completed runs
 
   run:
+    source_format: markdown
     path: programs/{program}/experiments/{experiment}/runs/{id}.md
 
     identity:

@@ -3,6 +3,7 @@ dependencies:
 
 entities:
   synthesis:
+    source_format: markdown
     path: syntheses/{id}.md
 
     identity:

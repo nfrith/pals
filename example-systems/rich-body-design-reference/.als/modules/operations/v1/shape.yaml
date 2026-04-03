@@ -3,6 +3,7 @@ dependencies:
 
 entities:
   runbook:
+    source_format: markdown
     path: runbooks/{id}.md
 
     identity:

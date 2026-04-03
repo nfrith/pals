@@ -145,6 +145,39 @@ test.concurrent("record-like markdown files with uppercase extension fail before
   });
 });
 
+test.concurrent("non-reserved jsonl files with uppercase extension fail cleanly", async () => {
+  await withFixtureSandbox("discovery-uppercase-jsonl", async ({ root }) => {
+    const baseline = validateFixture(root);
+
+    await writePath(
+      root,
+      "workspace/backlog/README.JSONL",
+      "{\"id\":\"STRAY-0001\"}\n",
+    );
+
+    const result = validateFixture(root);
+    expect(result.status).toBe("fail");
+    expect(result.summary.files_checked).toBe(baseline.summary.files_checked + 1);
+    expect(result.summary.files_failed).toBe(baseline.summary.files_failed + 1);
+    expectModuleDiagnostic(result, "backlog", codes.PARSE_JSONL_EXTENSION_CASE, "workspace/backlog/README.JSONL");
+    expectNoModuleDiagnostic(result, "backlog", codes.PARSE_ENTITY_INFER, "README.JSONL");
+  });
+});
+
+test.concurrent("stray jsonl files that match no entity are rejected", async () => {
+  await withFixtureSandbox("discovery-stray-jsonl", async ({ root }) => {
+    await writePath(
+      root,
+      "workspace/backlog/README.jsonl",
+      "{\"id\":\"STRAY-0001\"}\n",
+    );
+
+    const result = validateFixture(root);
+    expect(result.status).toBe("fail");
+    expectModuleDiagnostic(result, "backlog", codes.PARSE_ENTITY_INFER, "workspace/backlog/README.jsonl");
+  });
+});
+
 test.concurrent("unreadable directories fail cleanly and discovery continues", async () => {
   await withFixtureSandbox("discovery-unreadable-dir", async ({ root }) => {
     if (isRootUser()) return;

@@ -2,6 +2,7 @@ dependencies: []
 
 entities:
   config:
+    source_format: markdown
     path: configs/{id}.md
 
     identity:
@@ -54,6 +55,7 @@ entities:
             exclude: full change history
 
   profile:
+    source_format: markdown
     path: profiles/{id}.md
 
     identity:

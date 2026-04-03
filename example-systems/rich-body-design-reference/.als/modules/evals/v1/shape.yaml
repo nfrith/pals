@@ -3,6 +3,7 @@ dependencies:
 
 entities:
   eval-spec:
+    source_format: markdown
     path: specs/{id}.md
 
     identity:

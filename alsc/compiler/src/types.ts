@@ -7,6 +7,7 @@ export type ValidationPhase =
   | "module_shape"
   | "parse"
   | "record_frontmatter"
+  | "record_rows"
   | "record_body"
   | "identity"
   | "reference"

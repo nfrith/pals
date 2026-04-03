@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { parsePathTemplate } from "./parser/path-template.ts";
 
 const entityName = z.string().regex(/^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/);
 const fieldName = z.string().regex(/^[a-z][a-z0-9_]*$/);
@@ -99,6 +100,10 @@ export interface BodyShape extends SharedBodyShape {
   sections: SectionShape[];
 }
 
+export interface JsonlRowsShape {
+  fields: Record<string, JsonlRowFieldShape>;
+}
+
 export function splitModuleMountPath(modulePath: string): string[] {
   return modulePath.split("/");
 }
@@ -162,6 +167,16 @@ const listItemSchema = z.discriminatedUnion("type", [
   }),
 ]);
 
+const jsonlRowListItemSchema = z.discriminatedUnion("type", [
+  z.object({
+    type: z.literal("string"),
+  }),
+  z.object({
+    type: z.literal("enum"),
+    allowed_values: allowedValuesSchema,
+  }),
+]);
+
 const fieldSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("id"),
@@ -198,6 +213,31 @@ const fieldSchema = z.discriminatedUnion("type", [
     type: z.literal("list"),
     ...commonFieldShape,
     items: listItemSchema,
+  }),
+]);
+
+const jsonlRowFieldSchema = z.discriminatedUnion("type", [
+  z.object({
+    type: z.literal("string"),
+    ...commonFieldShape,
+  }),
+  z.object({
+    type: z.literal("number"),
+    ...commonFieldShape,
+  }),
+  z.object({
+    type: z.literal("date"),
+    ...commonFieldShape,
+  }),
+  z.object({
+    type: z.literal("enum"),
+    ...commonFieldShape,
+    allowed_values: allowedValuesSchema,
+  }),
+  z.object({
+    type: z.literal("list"),
+    ...commonFieldShape,
+    items: jsonlRowListItemSchema,
   }),
 ]);
 
@@ -374,7 +414,8 @@ const variantSchema = z.object({
   }
 });
 
-const entityBaseSchema = z.object({
+const markdownEntityBaseSchema = z.object({
+  source_format: z.literal("markdown"),
   path: nonEmptyString,
   identity: z.object({
     id_field: z.literal("id"),
@@ -384,20 +425,20 @@ const entityBaseSchema = z.object({
     }).optional(),
   }),
   fields: z.record(fieldName, fieldSchema),
-});
+}).passthrough();
 
-const plainEntitySchema = entityBaseSchema.extend({
+const plainMarkdownEntitySchema = markdownEntityBaseSchema.extend({
   body: plainBodySchema,
 });
 
-const variantEntitySchema = entityBaseSchema.extend({
+const variantMarkdownEntitySchema = markdownEntityBaseSchema.extend({
   discriminator: fieldName,
   body: sharedBodySchema.optional(),
   section_definitions: z.record(nonEmptyString, sectionDefinitionSchema),
   variants: z.record(nonEmptyString, variantSchema),
 });
 
-const entitySchema = z.union([plainEntitySchema, variantEntitySchema]).superRefine((value, ctx) => {
+const markdownEntitySchema = z.union([plainMarkdownEntitySchema, variantMarkdownEntitySchema]).superRefine((value, ctx) => {
   if (!("id" in value.fields) || value.fields.id.type !== "id") {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
@@ -411,6 +452,22 @@ const entitySchema = z.union([plainEntitySchema, variantEntitySchema]).superRefi
       code: z.ZodIssueCode.custom,
       message: "entity.path must contain {id}",
       path: ["path"],
+    });
+  }
+
+  if (!value.path.endsWith(".md")) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "markdown entity paths must end with .md",
+      path: ["path"],
+    });
+  }
+
+  if ("rows" in value) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "markdown entities must not declare rows",
+      path: ["rows"],
     });
   }
 
@@ -522,6 +579,75 @@ const entitySchema = z.union([plainEntitySchema, variantEntitySchema]).superRefi
   }
 });
 
+const jsonlRowsSchema: z.ZodType<JsonlRowsShape> = z.object({
+  fields: z.record(fieldName, jsonlRowFieldSchema),
+}).superRefine((value, ctx) => {
+  if (Object.keys(value.fields).length === 0) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "jsonl rows.fields must declare at least one field",
+      path: ["fields"],
+    });
+  }
+});
+
+const jsonlEntitySchema = z.object({
+  source_format: z.literal("jsonl"),
+  path: nonEmptyString,
+  rows: jsonlRowsSchema,
+}).passthrough().superRefine((value, ctx) => {
+  if (!value.path.includes("{id}")) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "entity.path must contain {id}",
+      path: ["path"],
+    });
+  }
+
+  if (!value.path.endsWith(".jsonl")) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "jsonl entity paths must end with .jsonl",
+      path: ["path"],
+    });
+  }
+
+  for (const forbiddenKey of ["identity", "fields", "body", "discriminator", "section_definitions", "variants"]) {
+    if (forbiddenKey in value) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `jsonl entities must not declare ${forbiddenKey}`,
+        path: [forbiddenKey],
+      });
+    }
+  }
+});
+
+const entitySourceFormatGateSchema = z.object({
+  source_format: z.unknown().optional(),
+}).passthrough().superRefine((value, ctx) => {
+  if (value.source_format === undefined) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "entity.source_format is required",
+      path: ["source_format"],
+    });
+    return;
+  }
+
+  if (value.source_format !== "markdown" && value.source_format !== "jsonl") {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "entity.source_format must be one of: markdown, jsonl",
+      path: ["source_format"],
+    });
+  }
+});
+
+// This stays as a gate-plus-pipe instead of a discriminatedUnion because ALS has
+// two markdown entity subshapes that both legitimately use source_format=markdown.
+const entitySchema = entitySourceFormatGateSchema.pipe(z.union([markdownEntitySchema, jsonlEntitySchema]));
+
 export const moduleShapeSchema = z.object({
   dependencies: z.array(z.object({
     module: entityName,
@@ -542,12 +668,41 @@ export const moduleShapeSchema = z.object({
   }
 
   for (const [entityKey, entity] of Object.entries(value.entities)) {
-    if (entity.identity.parent && !value.entities[entity.identity.parent.entity]) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: `parent entity ${entity.identity.parent.entity} is not declared`,
-        path: ["entities", entityKey, "identity", "parent", "entity"],
-      });
+    if (entity.source_format === "markdown") {
+      if (entity.identity.parent && !value.entities[entity.identity.parent.entity]) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `parent entity ${entity.identity.parent.entity} is not declared`,
+          path: ["entities", entityKey, "identity", "parent", "entity"],
+        });
+      } else if (
+        entity.identity.parent
+        && value.entities[entity.identity.parent.entity]
+        && value.entities[entity.identity.parent.entity].source_format !== "markdown"
+      ) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `markdown parent entity ${entity.identity.parent.entity} must also use source_format=markdown`,
+          path: ["entities", entityKey, "identity", "parent", "entity"],
+        });
+      }
+      continue;
+    }
+
+    const pathTemplate = parsePathTemplate(entity.path, entityKey);
+    const seenAncestorNames = new Set<string>();
+    for (const segment of pathTemplate.segments) {
+      if (segment.kind !== "placeholder" || !segment.entity_name || segment.entity_name === entityKey) continue;
+      if (seenAncestorNames.has(segment.entity_name)) continue;
+      seenAncestorNames.add(segment.entity_name);
+
+      if (!value.entities[segment.entity_name]) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `jsonl path placeholder ${segment.entity_name} does not name a declared entity`,
+          path: ["entities", entityKey, "path"],
+        });
+      }
     }
   }
 });
@@ -621,11 +776,15 @@ export const systemConfigSchema = z.object({
 export type ModuleShape = z.infer<typeof moduleShapeSchema>;
 export type SystemConfig = z.infer<typeof systemConfigSchema>;
 export type EntityShape = z.infer<typeof entitySchema>;
-export type PlainEntityShape = z.infer<typeof plainEntitySchema>;
-export type VariantEntityShape = z.infer<typeof variantEntitySchema>;
+export type MarkdownEntityShape = z.infer<typeof markdownEntitySchema>;
+export type PlainEntityShape = z.infer<typeof plainMarkdownEntitySchema>;
+export type VariantEntityShape = z.infer<typeof variantMarkdownEntitySchema>;
+export type JsonlEntityShape = z.infer<typeof jsonlEntitySchema>;
 export type EntityVariantShape = z.infer<typeof variantSchema>;
 export type FilePathBase = z.infer<typeof filePathBaseSchema>;
 export type FieldShape = z.infer<typeof fieldSchema>;
+export type JsonlRowFieldShape = z.infer<typeof jsonlRowFieldSchema>;
+export type JsonlRowListItemShape = z.infer<typeof jsonlRowListItemSchema>;
 
 interface RawShapeIssue {
   path: Array<string | number>;

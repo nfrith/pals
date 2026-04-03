@@ -4,6 +4,7 @@ dependencies:
 
 entities:
   dossier:
+    source_format: markdown
     path: dossiers/{id}.md
 
     identity:

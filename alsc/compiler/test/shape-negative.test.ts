@@ -265,6 +265,158 @@ test.concurrent("discriminator fields must be non-null enums", async () => {
   });
 });
 
+test.concurrent("entities must declare source_format", async () => {
+  await withFixtureSandbox("shape-missing-source-format", async ({ root }) => {
+    await updateShapeYaml(root, "backlog", 1, (shape) => {
+      const entities = shape.entities as Record<string, Record<string, unknown>>;
+      delete entities.item.source_format;
+    });
+
+    const result = validateFixture(root);
+    expect(result.status).toBe("fail");
+    const diagnostic = expectModuleDiagnostic(result, "backlog", codes.SHAPE_INVALID, ".als/modules/backlog/v1/shape.yaml");
+    expect(diagnostic.field).toBe("entities.item.source_format");
+    expect(diagnostic.message).toBe("entity.source_format is required");
+  });
+});
+
+test.concurrent("entities must use supported source_format values", async () => {
+  await withFixtureSandbox("shape-invalid-source-format", async ({ root }) => {
+    await updateShapeYaml(root, "backlog", 1, (shape) => {
+      const entities = shape.entities as Record<string, Record<string, unknown>>;
+      entities.item.source_format = "yaml";
+    });
+
+    const result = validateFixture(root);
+    expect(result.status).toBe("fail");
+    const diagnostic = expectModuleDiagnostic(result, "backlog", codes.SHAPE_INVALID, ".als/modules/backlog/v1/shape.yaml");
+    expect(diagnostic.field).toBe("entities.item.source_format");
+    expect(diagnostic.message).toBe("entity.source_format must be one of: markdown, jsonl");
+  });
+});
+
+test.concurrent("markdown entities must use .md paths", async () => {
+  await withFixtureSandbox("shape-markdown-path-suffix", async ({ root }) => {
+    await updateShapeYaml(root, "backlog", 1, (shape) => {
+      const entities = shape.entities as Record<string, Record<string, unknown>>;
+      entities.item.path = "items/{id}.jsonl";
+    });
+
+    const result = validateFixture(root);
+    expect(result.status).toBe("fail");
+    expectModuleDiagnostic(result, "backlog", codes.SHAPE_INVALID, ".als/modules/backlog/v1/shape.yaml");
+  });
+});
+
+test.concurrent("markdown entities must not declare rows", async () => {
+  await withFixtureSandbox("shape-markdown-rows", async ({ root }) => {
+    await updateShapeYaml(root, "backlog", 1, (shape) => {
+      const entities = shape.entities as Record<string, Record<string, unknown>>;
+      entities.item.rows = {
+        fields: {
+          stray: {
+            type: "string",
+            allow_null: false,
+          },
+        },
+      };
+    });
+
+    const result = validateFixture(root);
+    expect(result.status).toBe("fail");
+    expectModuleDiagnostic(result, "backlog", codes.SHAPE_INVALID, ".als/modules/backlog/v1/shape.yaml");
+  });
+});
+
+test.concurrent("jsonl entities must use .jsonl paths", async () => {
+  await withExampleSystemSandbox("multi-format-design-reference", "shape-jsonl-path-suffix", async ({ root }) => {
+    await updateShapeYaml(root, "observability", 1, (shape) => {
+      const entities = shape.entities as Record<string, Record<string, unknown>>;
+      entities["metric-stream"].path = "streams/{id}.md";
+    });
+
+    const result = validateFixture(root);
+    expect(result.status).toBe("fail");
+    expectModuleDiagnostic(result, "observability", codes.SHAPE_INVALID, ".als/modules/observability/v1/shape.yaml");
+  });
+});
+
+test.concurrent("markdown identity.parent cannot target jsonl entities", async () => {
+  await withExampleSystemSandbox("multi-format-design-reference", "shape-markdown-parent-jsonl", async ({ root }) => {
+    await updateShapeYaml(root, "observability", 1, (shape) => {
+      const entities = shape.entities as Record<string, Record<string, unknown>>;
+      const dashboard = entities.dashboard;
+      dashboard.identity = {
+        id_field: "id",
+        parent: {
+          entity: "metric-stream",
+          ref_field: "stream_ref",
+        },
+      };
+    });
+
+    const result = validateFixture(root);
+    expect(result.status).toBe("fail");
+    const diagnostic = expectModuleDiagnostic(result, "observability", codes.SHAPE_INVALID, ".als/modules/observability/v1/shape.yaml");
+    expect(diagnostic.field).toBe("entities.dashboard.identity.parent.entity");
+    expect(diagnostic.message).toContain("must also use source_format=markdown");
+  });
+});
+
+test.concurrent("jsonl entities must declare at least one row field", async () => {
+  await withExampleSystemSandbox("multi-format-design-reference", "shape-jsonl-empty-rows", async ({ root }) => {
+    await updateShapeYaml(root, "observability", 1, (shape) => {
+      const entities = shape.entities as Record<string, Record<string, unknown>>;
+      const metricStream = entities["metric-stream"];
+      metricStream.rows = {
+        fields: {},
+      };
+    });
+
+    const result = validateFixture(root);
+    expect(result.status).toBe("fail");
+    expectModuleDiagnostic(result, "observability", codes.SHAPE_INVALID, ".als/modules/observability/v1/shape.yaml");
+  });
+});
+
+test.concurrent("jsonl entities cannot declare markdown-only surfaces", async () => {
+  await withExampleSystemSandbox("multi-format-design-reference", "shape-jsonl-forbidden-identity", async ({ root }) => {
+    await updateShapeYaml(root, "observability", 1, (shape) => {
+      const entities = shape.entities as Record<string, Record<string, unknown>>;
+      entities["metric-stream"].identity = {
+        id_field: "id",
+      };
+    });
+
+    const result = validateFixture(root);
+    expect(result.status).toBe("fail");
+    expectModuleDiagnostic(result, "observability", codes.SHAPE_INVALID, ".als/modules/observability/v1/shape.yaml");
+  });
+});
+
+test.concurrent("jsonl row schemas reject unsupported ref fields", async () => {
+  await withExampleSystemSandbox("multi-format-design-reference", "shape-jsonl-row-ref", async ({ root }) => {
+    await updateShapeYaml(root, "observability", 1, (shape) => {
+      const entities = shape.entities as Record<string, Record<string, unknown>>;
+      const metricStream = entities["metric-stream"];
+      const rows = metricStream.rows as Record<string, Record<string, unknown>>;
+      const fields = rows.fields as Record<string, unknown>;
+      fields.owner_ref = {
+        type: "ref",
+        allow_null: false,
+        target: {
+          module: "observability",
+          entity: "dashboard",
+        },
+      };
+    });
+
+    const result = validateFixture(root);
+    expect(result.status).toBe("fail");
+    expectModuleDiagnostic(result, "observability", codes.SHAPE_INVALID, ".als/modules/observability/v1/shape.yaml");
+  });
+});
+
 test.concurrent("legacy required keys on fields are rejected", async () => {
   await withFixtureSandbox("shape-legacy-required-field", async ({ root }) => {
     await updateShapeYaml(root, "backlog", 1, (shape) => {

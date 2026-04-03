@@ -5,6 +5,7 @@ import { resolveEffectiveEntityContract } from "../src/validate.ts";
 
 test("missing section definitions surface a shape diagnostic instead of crashing", () => {
   const entityShape: VariantEntityShape = {
+    source_format: "markdown",
     path: "items/{id}.md",
     identity: {
       id_field: "id",
@@ -117,6 +118,7 @@ test("variant entity shapes can omit body without crashing schema validation", (
       dependencies: [],
       entities: {
         item: {
+          source_format: "markdown",
           path: "items/{id}.md",
           identity: {
             id_field: "id",
@@ -178,4 +180,30 @@ test("system config schema rejects duplicate skill ids inside one module", () =>
   }
 
   expect(result.error.issues.some((issue) => issue.path.join(".") === "modules.backlog.skills.1")).toBe(true);
+});
+
+test("jsonl entity shapes validate without markdown-only surfaces", () => {
+  const result = moduleShapeSchema.safeParse({
+    dependencies: [],
+    entities: {
+      "metric-stream": {
+        source_format: "jsonl",
+        path: "streams/{id}.jsonl",
+        rows: {
+          fields: {
+            observed_at: {
+              type: "string",
+              allow_null: false,
+            },
+            value: {
+              type: "number",
+              allow_null: false,
+            },
+          },
+        },
+      },
+    },
+  });
+
+  expect(result.success).toBe(true);
 });

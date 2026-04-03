@@ -2,6 +2,7 @@ dependencies: []
 
 entities:
   client:
+    source_format: markdown
     path: clients/{id}.md
 
     identity:

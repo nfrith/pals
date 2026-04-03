@@ -35,8 +35,9 @@ Rules:
 - Matching for reserved agent files is case-insensitive, including the `.md` extension
 - Reserved agent files are ignored during ALS record validation and do not need entity path matches
 - Reserved agent files are the only case-insensitive markdown filename exception in module discovery
-- Other markdown files must use lowercase `.md`; non-reserved files like `README.MD` are invalid
-- Other markdown files in the module subtree remain subject to normal ALS discovery and validation rules
+- Other markdown record files must use lowercase `.md`; non-reserved files like `README.MD` are invalid
+- JSONL record files must use lowercase `.jsonl`; files like `STREAM.JSONL` are invalid
+- Other markdown and JSONL record files in the module subtree remain subject to normal ALS discovery and validation rules
 - Validation fails cleanly if ALS cannot read a directory inside the module subtree during discovery
 - The declared `path` must exist as a directory when validating
 - No two modules may have identical or overlapping mount paths
@@ -85,15 +86,17 @@ Rules:
 
 ## Entity definition
 
-Entities have two supported shapes:
+Entities have three supported shapes:
 
-1. Plain entities with a shared `fields` set and an explicit `body` contract
-2. Variant entities with root/base `fields`, a `discriminator`, an optional shared `body`, a `section_definitions` library, and per-variant `fields` + full ordered `sections`
+1. Markdown plain entities with a shared `fields` set and an explicit `body` contract
+2. Markdown variant entities with root/base `fields`, a `discriminator`, an optional shared `body`, a `section_definitions` library, and per-variant `fields` + full ordered `sections`
+3. JSONL entities with path-derived identity and a closed `rows.fields` schema
 
 ### Plain entity
 
 ```yaml
 entity-name:
+  source_format: markdown
   path: items/{id}.md                 # path template relative to module data dir
 
   identity:
@@ -129,6 +132,7 @@ entity-name:
 
 ```yaml
 entity-name:
+  source_format: markdown
   path: items/{id}.md
 
   identity:
@@ -210,11 +214,15 @@ entity-name:
 ```
 
 Rules:
+- Every entity declares `source_format`.
 - Plain entities declare their full body contract in `body`.
 - Variant entities continue to use `section_definitions` plus each variant's `sections` list for authoritative `h2` section order.
 - `variants.<variant>.fields` declare frontmatter fields, not section metadata. Once the discriminator resolves, the effective frontmatter contract is the root/base `fields` plus that variant's `fields`.
 - Variant entities may also declare shared `body.title` and shared `body.preamble` at the entity root.
 - Variant entities may omit `body` entirely when they do not declare a shared title or shared preamble.
+- Markdown entities must use `.md` paths.
+- Markdown entities must not declare `rows`.
+- Markdown `identity.parent` targets must also be markdown entities.
 
 #### Variant-local frontmatter
 
@@ -254,6 +262,49 @@ research_question: Should rollup buckets stay outside the compiler?
 ---
 ```
 
+### JSONL entity
+
+```yaml
+entity-name:
+  source_format: jsonl
+  path: streams/{id}.jsonl
+
+  rows:
+    fields:
+      observed_at:
+        type: string
+        allow_null: false
+      metric:
+        type: enum
+        allow_null: false
+        allowed_values: [latency_ms]
+      value:
+        type: number
+        allow_null: false
+      tags:
+        type: list
+        allow_null: false
+        items:
+          type: enum
+          allowed_values: [api-gateway, baseline, canary]
+```
+
+Rules:
+- JSONL entities must use `.jsonl` paths.
+- JSONL entities do not declare `identity`.
+- JSONL entity identity comes from matched path bindings, including `{id}`.
+- JSONL entities must not declare markdown-only surfaces such as `fields`, `body`, `discriminator`, `section_definitions`, or `variants`.
+- `rows.fields` is the authoritative per-line schema.
+- Empty JSONL files are valid. This supports stream-like entities that may temporarily contain zero rows.
+- Every JSONL line must be one JSON object.
+- Every JSONL line must satisfy the same declared row schema.
+- Every declared JSONL row key must be present on every line.
+- `allow_null: true` allows explicit `null`; it does not allow omission.
+- Undeclared JSONL row keys are rejected.
+- JSONL rows support only `string`, `number`, `date`, `enum`, `list<string>`, and `list<enum>` in this pass.
+- `date` remains `YYYY-MM-DD`. Timestamp values should use `type: string` in this pass.
+- ALS refs can target JSONL entities, but there are no row-level refs or row-level canonical URIs.
+
 ### Path templates
 
 Path templates use `{placeholder}` segments to map entities to filesystem paths.
@@ -268,10 +319,11 @@ Examples:
 - Self-named directory: `items/{id}/{id}.md`
 - Nested: `programs/{program}/experiments/{id}/{id}.md`
 - Deeply nested: `programs/{program}/experiments/{experiment}/runs/{id}.md`
+- JSONL stream: `streams/{id}.jsonl`
 
 ### Field types
 
-Every entity must declare an `id` field of type `id`. Every declared field must appear in record frontmatter. `allow_null` controls whether the explicit value may be `null`; it does not allow omission.
+Markdown entities must declare an `id` field of type `id`. Every declared markdown field must appear in record frontmatter. `allow_null` controls whether the explicit value may be `null`; it does not allow omission.
 
 There is no mechanism to declare optional fields.
 
@@ -339,6 +391,7 @@ Ref values in record frontmatter use the format: `"[display-label](als://system_
 The URI path encodes the full lineage: `als://system_id/module/entity-type/entity-id` for root entities, or `als://system_id/module/parent-type/parent-id/child-type/child-id` for nested entities.
 
 - `target.module` can be this module or another module (if another, it must be in `dependencies`)
+- Refs may target markdown entities or JSONL entities. Refs always target entity identity, not row identity.
 
 #### file_path
 
@@ -426,6 +479,15 @@ folders:
 - `list<enum>` rejects duplicate members.
 - `list<string>`, `list<ref>`, and `list<file_path>` do not enforce uniqueness.
 - Empty lists are allowed. `allow_null` only controls whether the field value may be `null`.
+
+### JSONL row field types
+
+JSONL `rows.fields` reuse a strict subset of the field types above:
+
+- allowed: `string`, `number`, `date`, `enum`, `list<string>`, `list<enum>`
+- rejected in JSONL rows: `id`, `ref`, `file_path`, nested objects, nested lists, and heterogeneous unions
+- `allow_null` works the same way as markdown frontmatter fields, but the row key must still be present on every line
+- JSONL `list<enum>` rejects duplicate members just like markdown frontmatter `list<enum>`
 
 ### Body regions
 

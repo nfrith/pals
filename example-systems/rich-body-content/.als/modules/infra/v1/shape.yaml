@@ -2,6 +2,7 @@ dependencies: []
 
 entities:
   region:
+    source_format: markdown
     path: regions/{id}/{id}.md
 
     identity:
@@ -56,6 +57,7 @@ entities:
             exclude: per-service resource allocations
 
   cluster:
+    source_format: markdown
     path: regions/{region}/clusters/{id}/{id}.md
 
     identity:
@@ -134,6 +136,7 @@ entities:
             exclude: service-level documentation
 
   service:
+    source_format: markdown
     path: regions/{region}/clusters/{cluster}/services/{id}/{id}.md
 
     identity:
@@ -219,6 +222,7 @@ entities:
             exclude: deployment procedures or release history
 
   release:
+    source_format: markdown
     path: regions/{region}/clusters/{cluster}/services/{service}/releases/{id}.md
 
     identity:

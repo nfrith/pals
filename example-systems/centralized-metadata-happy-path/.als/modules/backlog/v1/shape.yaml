@@ -3,6 +3,7 @@ dependencies:
 
 entities:
   item:
+    source_format: markdown
     path: items/{id}.md
 
     identity:

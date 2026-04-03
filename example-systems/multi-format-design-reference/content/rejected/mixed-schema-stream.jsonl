@@ -1,0 +1,3 @@
+{"type":"event","id":"EVT-001","status":"done"}
+{"type":"metric","id":"MET-001","value":42.5,"unit":"ms"}
+{"name":"random thing","tags":["a","b"]}

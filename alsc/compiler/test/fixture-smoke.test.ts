@@ -307,3 +307,41 @@ test.concurrent("rich body content fixture validates clean", async () => {
     expect(result.summary.modules_checked).toBe(6);
   });
 });
+
+test.concurrent("multi-format design reference validates clean", async () => {
+  await withExampleSystemSandbox("multi-format-design-reference", "multi-format-smoke", async ({ root }) => {
+    const baseline = validateFixture(root);
+    const process = Bun.spawnSync({
+      cmd: ["bun", "src/index.ts", root],
+      cwd: compilerRoot,
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const stdout = new TextDecoder().decode(process.stdout);
+    const stderr = new TextDecoder().decode(process.stderr);
+
+    if (process.exitCode !== 0) {
+      throw new Error(
+        `Smoke validation subprocess failed with exit ${process.exitCode}\nstdout:\n${stdout || "<empty>"}\nstderr:\n${stderr || "<empty>"}`,
+      );
+    }
+
+    const result = JSON.parse(stdout) as {
+      schema: string;
+      als_version: number | null;
+      compiler_contract: { supported_als_versions: number[] };
+      status: string;
+      module_filter: string | null;
+      summary: { error_count: number; files_ignored: number; modules_checked: number };
+    };
+
+    expect(result.schema).toBe(VALIDATION_OUTPUT_SCHEMA_LITERAL);
+    expect(result.als_version).toBe(1);
+    expect(result.compiler_contract.supported_als_versions).toContain(1);
+    expect(result.status).toBe("pass");
+    expect(result.module_filter).toBeNull();
+    expect(result.summary.error_count).toBe(0);
+    expect(result.summary.files_ignored).toBe(baseline.summary.files_ignored);
+    expect(result.summary.modules_checked).toBe(1);
+  });
+});

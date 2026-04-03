@@ -24,7 +24,10 @@ import { parseRefUri, refTargetEntity } from "./refs.ts";
 import {
   type BodyRegionShape,
   findLegacyRequiredIssues,
+  type JsonlEntityShape,
+  type JsonlRowFieldShape,
   isPathPrefix,
+  type MarkdownEntityShape,
   moduleShapeSchema,
   modulePathsOverlap,
   splitModuleMountPath,
@@ -63,14 +66,16 @@ interface LoadedModuleContext {
 }
 
 interface ParsedRecord {
+  source_format: "markdown" | "jsonl";
   module_id: string;
   file_abs: string;
   file_rel: string;
   file_rel_within_module: string;
   entity_name: string;
   entity_shape: EntityShape;
-  frontmatter: Record<string, unknown>;
-  body: ParsedBody;
+  frontmatter: Record<string, unknown> | null;
+  body: ParsedBody | null;
+  rows: JsonlRow[] | null;
   bindings: Map<string, string>;
   canonical_uri: string | null;
 }
@@ -87,7 +92,12 @@ interface ModuleWorkState {
   context: LoadedModuleContext | null;
 }
 
-interface MarkdownDiscoveryResult {
+interface JsonlRow {
+  line_number: number;
+  value: Record<string, unknown>;
+}
+
+interface RecordDiscoveryResult {
   record_file_paths: string[];
   errored_file_paths: string[];
   ignored_file_paths: string[];
@@ -367,7 +377,7 @@ function loadModuleState(systemRootAbs: string, systemConfig: SystemConfig, modu
   const diagnostics: CompilerDiagnostic[] = [...shapeResult.diagnostics];
   diagnostics.push(...validateShapeContracts(context, systemConfig));
 
-  const discovery = discoverMarkdownFiles(context.module_path_abs, context.module_id);
+  const discovery = discoverRecordFiles(context.module_path_abs, context.module_id);
   diagnostics.push(...discovery.diagnostics);
   const fileErrorMap = new Map<string, boolean>();
   for (const fileAbs of discovery.record_file_paths.concat(discovery.errored_file_paths)) {
@@ -405,8 +415,13 @@ function validateRecord(
   recordIndex: Map<string, ParsedRecord>,
   options: { include_resolved_refs?: boolean } = {},
 ): CompilerDiagnostic[] {
+  if (record.source_format === "jsonl") {
+    // JSONL rows do not support refs in this pass, so row validation is the full record contract.
+    return validateJsonlRows(record);
+  }
+
   const diagnostics: CompilerDiagnostic[] = [];
-  const effectiveContract = resolveEffectiveEntityContract(record.entity_shape, record.frontmatter, {
+  const effectiveContract = resolveEffectiveEntityContract(record.entity_shape as MarkdownEntityShape, record.frontmatter ?? {}, {
     module_id: context.module_id,
     entity_name: record.entity_name,
     record_file: record.file_rel,
@@ -429,7 +444,13 @@ function validateResolvedReferencesOnly(
   recordIndex: Map<string, ParsedRecord>,
   allowedTargetModuleIds?: ReadonlySet<string>,
 ): CompilerDiagnostic[] {
-  const effectiveContract = resolveEffectiveEntityContract(record.entity_shape, record.frontmatter, {
+  if (record.source_format === "jsonl") {
+    // JSONL records have no ref-bearing surfaces in this pass, so there is no
+    // resolved-reference phase to run after shape and row validation.
+    return [];
+  }
+
+  const effectiveContract = resolveEffectiveEntityContract(record.entity_shape as MarkdownEntityShape, record.frontmatter ?? {}, {
     module_id: context.module_id,
     entity_name: record.entity_name,
     record_file: record.file_rel,
@@ -446,9 +467,10 @@ function validateFrontmatter(
   knownFieldNames: string[],
 ): CompilerDiagnostic[] {
   const diagnostics: CompilerDiagnostic[] = [];
+  const frontmatter = record.frontmatter ?? {};
 
   for (const fieldName of Object.keys(declaredFields)) {
-    if (!(fieldName in record.frontmatter)) {
+    if (!(fieldName in frontmatter)) {
       diagnostics.push(
         diag(codes.FM_MISSING_FIELD, "error", "record_frontmatter", record.file_rel, `Missing declared frontmatter field '${fieldName}'`, {
           module_id: record.module_id,
@@ -461,7 +483,7 @@ function validateFrontmatter(
     }
   }
 
-  for (const fieldName of Object.keys(record.frontmatter)) {
+  for (const fieldName of Object.keys(frontmatter)) {
     if (!(fieldName in declaredFields) && !knownFieldNames.includes(fieldName)) {
       diagnostics.push(
         diag(codes.FM_UNKNOWN_FIELD, "error", "record_frontmatter", record.file_rel, `Unknown frontmatter field '${fieldName}'`, {
@@ -476,8 +498,8 @@ function validateFrontmatter(
   }
 
   for (const [fieldName, fieldShape] of Object.entries(declaredFields)) {
-    if (!(fieldName in record.frontmatter)) continue;
-    diagnostics.push(...validateFieldValue(record, context, fieldName, fieldShape, record.frontmatter[fieldName]));
+    if (!(fieldName in frontmatter)) continue;
+    diagnostics.push(...validateFieldValue(record, context, fieldName, fieldShape, frontmatter[fieldName]));
   }
 
   return diagnostics;
@@ -692,6 +714,256 @@ function validateFieldValue(
   return diagnostics;
 }
 
+function validateJsonlRows(record: ParsedRecord): CompilerDiagnostic[] {
+  if (record.source_format !== "jsonl") {
+    return [];
+  }
+
+  const diagnostics: CompilerDiagnostic[] = [];
+  const rowFields = (record.entity_shape as JsonlEntityShape).rows.fields;
+  const declaredFieldNames = Object.keys(rowFields).sort();
+
+  for (const row of record.rows ?? []) {
+    for (const fieldName of declaredFieldNames) {
+      if (!(fieldName in row.value)) {
+        diagnostics.push(
+          diag(codes.ROW_MISSING_FIELD, "error", "record_rows", record.file_rel, `JSONL row ${row.line_number} is missing declared field '${fieldName}'`, {
+            module_id: record.module_id,
+            entity: record.entity_name,
+            field: fieldName,
+            expected: fieldName,
+            actual: null,
+            line: row.line_number,
+            column: 1,
+          }),
+        );
+      }
+    }
+
+    for (const fieldName of Object.keys(row.value)) {
+      if (!(fieldName in rowFields)) {
+        diagnostics.push(
+          diag(codes.ROW_UNKNOWN_FIELD, "error", "record_rows", record.file_rel, `JSONL row ${row.line_number} contains undeclared field '${fieldName}'`, {
+            module_id: record.module_id,
+            entity: record.entity_name,
+            field: fieldName,
+            expected: declaredFieldNames,
+            actual: fieldName,
+            line: row.line_number,
+            column: 1,
+          }),
+        );
+      }
+    }
+
+    for (const [fieldName, fieldShape] of Object.entries(rowFields)) {
+      if (!(fieldName in row.value)) continue;
+      diagnostics.push(...validateJsonlRowFieldValue(record, row.line_number, fieldName, fieldShape, row.value[fieldName]));
+    }
+  }
+
+  return diagnostics;
+}
+
+function validateJsonlRowFieldValue(
+  record: ParsedRecord,
+  lineNumber: number,
+  fieldName: string,
+  fieldShape: JsonlRowFieldShape,
+  value: unknown,
+): CompilerDiagnostic[] {
+  const diagnostics: CompilerDiagnostic[] = [];
+
+  if (value === null || value === undefined) {
+    if (!fieldShape.allow_null) {
+      diagnostics.push(
+        diag(codes.ROW_TYPE_MISMATCH, "error", "record_rows", record.file_rel, `JSONL row ${lineNumber} field '${fieldName}' is not nullable`, {
+          module_id: record.module_id,
+          entity: record.entity_name,
+          field: fieldName,
+          expected: `non-null ${fieldShape.type}`,
+          actual: value,
+          line: lineNumber,
+          column: 1,
+        }),
+      );
+    }
+    return diagnostics;
+  }
+
+  switch (fieldShape.type) {
+    case "string":
+      if (typeof value !== "string" || value.length === 0) {
+        diagnostics.push(
+          diag(codes.ROW_TYPE_MISMATCH, "error", "record_rows", record.file_rel, `JSONL row ${lineNumber} field '${fieldName}' must be a non-empty string`, {
+            module_id: record.module_id,
+            entity: record.entity_name,
+            field: fieldName,
+            expected: "non-empty string",
+            actual: value,
+            line: lineNumber,
+            column: 1,
+          }),
+        );
+      }
+      break;
+
+    case "number":
+      if (typeof value !== "number") {
+        diagnostics.push(
+          diag(codes.ROW_TYPE_MISMATCH, "error", "record_rows", record.file_rel, `JSONL row ${lineNumber} field '${fieldName}' must be a number`, {
+            module_id: record.module_id,
+            entity: record.entity_name,
+            field: fieldName,
+            expected: "number",
+            actual: typeof value,
+            line: lineNumber,
+            column: 1,
+          }),
+        );
+      }
+      break;
+
+    case "date":
+      if (typeof value !== "string") {
+        diagnostics.push(
+          diag(codes.ROW_TYPE_MISMATCH, "error", "record_rows", record.file_rel, `JSONL row ${lineNumber} field '${fieldName}' must be a date`, {
+            module_id: record.module_id,
+            entity: record.entity_name,
+            field: fieldName,
+            expected: "YYYY-MM-DD",
+            actual: typeof value,
+            line: lineNumber,
+            column: 1,
+          }),
+        );
+      } else if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+        diagnostics.push(
+          diag(codes.ROW_DATE_FORMAT, "error", "record_rows", record.file_rel, `JSONL row ${lineNumber} field '${fieldName}' must use YYYY-MM-DD`, {
+            module_id: record.module_id,
+            entity: record.entity_name,
+            field: fieldName,
+            expected: "YYYY-MM-DD",
+            actual: value,
+            line: lineNumber,
+            column: 1,
+          }),
+        );
+      }
+      break;
+
+    case "enum":
+      if (typeof value !== "string") {
+        diagnostics.push(
+          diag(codes.ROW_TYPE_MISMATCH, "error", "record_rows", record.file_rel, `JSONL row ${lineNumber} field '${fieldName}' must be a string enum`, {
+            module_id: record.module_id,
+            entity: record.entity_name,
+            field: fieldName,
+            expected: "string enum",
+            actual: typeof value,
+            line: lineNumber,
+            column: 1,
+          }),
+        );
+      } else if (!fieldShape.allowed_values.includes(value)) {
+        diagnostics.push(
+          diag(codes.ROW_ENUM_INVALID, "error", "record_rows", record.file_rel, `JSONL row ${lineNumber} field '${fieldName}' has invalid enum value '${value}'`, {
+            module_id: record.module_id,
+            entity: record.entity_name,
+            field: fieldName,
+            expected: fieldShape.allowed_values,
+            actual: value,
+            line: lineNumber,
+            column: 1,
+          }),
+        );
+      }
+      break;
+
+    case "list":
+      if (!Array.isArray(value)) {
+        diagnostics.push(
+          diag(codes.ROW_TYPE_MISMATCH, "error", "record_rows", record.file_rel, `JSONL row ${lineNumber} field '${fieldName}' must be a list`, {
+            module_id: record.module_id,
+            entity: record.entity_name,
+            field: fieldName,
+            expected: "array",
+            actual: typeof value,
+            line: lineNumber,
+            column: 1,
+          }),
+        );
+        break;
+      }
+
+      const seenEnumValues = fieldShape.items.type === "enum" ? new Set<string>() : null;
+      const allowedEnumValues = fieldShape.items.type === "enum" ? new Set(fieldShape.items.allowed_values) : null;
+      value.forEach((item, index) => {
+        const indexedFieldName = `${fieldName}[${index}]`;
+        if (fieldShape.items.type === "string") {
+          if (typeof item !== "string") {
+            diagnostics.push(
+              diag(codes.ROW_ARRAY_ITEM, "error", "record_rows", record.file_rel, `JSONL row ${lineNumber} field '${indexedFieldName}' must be a string`, {
+                module_id: record.module_id,
+                entity: record.entity_name,
+                field: indexedFieldName,
+                expected: "string",
+                actual: typeof item,
+                line: lineNumber,
+                column: 1,
+              }),
+            );
+          }
+          return;
+        }
+
+        if (typeof item !== "string") {
+          diagnostics.push(
+            diag(codes.ROW_ARRAY_ITEM, "error", "record_rows", record.file_rel, `JSONL row ${lineNumber} field '${indexedFieldName}' must be a string (enum member)`, {
+              module_id: record.module_id,
+              entity: record.entity_name,
+              field: indexedFieldName,
+              expected: "string (enum member)",
+              actual: typeof item,
+              line: lineNumber,
+              column: 1,
+            }),
+          );
+        } else if (!allowedEnumValues!.has(item)) {
+          diagnostics.push(
+            diag(codes.ROW_ENUM_INVALID, "error", "record_rows", record.file_rel, `JSONL row ${lineNumber} field '${indexedFieldName}' has invalid enum value '${item}'`, {
+              module_id: record.module_id,
+              entity: record.entity_name,
+              field: indexedFieldName,
+              expected: fieldShape.items.allowed_values,
+              actual: item,
+              line: lineNumber,
+              column: 1,
+            }),
+          );
+        } else if (seenEnumValues!.has(item)) {
+          diagnostics.push(
+            diag(codes.ROW_ARRAY_ITEM, "error", "record_rows", record.file_rel, `JSONL row ${lineNumber} field '${indexedFieldName}' duplicates enum value '${item}'`, {
+              module_id: record.module_id,
+              entity: record.entity_name,
+              field: indexedFieldName,
+              reason: reasons.ROW_LIST_ITEM_DUPLICATE,
+              expected: "unique enum list item",
+              actual: item,
+              line: lineNumber,
+              column: 1,
+            }),
+          );
+        } else {
+          seenEnumValues!.add(item);
+        }
+      });
+      break;
+  }
+
+  return diagnostics;
+}
+
 function validateFilePathContract(
   record: ParsedRecord,
   context: LoadedModuleContext,
@@ -896,12 +1168,15 @@ function validateBody(
 
   const diagnostics: CompilerDiagnostic[] = [];
   if (!declaredBody) return diagnostics;
+  if (!record.body) return diagnostics;
+  const body = record.body;
+  const frontmatter = record.frontmatter ?? {};
 
   diagnostics.push(
-    ...validateBodyMarkdownSurface(record.body.markdown_surface, record.file_rel, record.module_id, record.entity_name),
+    ...validateBodyMarkdownSurface(body.markdown_surface, record.file_rel, record.module_id, record.entity_name),
   );
 
-  if (record.body.titles.length > 1) {
+  if (body.titles.length > 1) {
     diagnostics.push(
       diag(codes.BODY_CONSTRAINT_VIOLATION, "error", "record_body", record.file_rel, "Multiple top-level h1 headings are not allowed", {
         module_id: record.module_id,
@@ -909,13 +1184,13 @@ function validateBody(
         field: "title",
         reason: reasons.BODY_TITLE_MULTIPLE_H1,
         expected: "exactly one top-level h1",
-        actual: record.body.titles,
+        actual: body.titles,
       }),
     );
   }
 
   if (declaredBody.title) {
-    if (record.body.content_before_title.trim().length > 0) {
+    if (body.content_before_title.trim().length > 0) {
       diagnostics.push(
         diag(codes.BODY_CONSTRAINT_VIOLATION, "error", "record_body", record.file_rel, "Content before the declared h1 title is not allowed", {
           module_id: record.module_id,
@@ -923,12 +1198,12 @@ function validateBody(
           field: "title",
           reason: reasons.BODY_TITLE_CONTENT_BEFORE_DECLARED,
           expected: "h1 as first structural body region",
-          actual: record.body.content_before_title.trim(),
+          actual: body.content_before_title.trim(),
         }),
       );
     }
 
-    if (!record.body.title) {
+    if (!body.title) {
       diagnostics.push(
         diag(codes.BODY_CONSTRAINT_VIOLATION, "error", "record_body", record.file_rel, "Missing declared h1 title", {
           module_id: record.module_id,
@@ -940,7 +1215,7 @@ function validateBody(
         }),
       );
     } else {
-      const expectedTitle = renderExpectedTitle(declaredBody.title, record.frontmatter);
+      const expectedTitle = renderExpectedTitle(declaredBody.title, frontmatter);
       if (expectedTitle.kind === "invalid_source") {
         diagnostics.push(
           diag(codes.BODY_CONSTRAINT_VIOLATION, "error", "record_body", record.file_rel, `Cannot validate the declared h1 title because frontmatter field '${expectedTitle.field}' is not a non-empty string`, {
@@ -955,7 +1230,7 @@ function validateBody(
             actual: expectedTitle.actual,
           }),
         );
-      } else if (expectedTitle.kind === "expected" && record.body.title !== expectedTitle.value) {
+      } else if (expectedTitle.kind === "expected" && body.title !== expectedTitle.value) {
         diagnostics.push(
           diag(codes.BODY_CONSTRAINT_VIOLATION, "error", "record_body", record.file_rel, "The h1 title does not match the declared title source", {
             module_id: record.module_id,
@@ -963,12 +1238,12 @@ function validateBody(
             field: "title",
             reason: reasons.BODY_TITLE_MISMATCH,
             expected: expectedTitle.value,
-            actual: record.body.title,
+            actual: body.title,
           }),
         );
       }
     }
-  } else if (record.body.titles.length > 0) {
+  } else if (body.titles.length > 0) {
     diagnostics.push(
       diag(codes.BODY_CONSTRAINT_VIOLATION, "error", "record_body", record.file_rel, "Undeclared h1 title content is not allowed", {
         module_id: record.module_id,
@@ -976,16 +1251,16 @@ function validateBody(
         field: "title",
         reason: reasons.BODY_TITLE_UNDECLARED,
         expected: "no top-level h1",
-        actual: record.body.titles,
+        actual: body.titles,
       }),
     );
   }
 
   if (declaredBody.preamble) {
     diagnostics.push(
-      ...validateRegionMarkdown("preamble", declaredBody.preamble, record.body.preamble, record.file_rel, record.module_id, record.entity_name, 2),
+      ...validateRegionMarkdown("preamble", declaredBody.preamble, body.preamble, record.file_rel, record.module_id, record.entity_name, 2),
     );
-  } else if (record.body.preamble.trim().length > 0) {
+  } else if (body.preamble.trim().length > 0) {
     diagnostics.push(
       diag(codes.BODY_CONSTRAINT_VIOLATION, "error", "record_body", record.file_rel, "Undeclared top-level preamble content is not allowed", {
         module_id: record.module_id,
@@ -993,12 +1268,12 @@ function validateBody(
         field: "preamble",
         reason: reasons.BODY_PREAMBLE_UNDECLARED,
         expected: "no top-level preamble",
-        actual: record.body.preamble.trim(),
+        actual: body.preamble.trim(),
       }),
     );
   }
 
-  const duplicateSectionNames = Array.from(new Set(record.body.duplicate_section_names));
+  const duplicateSectionNames = Array.from(new Set(body.duplicate_section_names));
   for (const sectionName of duplicateSectionNames) {
     diagnostics.push(
       diag(codes.BODY_CONSTRAINT_VIOLATION, "error", "record_body", record.file_rel, `Duplicate top-level section '## ${sectionName}' is not allowed`, {
@@ -1015,7 +1290,7 @@ function validateBody(
   const membershipDiagnosticsStart = diagnostics.length;
 
   for (const section of declaredBody.sections) {
-    if (!record.body.by_name.has(section.name)) {
+    if (!body.by_name.has(section.name)) {
       diagnostics.push(
         diag(codes.BODY_MISSING_SECTION, "error", "record_body", record.file_rel, `Missing declared section '## ${section.name}'`, {
           module_id: record.module_id,
@@ -1028,7 +1303,7 @@ function validateBody(
     }
   }
 
-  for (const section of record.body.ordered) {
+  for (const section of body.ordered) {
     if (!declaredBody.sections.find((declared) => declared.name === section.name)) {
       diagnostics.push(
         diag(codes.BODY_UNKNOWN_SECTION, "error", "record_body", record.file_rel, `Unknown section '## ${section.name}'`, {
@@ -1043,7 +1318,7 @@ function validateBody(
   }
 
   const hasMembershipErrors = diagnostics.length > membershipDiagnosticsStart;
-  const actualKnownOrder = record.body.ordered
+  const actualKnownOrder = body.ordered
     .map((section) => section.name)
     .filter((sectionName) => declaredBody.sections.some((declared) => declared.name === sectionName));
   const expectedOrder = declaredBody.sections.map((section) => section.name);
@@ -1060,7 +1335,7 @@ function validateBody(
 
   for (const section of declaredBody.sections) {
     if (duplicateSectionNames.includes(section.name)) continue;
-    const content = record.body.by_name.get(section.name);
+    const content = body.by_name.get(section.name);
     if (content === undefined) continue;
     diagnostics.push(...validateSectionMarkdown(section, content, record.file_rel, record.module_id, record.entity_name));
   }
@@ -1069,8 +1344,12 @@ function validateBody(
 }
 
 function validateIdentity(record: ParsedRecord): CompilerDiagnostic[] {
+  if (record.source_format !== "markdown") {
+    return [];
+  }
+
   const diagnostics: CompilerDiagnostic[] = [];
-  const idValue = record.frontmatter.id;
+  const idValue = record.frontmatter?.id;
   if (typeof idValue !== "string" || idValue.length === 0) {
     return diagnostics;
   }
@@ -1099,10 +1378,11 @@ function validateResolvedReferences(
   allowedTargetModuleIds?: ReadonlySet<string>,
 ): CompilerDiagnostic[] {
   const diagnostics: CompilerDiagnostic[] = [];
+  const frontmatter = record.frontmatter ?? {};
 
   for (const [fieldName, fieldShape] of Object.entries(declaredFields)) {
-    if (!(fieldName in record.frontmatter)) continue;
-    const value = record.frontmatter[fieldName];
+    if (!(fieldName in frontmatter)) continue;
+    const value = frontmatter[fieldName];
 
     if (fieldShape.type === "ref") {
       if (allowedTargetModuleIds && !allowedTargetModuleIds.has(fieldShape.target.module)) {
@@ -1125,10 +1405,14 @@ function validateResolvedReferences(
 }
 
 function validateParentReferencePrefix(record: ParsedRecord): CompilerDiagnostic[] {
+  if (record.source_format !== "markdown") {
+    return [];
+  }
+
   const diagnostics: CompilerDiagnostic[] = [];
-  const parentConfig = record.entity_shape.identity.parent;
+  const parentConfig = (record.entity_shape as MarkdownEntityShape).identity.parent;
   if (parentConfig && record.canonical_uri) {
-    const parentFieldValue = record.frontmatter[parentConfig.ref_field];
+    const parentFieldValue = record.frontmatter?.[parentConfig.ref_field];
     const parsedParentRef = typeof parentFieldValue === "string" ? parseRefUri(parentFieldValue) : null;
     if (parsedParentRef && !record.canonical_uri.startsWith(`${parsedParentRef.uri}/`)) {
       diagnostics.push(
@@ -1147,7 +1431,7 @@ function validateParentReferencePrefix(record: ParsedRecord): CompilerDiagnostic
 }
 
 export function resolveEffectiveEntityContract(
-  entityShape: EntityShape,
+  entityShape: MarkdownEntityShape,
   frontmatter: Record<string, unknown>,
   meta: EffectiveEntityContractContext,
 ): EffectiveEntityContract {
@@ -1296,7 +1580,7 @@ export function resolveEffectiveEntityContract(
   };
 }
 
-function isVariantEntityShape(entityShape: EntityShape): entityShape is VariantEntityShape {
+function isVariantEntityShape(entityShape: MarkdownEntityShape): entityShape is VariantEntityShape {
   return "discriminator" in entityShape;
 }
 
@@ -1517,41 +1801,6 @@ function parseRecord(
   const diagnostics: CompilerDiagnostic[] = [];
   const fileRel = toRepoRelative(fileAbs);
   const fileRelWithinModule = relative(context.module_path_abs, fileAbs).replace(/\\/g, "/");
-  const fileRead = safeReadTextFile(fileAbs);
-  if (fileRead.error) {
-    diagnostics.push(
-      diag(codes.PARSE_FRONTMATTER, "error", "parse", fileRel, "Could not read record file", {
-        module_id: context.module_id,
-        expected: "readable markdown file",
-        actual: {
-          code: fileRead.error.code ?? null,
-          message: fileRead.error.message,
-        },
-        hint: "Check file permissions and rerun validation.",
-      }),
-    );
-    return { record: null, diagnostics };
-  }
-
-  const fileContents = fileRead.contents;
-
-  let parsedMatter;
-  try {
-    parsedMatter = parseFrontmatter(fileContents);
-  } catch (error) {
-    if (!(error instanceof FrontmatterProcessingError)) {
-      throw error;
-    }
-
-    diagnostics.push(
-      diag(codes.PARSE_FRONTMATTER, "error", "parse", fileRel, `Failed to parse frontmatter`, {
-        module_id: context.module_id,
-        actual: error instanceof Error ? error.message : String(error),
-      }),
-    );
-    return { record: null, diagnostics };
-  }
-
   const entityMatch = inferEntity(fileRelWithinModule, context);
   if (!entityMatch) {
     diagnostics.push(
@@ -1565,7 +1814,55 @@ function parseRecord(
   }
 
   const entityShape = context.shape.entities[entityMatch.entity_name];
-  const frontmatter = parsedMatter.data as Record<string, unknown>;
+  const fileRead = safeReadTextFile(fileAbs);
+  if (fileRead.error) {
+    diagnostics.push(
+      diag(entityShape.source_format === "jsonl" ? codes.PARSE_JSONL : codes.PARSE_FRONTMATTER, "error", "parse", fileRel, "Could not read record file", {
+        module_id: context.module_id,
+        entity: entityMatch.entity_name,
+        expected: entityShape.source_format === "jsonl" ? "readable jsonl file" : "readable markdown file",
+        actual: {
+          code: fileRead.error.code ?? null,
+          message: fileRead.error.message,
+        },
+        hint: "Check file permissions and rerun validation.",
+      }),
+    );
+    return { record: null, diagnostics };
+  }
+
+  return entityShape.source_format === "jsonl"
+    ? parseJsonlRecord(context, entityMatch, fileAbs, fileRel, fileRelWithinModule, fileRead.contents, diagnostics)
+    : parseMarkdownRecord(context, entityMatch, fileAbs, fileRel, fileRelWithinModule, fileRead.contents, diagnostics);
+}
+
+function parseMarkdownRecord(
+  context: LoadedModuleContext,
+  entityMatch: { entity_name: string; bindings: Map<string, string>; template: ParsedPathTemplate },
+  fileAbs: string,
+  fileRel: string,
+  fileRelWithinModule: string,
+  fileContents: string,
+  diagnostics: CompilerDiagnostic[],
+): { record: ParsedRecord | null; diagnostics: CompilerDiagnostic[] } {
+  let parsedMatter;
+  try {
+    parsedMatter = parseFrontmatter(fileContents);
+  } catch (error) {
+    if (!(error instanceof FrontmatterProcessingError)) {
+      throw error;
+    }
+
+    diagnostics.push(
+      diag(codes.PARSE_FRONTMATTER, "error", "parse", fileRel, "Failed to parse frontmatter", {
+        module_id: context.module_id,
+        entity: entityMatch.entity_name,
+        actual: error instanceof Error ? error.message : String(error),
+      }),
+    );
+    return { record: null, diagnostics };
+  }
+
   let body: ParsedBody;
   try {
     body = parseBody(parsedMatter.content);
@@ -1584,34 +1881,142 @@ function parseRecord(
     );
     return { record: null, diagnostics };
   }
-  const canonicalUri = buildCanonicalUri(context, entityMatch.entity_name, frontmatter.id, entityMatch.bindings);
 
   const record: ParsedRecord = {
+    source_format: "markdown",
     module_id: context.module_id,
     file_abs: fileAbs,
     file_rel: fileRel,
     file_rel_within_module: fileRelWithinModule,
     entity_name: entityMatch.entity_name,
-    entity_shape: entityShape,
-    frontmatter,
+    entity_shape: context.shape.entities[entityMatch.entity_name],
+    frontmatter: parsedMatter.data as Record<string, unknown>,
     body,
+    rows: null,
     bindings: entityMatch.bindings,
-    canonical_uri: canonicalUri,
+    canonical_uri: null,
   };
 
+  record.canonical_uri = buildCanonicalUri(context, entityMatch.entity_name, record, entityMatch.bindings);
   return { record, diagnostics };
+}
+
+function parseJsonlRecord(
+  context: LoadedModuleContext,
+  entityMatch: { entity_name: string; bindings: Map<string, string>; template: ParsedPathTemplate },
+  fileAbs: string,
+  fileRel: string,
+  fileRelWithinModule: string,
+  fileContents: string,
+  diagnostics: CompilerDiagnostic[],
+): { record: ParsedRecord | null; diagnostics: CompilerDiagnostic[] } {
+  const rows = parseJsonlRows(fileContents, fileRel, context.module_id, entityMatch.entity_name, diagnostics);
+
+  // Unlike markdown, JSONL lines are independent. Keep the record and any rows
+  // that did parse so row-schema diagnostics can accumulate in the same run.
+  const record: ParsedRecord = {
+    source_format: "jsonl",
+    module_id: context.module_id,
+    file_abs: fileAbs,
+    file_rel: fileRel,
+    file_rel_within_module: fileRelWithinModule,
+    entity_name: entityMatch.entity_name,
+    entity_shape: context.shape.entities[entityMatch.entity_name],
+    frontmatter: null,
+    body: null,
+    rows,
+    bindings: entityMatch.bindings,
+    canonical_uri: null,
+  };
+
+  record.canonical_uri = buildCanonicalUri(context, entityMatch.entity_name, record, entityMatch.bindings);
+  return { record, diagnostics };
+}
+
+function parseJsonlRows(
+  source: string,
+  fileRel: string,
+  moduleId: string,
+  entityName: string,
+  diagnostics: CompilerDiagnostic[],
+): JsonlRow[] {
+  const rawLines = source.split(/\r?\n/);
+  if (rawLines.length > 0 && rawLines[rawLines.length - 1] === "") {
+    rawLines.pop();
+  }
+
+  const rows: JsonlRow[] = [];
+
+  rawLines.forEach((rawLine, index) => {
+    const lineNumber = index + 1;
+
+    if (rawLine.trim().length === 0) {
+      diagnostics.push(
+        diag(codes.PARSE_JSONL, "error", "parse", fileRel, `JSONL line ${lineNumber} must be a JSON object`, {
+          module_id: moduleId,
+          entity: entityName,
+          reason: reasons.JSONL_LINE_INVALID,
+          expected: "one JSON object per non-empty line",
+          actual: rawLine,
+          line: lineNumber,
+          column: 1,
+        }),
+      );
+      return;
+    }
+
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(rawLine);
+    } catch (error) {
+      diagnostics.push(
+        diag(codes.PARSE_JSONL, "error", "parse", fileRel, `Failed to parse JSONL line ${lineNumber}`, {
+          module_id: moduleId,
+          entity: entityName,
+          reason: reasons.JSONL_LINE_INVALID,
+          expected: "valid JSON object line",
+          actual: error instanceof Error ? error.message : String(error),
+          line: lineNumber,
+          column: 1,
+        }),
+      );
+      return;
+    }
+
+    if (!isPlainObject(parsed)) {
+      diagnostics.push(
+        diag(codes.PARSE_JSONL, "error", "parse", fileRel, `JSONL line ${lineNumber} must be a JSON object`, {
+          module_id: moduleId,
+          entity: entityName,
+          reason: reasons.JSONL_LINE_NOT_OBJECT,
+          expected: "JSON object",
+          actual: parsed,
+          line: lineNumber,
+          column: 1,
+        }),
+      );
+      return;
+    }
+
+    rows.push({
+      line_number: lineNumber,
+      value: parsed,
+    });
+  });
+
+  return rows;
 }
 
 function inferEntity(
   relativePath: string,
   context: LoadedModuleContext,
-): { entity_name: string; bindings: Map<string, string> } | null {
-  const matches: Array<{ entity_name: string; bindings: Map<string, string> }> = [];
+) : { entity_name: string; bindings: Map<string, string>; template: ParsedPathTemplate } | null {
+  const matches: Array<{ entity_name: string; bindings: Map<string, string>; template: ParsedPathTemplate }> = [];
 
   for (const [entityName, template] of context.templates) {
     const bindings = matchPath(relativePath, template);
     if (bindings) {
-      matches.push({ entity_name: entityName, bindings });
+      matches.push({ entity_name: entityName, bindings, template });
     }
   }
 
@@ -1622,9 +2027,14 @@ function inferEntity(
 function buildCanonicalUri(
   context: LoadedModuleContext,
   entityName: string,
-  idValue: unknown,
+  record: ParsedRecord,
   bindings: Map<string, string>,
 ): string | null {
+  if (record.source_format === "jsonl") {
+    return buildJsonlCanonicalUri(context, entityName, bindings);
+  }
+
+  const idValue = record.frontmatter?.id;
   if (typeof idValue !== "string" || idValue.length === 0) return null;
 
   const segments: string[] = [];
@@ -1633,11 +2043,44 @@ function buildCanonicalUri(
   let currentEntityName: string | undefined = entityName;
   while (currentEntityName) {
     lineage.unshift(currentEntityName);
-    currentEntityName = context.shape.entities[currentEntityName].identity.parent?.entity;
+    const currentEntityShape = context.shape.entities[currentEntityName];
+    if (currentEntityShape.source_format !== "markdown") {
+      break;
+    }
+    currentEntityName = currentEntityShape.identity.parent?.entity;
   }
 
   for (const lineageEntity of lineage) {
     const entityId = lineageEntity === entityName ? idValue : bindings.get(lineageEntity);
+    if (!entityId) return null;
+    segments.push(lineageEntity, entityId);
+  }
+
+  return `als://${context.system_id}/${context.module_id}/${segments.join("/")}`;
+}
+
+function buildJsonlCanonicalUri(
+  context: LoadedModuleContext,
+  entityName: string,
+  bindings: Map<string, string>,
+): string | null {
+  const template = context.templates.get(entityName);
+  if (!template) return null;
+
+  const lineage: string[] = [];
+  const seenEntityNames = new Set<string>();
+  for (const segment of template.segments) {
+    if (segment.kind !== "placeholder" || !segment.entity_name) continue;
+    if (seenEntityNames.has(segment.entity_name)) continue;
+    seenEntityNames.add(segment.entity_name);
+    lineage.push(segment.entity_name);
+  }
+
+  if (lineage.length === 0) return null;
+
+  const segments: string[] = [];
+  for (const lineageEntity of lineage) {
+    const entityId = bindings.get(lineageEntity);
     if (!entityId) return null;
     segments.push(lineageEntity, entityId);
   }
@@ -1666,6 +2109,10 @@ function validateShapeContracts(
   }
 
   for (const [entityName, entityShape] of Object.entries(context.shape.entities)) {
+    if (entityShape.source_format !== "markdown") {
+      continue;
+    }
+
     for (const [fieldName, fieldShape] of Object.entries(entityShape.fields)) {
       diagnostics.push(...validateFieldDependencyContract(context, dependencySet, entityName, fieldName, fieldShape));
     }
@@ -2201,8 +2648,8 @@ function safeReadTextFile(pathAbs: string): { contents: string; error: null } | 
   }
 }
 
-function discoverMarkdownFiles(rootAbs: string, moduleId: string): MarkdownDiscoveryResult {
-  const result: MarkdownDiscoveryResult = {
+function discoverRecordFiles(rootAbs: string, moduleId: string): RecordDiscoveryResult {
+  const result: RecordDiscoveryResult = {
     record_file_paths: [],
     errored_file_paths: [],
     ignored_file_paths: [],
@@ -2249,9 +2696,10 @@ function discoverMarkdownFiles(rootAbs: string, moduleId: string): MarkdownDisco
         continue;
       }
 
-      if (!isMarkdownFileName(entry.name)) continue;
+      const sourceFormat = detectRecordSourceFormat(entry.name);
+      if (!sourceFormat) continue;
 
-      if (!hasCanonicalMarkdownExtension(entry.name)) {
+      if (sourceFormat === "markdown" && !hasCanonicalMarkdownExtension(entry.name)) {
         result.errored_file_paths.push(fullPath);
         result.diagnostics.push(
           diag(
@@ -2271,6 +2719,26 @@ function discoverMarkdownFiles(rootAbs: string, moduleId: string): MarkdownDisco
         continue;
       }
 
+      if (sourceFormat === "jsonl" && !hasCanonicalJsonlExtension(entry.name)) {
+        result.errored_file_paths.push(fullPath);
+        result.diagnostics.push(
+          diag(
+            codes.PARSE_JSONL_EXTENSION_CASE,
+            "error",
+            "parse",
+            toRepoRelative(fullPath),
+            "JSONL record files must use lowercase '.jsonl' extension",
+            {
+              module_id: moduleId,
+              expected: "lowercase .jsonl extension",
+              actual: entry.name,
+              hint: "Rename the file to use lowercase '.jsonl'.",
+            },
+          ),
+        );
+        continue;
+      }
+
       result.record_file_paths.push(fullPath);
     }
   }
@@ -2282,17 +2750,28 @@ function discoverMarkdownFiles(rootAbs: string, moduleId: string): MarkdownDisco
   return result;
 }
 
-function isMarkdownFileName(fileName: string): boolean {
-  return fileName.toLowerCase().endsWith(".md");
+function detectRecordSourceFormat(fileName: string): "markdown" | "jsonl" | null {
+  const lowerFileName = fileName.toLowerCase();
+  if (lowerFileName.endsWith(".md")) return "markdown";
+  if (lowerFileName.endsWith(".jsonl")) return "jsonl";
+  return null;
 }
 
 function hasCanonicalMarkdownExtension(fileName: string): boolean {
   return fileName.endsWith(".md");
 }
 
+function hasCanonicalJsonlExtension(fileName: string): boolean {
+  return fileName.endsWith(".jsonl");
+}
+
 function isReservedAgentMarkdownFile(fileName: string): boolean {
   const lowerFileName = fileName.toLowerCase();
   return lowerFileName === "agents.md" || lowerFileName === "claude.md";
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function parseYamlFile<T>(
