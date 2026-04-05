@@ -18,7 +18,8 @@ It exists to pressure-test a backlog-style software delivery model without relyi
 - The module shape in this fixture intentionally uses proposed workflow syntax from SDR 018.
 - That means this fixture is design-reference material first. It is not intended to be a current compiler smoke target before the workflow primitive is implemented.
 - The draft surface here uses an explicit Delamain registry plus `type: delamain_state` in `shape.yaml`, with companion files under `vN/delamains/`.
-- The Delamain files carry explicit `states`, explicit `transitions`, transition `class`, transition `actor`, and phase order.
+- The Delamain files carry explicit `states`, explicit `transitions`, transition `class`, transition `actor`, stable transition `id`, and phase order.
+- This draft also paints Delamain-local `agents`: one prompt file per declared transition entry, with explicit registry entries in the Delamain file and markdown prompt assets under the Delamain's own folder.
 
 ## Module
 
