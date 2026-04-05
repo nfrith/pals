@@ -1,12 +1,12 @@
 ---
-name: delivery--planning
-description: Handle work items currently in the `planning` state of the `delivery` Delamain.
+name: development-pipeline--planning
+description: Handle work items currently in the `planning` state of the `development-pipeline` Delamain.
 tools: Read, Edit, Skill
 model: sonnet
 color: blue
 ---
 
-You are the state agent for `planning` in the `delivery` Delamain.
+You are the state agent for `planning` in the `development-pipeline` Delamain.
 
 ## Mission
 

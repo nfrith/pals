@@ -23,15 +23,15 @@ Proposed
 - Delamain declarations remain module-version artifacts, but they do not live inline inside `shape.yaml` in this pass.
 - `shape.yaml` declares an explicit `delamains` registry.
 - The registry maps Delamain names to explicit Delamain primary-file paths.
-- ALS adds a frontmatter field type `delamain_state`.
-- A `delamain_state` field must declare `delamain: <name>`.
+- ALS adds a frontmatter field type `delamain`.
+- A `delamain` field must declare `delamain: <name>`.
 - The named Delamain must appear in the `shape.yaml` registry.
 - The named Delamain resolves through the declared registry entry, not through filename convention alone.
-- The named Delamain becomes the authoritative value set for that field. A `delamain_state` field does not also declare `allowed_values`.
-- A Delamain companion file declares ordered `phases`.
-- A Delamain companion file declares authoritative `states`.
-- A Delamain companion file declares explicit `transitions`.
-- Delamain phase names are unique within one companion file.
+- The named Delamain becomes the authoritative value set for that field. A `delamain` field does not also declare `allowed_values`.
+- A Delamain primary definition file declares ordered `phases`.
+- A Delamain primary definition file declares authoritative `states`.
+- A Delamain primary definition file declares explicit `transitions`.
+- Delamain phase names are unique within one primary definition file.
 - State names are the legal persisted values for the bound field.
 - Each state may declare `initial: true`.
 - Each state may declare `terminal: true`.
@@ -61,15 +61,15 @@ Proposed
 
 ## Normative Effect
 
-- Required: `shape.yaml` declares Delamain names explicitly when the module uses `delamain_state`.
+- Required: `shape.yaml` declares Delamain names explicitly when the module uses `delamain`.
 - Required: every declared Delamain registry entry resolves to a Delamain primary file in the same module version bundle.
 - Required: every referenced Delamain appears in the `shape.yaml` registry.
 - Required: `shape.yaml` remains the field-binding and Delamain-registry surface; Delamain definitions live in primary files inside Delamain bundles.
-- Required: every `delamain_state` field references a declared Delamain companion file in the same module bundle.
-- Required: every Delamain companion file declares ordered `phases`.
-- Required: Delamain phase names are unique within one companion file.
-- Required: Delamain state names are unique within one companion file.
-- Required: each Delamain companion file has exactly one `initial: true` state.
+- Required: every `delamain` field references a declared Delamain primary file in the same module bundle.
+- Required: every Delamain primary definition file declares ordered `phases`.
+- Required: Delamain phase names are unique within one primary definition file.
+- Required: Delamain state names are unique within one primary definition file.
+- Required: each Delamain primary definition file has exactly one `initial: true` state.
 - Required: every state declares `phase`.
 - Required: every declared `phase` value appears in the Delamain file's `phases` list.
 - Required: every declared phase contains at least one state.
@@ -83,7 +83,7 @@ Proposed
 - Required: transitions do not declare `actor`.
 - Required: self-loop transitions are rejected.
 - Required: every state is reachable from the Delamain initial state after expanding list-valued `from` declarations into effective edges.
-- Required: `delamain_state` fields use the referenced Delamain file's declared state names as their legal persisted values.
+- Required: `delamain` fields use the referenced Delamain file's declared state names as their legal persisted values.
 - Required: `advance` transitions target non-terminal states only.
 - Required: `advance` transitions declare exactly one source state.
 - Required: `advance` transitions move to the same phase or the next declared phase only.
@@ -102,7 +102,7 @@ Proposed
 - Allowed: multiple terminal states.
 - Allowed: one `exit` transition entry that expands a shared `from` list into multiple legal source states for the same `to`.
 - Allowed: modules that continue using plain `enum` fields for status-like values when no workflow declaration is needed.
-- Rejected: duplicating Delamain state values in `allowed_values` on a `delamain_state` field.
+- Rejected: duplicating Delamain state values in `allowed_values` on a `delamain` field.
 - Rejected: inferring legal transitions from lifecycle phases alone.
 - Rejected: declaring executor ownership on transitions instead of states.
 - Rejected: list-valued `from` declarations on `advance` or `rework` transitions.
@@ -116,7 +116,7 @@ Proposed
 
 - Extend module loading so bundles may contain Delamain primary files and related assets under `delamains/`.
 - Extend shape parsing so modules may declare a `delamains` registry.
-- Extend frontmatter field parsing so shapes may declare `type: delamain_state` plus required `delamain`.
+- Extend frontmatter field parsing so shapes may declare `type: delamain` plus required `delamain`.
 - Add Delamain-file loading and validation for unknown Delamain references, duplicate Delamain names in the registry, duplicate phase names, duplicate state names, missing or multiple initial states, missing phases, unknown phase names, empty phases, initial states outside the first phase, terminal states outside the last phase, states marked both initial and terminal, missing actor on non-terminal states, actor declared on terminal states, forbidden list-valued `from` declarations on `advance` or `rework`, empty `from` lists, duplicate values inside `from` lists, self-loop transitions, and transitions that reference undeclared states.
 - Add Delamain transition-class validation for `advance`, `rework`, and `exit` against declared phase order and terminal-state annotations.
 - Add Delamain graph validation for reachability from the initial state, missing outgoing transitions on non-terminal states, missing paths from non-terminal states to terminal states, forbidden outgoing transitions on terminal states, and duplicate effective edges after list expansion.
@@ -127,7 +127,7 @@ Proposed
 
 ## Docs and Fixture Impact
 
-- Update the canonical shape-language reference to document the `delamains` registry in `shape.yaml`, `delamain_state`, Delamain bundles under `delamains/`, state `actor`, transition `class`, `states`, `transitions`, `phases`, and the boundary between Delamain and later runtime constructs.
+- Update the canonical shape-language reference to document the `delamains` registry in `shape.yaml`, `delamain`, Delamain bundles under `delamains/`, state `actor`, transition `class`, `states`, `transitions`, `phases`, and the boundary between Delamain and later runtime constructs.
 - Add a forward-looking `software-factory` design-reference example system that paints a backlog-style software delivery flow without using entity variants.
 - Use that fixture to show `kind` as ordinary classification.
 - Use that fixture to show `status` as Delamain-governed state.

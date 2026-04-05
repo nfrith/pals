@@ -66,7 +66,7 @@ Superseded
 ## Docs and Fixture Impact
 
 - Update the canonical shape-language reference later to document Delamain-local `agents`, transition `id`, transition `agent`, and the Delamain-local file layout for agent prompt assets.
-- Extend the `software-factory` design-reference example so its `delivery` Delamain declares explicit transition ids and a Delamain-local `agents` registry.
+- Extend the `software-factory` design-reference example so its `development-pipeline` Delamain declares explicit transition ids and a Delamain-local `agents` registry.
 - Add one Delamain-local agent markdown file per declared `actor: agent` transition entry in that example.
 - Use the fixture to pressure-test naming, path layout, and how transition-local prompt assets read when coupled directly to Delamain.
 - Keep this fixture draft-focused. It does not need to prove runtime execution semantics yet.

@@ -4,13 +4,13 @@ import { resolve, dispatch, type DispatchEntry } from "./dispatcher.js";
 
 // -------------------------------------------------------------------
 // The only input: system root. Everything else is derived from
-// system.yaml → shape.yaml → delivery.yaml → agents/.
+// system.yaml → shape.yaml → delamain.yaml → agents/.
 // -------------------------------------------------------------------
 
 const SYSTEM_ROOT = resolvePath(
   process.env["SYSTEM_ROOT"] ??
     // Default: walk up from dispatcher to system root
-    // dispatcher/ → delivery/ → delamains/ → v1/ → factory/ → modules/ → .als/ → system_root
+    // dispatcher/ → development-pipeline/ → delamains/ → v1/ → factory/ → modules/ → .als/ → system_root
     resolvePath(import.meta.dir, "..", "..", "..", "..", "..", "..", ".."),
 );
 const POLL_MS = parseInt(process.env["POLL_MS"] ?? "30000", 10);

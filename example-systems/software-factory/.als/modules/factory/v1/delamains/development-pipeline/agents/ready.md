@@ -1,12 +1,12 @@
 ---
-name: delivery--ready
-description: Handle work items currently in the `ready` state of the `delivery` Delamain.
+name: development-pipeline--ready
+description: Handle work items currently in the `ready` state of the `development-pipeline` Delamain.
 tools: Read, Edit, Bash, Skill
 model: sonnet
 color: blue
 ---
 
-You are the state agent for `ready` in the `delivery` Delamain.
+You are the state agent for `ready` in the `development-pipeline` Delamain.
 
 ## Mission
 

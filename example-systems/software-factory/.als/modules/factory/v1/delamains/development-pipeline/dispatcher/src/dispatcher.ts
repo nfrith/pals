@@ -1,5 +1,5 @@
-import { readFile } from "fs/promises";
-import { join, dirname } from "path";
+import { readFile, writeFile } from "fs/promises";
+import { join, dirname, basename } from "path";
 import { parse as parseYaml } from "yaml";
 import { query } from "@anthropic-ai/claude-agent-sdk";
 
@@ -37,6 +37,8 @@ interface StateDef {
   terminal?: boolean;
   actor?: string;
   path?: string;
+  resumable?: boolean;
+  "session-field"?: string;
   "sub-agent"?: string;
 }
 
@@ -57,6 +59,8 @@ export interface DispatchEntry {
   state: string;
   agentName: string;
   subAgentName?: string;
+  resumable: boolean;
+  sessionField?: string;
   transitions: Array<Pick<Transition, "id" | "class" | "to">>;
 }
 
@@ -95,6 +99,72 @@ function parseMd(raw: string): { meta: Record<string, string>; body: string } {
   }
   return { meta, body: lines.slice(end).join("\n").trim() };
 }
+
+// -------------------------------------------------------------------
+// Frontmatter field read/write — for session persistence
+// -------------------------------------------------------------------
+
+async function readFrontmatterField(
+  filePath: string,
+  field: string,
+): Promise<string | null> {
+  const lines = (await readFile(filePath, "utf-8")).split("\n");
+  if (lines[0]?.trim() !== "---") return null;
+
+  for (let i = 1; i < lines.length; i++) {
+    if (lines[i]!.trim() === "---") break;
+    const c = lines[i]!.indexOf(":");
+    if (c === -1) continue;
+    if (lines[i]!.slice(0, c).trim() !== field) continue;
+    let val = lines[i]!.slice(c + 1).trim();
+    if (val === "null" || val === "") return null;
+    if (
+      (val.startsWith('"') && val.endsWith('"')) ||
+      (val.startsWith("'") && val.endsWith("'"))
+    )
+      val = val.slice(1, -1);
+    return val;
+  }
+  return null;
+}
+
+async function setFrontmatterField(
+  filePath: string,
+  field: string,
+  value: string,
+): Promise<void> {
+  const raw = await readFile(filePath, "utf-8");
+  const lines = raw.split("\n");
+  if (lines[0]?.trim() !== "---") return;
+
+  let closingFence = -1;
+  let existingLine = -1;
+
+  for (let i = 1; i < lines.length; i++) {
+    if (lines[i]!.trim() === "---") {
+      closingFence = i;
+      break;
+    }
+    const c = lines[i]!.indexOf(":");
+    if (c !== -1 && lines[i]!.slice(0, c).trim() === field) {
+      existingLine = i;
+    }
+  }
+
+  if (closingFence === -1) return;
+
+  if (existingLine !== -1) {
+    lines[existingLine] = `${field}: ${value}`;
+  } else {
+    lines.splice(closingFence, 0, `${field}: ${value}`);
+  }
+
+  await writeFile(filePath, lines.join("\n"), "utf-8");
+}
+
+// -------------------------------------------------------------------
+// Resolve — crawl system.yaml → shape.yaml → delamain.yaml
+// -------------------------------------------------------------------
 
 export async function resolve(systemRoot: string): Promise<ResolvedConfig> {
   // 1. system.yaml → module
@@ -137,7 +207,6 @@ export async function resolve(systemRoot: string): Promise<ResolvedConfig> {
   }
 
   // Items dir: module workspace path + entity path dirname
-  // system.yaml path (workspace/factory) + entity path dirname (items/)
   const itemsDir = join(systemRoot, mod.path, dirname(entityPath));
 
   // 3. Delamain primary file → states and transitions
@@ -145,7 +214,6 @@ export async function resolve(systemRoot: string): Promise<ResolvedConfig> {
   if (!delamainPath) {
     throw new Error(`Delamain "${delamainName}" not in shape registry`);
   }
-  const delamainDir = dirname(delamainPath);
 
   const delamain = parseYaml(
     await readFile(join(moduleDir, delamainPath), "utf-8"),
@@ -173,24 +241,25 @@ export async function resolve(systemRoot: string): Promise<ResolvedConfig> {
         def.model = meta["model"] as AgentDef["model"];
       }
 
-      // Use the state id or sub-agent name as the SDK agent name.
       agents[agentKey] = def;
     } catch {
       // Skip unreadable agent files
     }
   }
 
-  // 4. Load state agent files and any referenced Delamain-local sub-agents
+  // 4. Load state agents and sub-agents
   for (const [stateId, state] of Object.entries(delamain.states)) {
     if (state.actor !== "agent" || !state.path) continue;
     await loadAgent(stateId, state.path);
 
-    const subAgentName = state["sub-agent"];
-    if (!subAgentName || agents[subAgentName]) continue;
-    await loadAgent(
-      subAgentName,
-      join(delamainDir, "sub-agents", `${subAgentName}.md`),
-    );
+    // Sub-agent path is now a full module-relative path
+    const subAgentPath = state["sub-agent"];
+    if (subAgentPath) {
+      const subAgentName = basename(subAgentPath, ".md");
+      if (!agents[subAgentName]) {
+        await loadAgent(subAgentName, subAgentPath);
+      }
+    }
   }
 
   // 5. Build dispatch table from agent-owned states
@@ -207,13 +276,14 @@ export async function resolve(systemRoot: string): Promise<ResolvedConfig> {
       })
       .map((t) => ({ id: t.id, class: t.class, to: t.to }));
 
+    const subAgentPath = state["sub-agent"];
+
     dispatchTable.push({
       state: stateId,
       agentName: stateId,
-      subAgentName:
-        state["sub-agent"] && agents[state["sub-agent"]]
-          ? state["sub-agent"]
-          : undefined,
+      subAgentName: subAgentPath ? basename(subAgentPath, ".md") : undefined,
+      resumable: state.resumable === true,
+      sessionField: state.resumable ? state["session-field"] : undefined,
       transitions,
     });
   }
@@ -229,7 +299,7 @@ export async function resolve(systemRoot: string): Promise<ResolvedConfig> {
 }
 
 // -------------------------------------------------------------------
-// Dispatch — one sentence naming the agent, context as structured kv
+// Dispatch — agent file body = prompt, frontmatter = query options
 // -------------------------------------------------------------------
 
 const today = () => new Date().toISOString().slice(0, 10);
@@ -242,6 +312,13 @@ export async function dispatch(
   systemRoot: string,
 ): Promise<{ success: boolean; sessionId?: string }> {
   const agent = agents[entry.agentName]!;
+
+  // Check for resumable session
+  let resumeSessionId: string | undefined;
+  if (entry.resumable && entry.sessionField) {
+    resumeSessionId =
+      (await readFrontmatterField(itemFile, entry.sessionField)) ?? undefined;
+  }
 
   // Compose prompt: agent file body + runtime context
   const transitionLines = entry.transitions.map(
@@ -258,6 +335,7 @@ export async function dispatch(
     `item_file: ${itemFile}`,
     `current_state: ${entry.state}`,
     `date: ${today()}`,
+    `resume: ${resumeSessionId ? "yes" : "no"}`,
     ``,
     `legal_transitions:`,
     ...transitionLines,
@@ -272,7 +350,9 @@ export async function dispatch(
   }
 
   console.log(
-    `[dispatcher] ${itemId} @ ${entry.state} → ${entry.agentName}${entry.subAgentName ? ` (+ sub-agent: ${entry.subAgentName})` : ""}`,
+    `[dispatcher] ${itemId} @ ${entry.state} → ${entry.agentName}` +
+      (resumeSessionId ? ` (resume: ${resumeSessionId.slice(0, 8)}...)` : "") +
+      (entry.subAgentName ? ` (+ sub-agent: ${entry.subAgentName})` : ""),
   );
 
   let sessionId: string | undefined;
@@ -285,6 +365,7 @@ export async function dispatch(
         model: agent.model ?? "sonnet",
         allowedTools: tools,
         ...(subAgents ? { agents: subAgents } : {}),
+        ...(resumeSessionId ? { resume: resumeSessionId } : {}),
         permissionMode: "acceptEdits",
         maxTurns: 50,
         maxBudgetUsd: 1.0,
@@ -301,6 +382,15 @@ export async function dispatch(
         console.log(`[dispatcher] ${itemId} done (${tag})`);
       }
     }
+
+    // Persist session ID for resumable states (only on new sessions)
+    if (entry.resumable && entry.sessionField && sessionId && !resumeSessionId) {
+      await setFrontmatterField(itemFile, entry.sessionField, sessionId);
+      console.log(
+        `[dispatcher] ${itemId} session persisted → ${entry.sessionField}`,
+      );
+    }
+
     return { success: true, sessionId };
   } catch (err) {
     console.error(

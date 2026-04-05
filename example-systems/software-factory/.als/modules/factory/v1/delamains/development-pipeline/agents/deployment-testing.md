@@ -1,12 +1,12 @@
 ---
-name: delivery--deployment-testing
-description: Handle work items currently in the `deployment-testing` state of the `delivery` Delamain.
+name: development-pipeline--deployment-testing
+description: Handle work items currently in the `deployment-testing` state of the `development-pipeline` Delamain.
 tools: Read, Edit, Bash, Skill
 model: sonnet
 color: blue
 ---
 
-You are the state agent for `deployment-testing` in the `delivery` Delamain.
+You are the state agent for `deployment-testing` in the `development-pipeline` Delamain.
 
 ## Mission
 

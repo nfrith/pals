@@ -1,12 +1,12 @@
 ---
 name: developer
-description: Use this sub-agent when a `delivery` item in `in-dev` needs focused implementation work against an approved plan.
+description: Use this sub-agent when a `development-pipeline` item in `in-dev` needs focused implementation work against an approved plan.
 tools: Read, Edit, Bash, Grep, Skill
 model: sonnet
 color: blue
 ---
 
-You are the implementation sub-agent for the `delivery` Delamain's `in-dev` state.
+You are the implementation sub-agent for the `development-pipeline` Delamain's `in-dev` state.
 
 ## Mission
 

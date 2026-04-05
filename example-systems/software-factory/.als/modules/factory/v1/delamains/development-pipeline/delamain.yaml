@@ -9,13 +9,13 @@ states:
     phase: intake
     actor: agent
     resumable: false
-    path: delamains/delivery/agents/queued.md
+    path: delamains/development-pipeline/agents/queued.md
   planning:
     phase: planning
     actor: agent
     resumable: true
     session-field: planner_session
-    path: delamains/delivery/agents/planning.md
+    path: delamains/development-pipeline/agents/planning.md
   plan-input:
     phase: planning
     actor: operator
@@ -26,19 +26,19 @@ states:
     phase: implementation
     actor: agent
     resumable: false
-    path: delamains/delivery/agents/ready.md
+    path: delamains/development-pipeline/agents/ready.md
   in-dev:
     phase: implementation
     actor: agent
     resumable: true
     session-field: dev_session
-    path: delamains/delivery/agents/in-dev.md
-    sub-agent: delamains/delivery/sub-agents/developer.md
+    path: delamains/development-pipeline/agents/in-dev.md
+    sub-agent: delamains/development-pipeline/sub-agents/developer.md
   in-review:
     phase: implementation
     actor: agent
     resumable: false
-    path: delamains/delivery/agents/in-review.md
+    path: delamains/development-pipeline/agents/in-review.md
   uat-test:
     phase: implementation
     actor: operator
@@ -46,17 +46,17 @@ states:
     phase: deployment
     actor: agent
     resumable: false
-    path: delamains/delivery/agents/deployment-ready.md
+    path: delamains/development-pipeline/agents/deployment-ready.md
   deploying:
     phase: deployment
     actor: agent
     resumable: false
-    path: delamains/delivery/agents/deploying.md
+    path: delamains/development-pipeline/agents/deploying.md
   deployment-testing:
     phase: deployment
     actor: agent
     resumable: false
-    path: delamains/delivery/agents/deployment-testing.md
+    path: delamains/development-pipeline/agents/deployment-testing.md
   deployment-failure:
     phase: deployment
     actor: operator

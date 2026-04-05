@@ -1,12 +1,12 @@
 ---
-name: delivery--deploying
-description: Handle work items currently in the `deploying` state of the `delivery` Delamain.
+name: development-pipeline--deploying
+description: Handle work items currently in the `deploying` state of the `development-pipeline` Delamain.
 tools: Read, Edit, Bash, Skill
 model: sonnet
 color: blue
 ---
 
-You are the state agent for `deploying` in the `delivery` Delamain.
+You are the state agent for `deploying` in the `development-pipeline` Delamain.
 
 ## Mission
 

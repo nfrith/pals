@@ -1,8 +1,8 @@
 dependencies: []
 
 delamains:
-  delivery:
-    path: delamains/delivery/delamain.yaml
+  development-pipeline:
+    path: delamains/development-pipeline/delamain.yaml
 
 entities:
   work-item:
@@ -27,9 +27,9 @@ entities:
         allowed_values: [bug, feature, hotfix, experiment]
 
       status:
-        type: delamain_state
+        type: delamain
         allow_null: false
-        delamain: delivery
+        delamain: development-pipeline
 
       priority:
         type: enum

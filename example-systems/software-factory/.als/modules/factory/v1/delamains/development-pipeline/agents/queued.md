@@ -1,12 +1,12 @@
 ---
-name: delivery--queued
-description: Handle work items currently in the `queued` state of the `delivery` Delamain.
+name: development-pipeline--queued
+description: Handle work items currently in the `queued` state of the `development-pipeline` Delamain.
 tools: Read, Edit, Bash, Skill
 model: sonnet
 color: blue
 ---
 
-You are the state agent for `queued` in the `delivery` Delamain.
+You are the state agent for `queued` in the `development-pipeline` Delamain.
 
 ## Mission
 

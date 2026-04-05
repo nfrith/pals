@@ -26,6 +26,7 @@ Proposed
 - `session-field` identifies the frontmatter field where the host persists the resumable agent session id for that state.
 - Delamain-declared `session-field` values do not need to appear in `shape.yaml` entity fields.
 - Hosts append Delamain-declared session fields after the shape-declared frontmatter fields when materializing entity frontmatter.
+- A Delamain-declared `session-field` name must not collide with any other frontmatter field name materialized on an entity bound to that Delamain, whether explicit in `shape.yaml` or implicit from another Delamain session field.
 - An `actor: agent` state may also declare `sub-agent: <markdown-path>`.
 - `sub-agent` resolves directly to an auxiliary prompt asset in the same module-version bundle.
 - Agent files are markdown files with YAML frontmatter plus a markdown body.
@@ -57,6 +58,8 @@ Proposed
 - Required: if a non-terminal state declares `actor: agent`, then that state declares exactly one `path`.
 - Required: if a non-terminal state declares `actor: operator`, then that state does not declare `path`, `resumable`, `session-field`, or `sub-agent`.
 - Required: `session-field` names are unique within one Delamain bundle.
+- Required: a Delamain-declared `session-field` name does not collide with any explicit entity field name on an entity bound to that Delamain.
+- Required: a Delamain-declared `session-field` name does not collide with any other implicit Delamain session field name materialized on the same bound entity.
 - Required: Delamain-declared `session-field` names are treated as implicit nullable string frontmatter fields on entities bound to that Delamain.
 - Required: if a state declares `sub-agent`, the referenced markdown file resolves in the same module-version bundle.
 - Required: every resolved sub-agent markdown file contains YAML frontmatter.
@@ -68,7 +71,7 @@ Proposed
 - Allowed: resumable agent states may preserve their saved session field while work sits in operator-owned states and resume it on later re-entry to the same state.
 - Allowed: a state agent may invoke its declared `sub-agent` while remaining the owner of the Delamain state transition.
 - Allowed: a state-bound agent may choose any legal outgoing transition from its current state.
-- Allowed: transitions keep their own ids and classes even when agents are bound to states.
+- Allowed: transitions keep their own classes even when agents are bound to states.
 - Rejected: transition-local `agent` bindings as the primary Delamain prompt surface in this pass.
 - Rejected: a top-level Delamain `agents` registry in this draft surface.
 - Rejected: requiring Delamain-declared `session-field` values to be explicitly duplicated in `shape.yaml`.
@@ -85,13 +88,13 @@ Proposed
 - Add validation that `resumable: true` states declare exactly one `session-field`.
 - Add validation that `resumable: false` states do not declare `session-field`.
 - Add validation that `actor: operator` states do not declare `path`, `resumable`, `session-field`, or `sub-agent`.
-- Add validation that Delamain-declared `session-field` names are unique and are surfaced as implicit nullable string frontmatter fields after the shape-declared fields.
+- Add validation that Delamain-declared `session-field` names are unique, do not collide with explicit entity field names, do not collide with other implicit Delamain session fields materialized on the same entity, and are surfaced as implicit nullable string frontmatter fields after the shape-declared fields.
 - Do not interpret prompt body semantics, tool lists, model selection, or instruction quality inside the compiler in this pass.
 
 ## Docs and Fixture Impact
 
 - Update the canonical shape-language reference later to document state-level `path`, required `resumable`, optional `session-field`, path-valued optional `sub-agent`, and the Delamain-bundle file layout for prompt assets.
-- Revise the `software-factory` design-reference example so its `delivery` Delamain declares direct state-level agent paths rather than a separate registry.
+- Revise the `software-factory` design-reference example so its `development-pipeline` Delamain declares direct state-level agent paths rather than a separate registry.
 - Remove explicit planner and dev session fields from the fixture `shape.yaml` and let the Delamain declaration supply them implicitly.
 - Add one Delamain-local agent markdown file per agent-owned state in that example.
 - Add Delamain-local helper prompt assets under `sub-agents/` where the fixture needs to sketch a nested-agent pattern.
