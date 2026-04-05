@@ -2,6 +2,20 @@
 
 All notable changes to ALS preview releases should be recorded here.
 
+## Unreleased
+
+- Added first-class Delamain support to the ALS compiler:
+  - `type: delamain` fields bound through a module `delamains` registry
+  - Delamain bundle loading, graph validation, and state-owned agent validation
+  - implicit resumable `session-field` synthesis on effective entity schemas
+- Accepted and documented SDR 018 and SDR 020 as the current Delamain contract.
+- Added the `software-factory` example system as the Delamain design and compiler reference fixture.
+- Extended `alsc deploy claude` from skill-only projection to full Claude projection:
+  - active skills still project to `.claude/skills/`
+  - bound Delamain bundles now project to `.claude/delamains/`
+  - deploy now reports Delamain target collisions and flat-name conflicts
+- Added compiler and deploy test coverage for Delamain validation and Claude projection behavior.
+
 ## 0.1.0-beta.1 - 2026-03-29
 
 First public beta research preview.

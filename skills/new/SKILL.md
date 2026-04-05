@@ -9,7 +9,7 @@ You help operators design and create ALS modules — structured markdown storage
 
 You are not a form. You are a domain modeler. The operator knows their domain but not the ALS format. You know the format but not their domain. The interview is where those meet.
 
-Before producing any YAML or skill definitions, read `references/shape-language.md` and `references/skill-patterns.md` in this skill's directory. The shape language reference is the complete format specification for schemas. The skill patterns reference defines the decomposition patterns for module skills. Everything you produce must conform to them.
+Before producing any YAML or skill definitions, read `../docs/references/shape-language.md` and `../docs/references/skill-patterns.md` from the sibling docs skill. The shape language reference is the complete format specification for schemas. The skill patterns reference defines the decomposition patterns for module skills. Everything you produce must conform to them.
 
 ## Phase 0: Prerequisites
 
@@ -88,7 +88,7 @@ Sections are the narrative structure. They are where humans write context, decis
 
 Now step back from the schema and think about how the operator will interact with this module day to day. The entities, their lifecycles, and their relationships determine the skill decomposition.
 
-Read `references/skill-patterns.md` for the full pattern definitions. The three patterns are:
+Read `../docs/references/skill-patterns.md` for the full pattern definitions. The three patterns are:
 
 - **CRUD**: one skill per operation verb, each handles all entity types. Use when the module has a single entity type or all entities share the same lifecycle.
 - **Lifecycle**: one skill per domain activity. Use when entities have distinct operational phases and the operator thinks in activities, not generic verbs.
@@ -109,7 +109,7 @@ Then derive the default canonical ALS skill ids:
 - If the base phrase already repeats the module wording, normalize it to one leading prefix instead of doubling it.
 - Check the resulting ids against:
   - active ALS skill ids already declared elsewhere in the system
-  - existing `.claude/skills/<skill-id>/` target directories
+  - existing `.claude/skills/<skill-id>/` target directories and any projected `.claude/delamains/<name>/` targets that would collide during deploy
 - If a collision appears, present the problem and recommended alternative ids. The operator chooses the final names.
 
 If the skill decomposition reveals that two entities have completely unrelated lifecycles and no shared invariants, challenge whether they belong in the same module.
@@ -236,8 +236,8 @@ bun ${CLAUDE_PLUGIN_ROOT}/alsc/compiler/src/cli.ts validate <system-root>
 bun ${CLAUDE_PLUGIN_ROOT}/alsc/compiler/src/cli.ts deploy claude --dry-run --require-empty-targets <system-root> [module-id]
 ```
 
-12. If the preflight reports target collisions under `.claude/skills/`, stop and resolve the skill ids with the operator before live deploy.
-13. Project the active skill bundle into `.claude/skills/`:
+12. If the preflight reports target collisions or Delamain name conflicts under `.claude/`, stop and resolve them with the operator before live deploy.
+13. Project the active Claude assets into `.claude/`:
 
 ```bash
 bun ${CLAUDE_PLUGIN_ROOT}/alsc/compiler/src/cli.ts deploy claude <system-root> [module-id]
@@ -264,8 +264,8 @@ bun ${CLAUDE_PLUGIN_ROOT}/alsc/compiler/src/cli.ts validate <system-root>
 bun ${CLAUDE_PLUGIN_ROOT}/alsc/compiler/src/cli.ts deploy claude --dry-run --require-empty-targets <system-root> [module-id]
 ```
 
-10. If the preflight reports target collisions under `.claude/skills/`, stop and resolve the skill ids with the operator before live deploy.
-11. Project the active skill bundle into `.claude/skills/`:
+10. If the preflight reports target collisions or Delamain name conflicts under `.claude/`, stop and resolve them with the operator before live deploy.
+11. Project the active Claude assets into `.claude/`:
 
 ```bash
 bun ${CLAUDE_PLUGIN_ROOT}/alsc/compiler/src/cli.ts deploy claude <system-root> [module-id]

@@ -30,7 +30,7 @@ Before mutating anything, read these references:
 - `../change/references/manifest-template.md`
 - `references/report-template.md`
 - `../validate/SKILL.md`
-- `../new/references/shape-language.md`
+- `../docs/references/shape-language.md`
 
 Use `manifest-template.md` as the contract for `vN+1/migrations/MANIFEST.md`.
 Use `report-template.md` as the contract for `vN+1/migrations/REPORT.md`.
@@ -45,7 +45,7 @@ Use `report-template.md` as the contract for `vN+1/migrations/REPORT.md`.
 - Completes or replaces the canonical migration script when the staged script is only a placeholder
 - Dry-runs rewrite migrations against a full disposable clone in `/tmp`
 - Executes the live migration and flips the module's active version and active `skills:` in `.als/system.yaml`
-- Projects the new active skill set into `.claude/skills/`
+- Projects the new active Claude assets into `.claude/skills/` and `.claude/delamains/`
 - Updates `MANIFEST.md` to `status: migrated`
 - Authors or updates `REPORT.md`
 - Commits the successful cutover
@@ -122,7 +122,7 @@ This phase is required when `data_migration_required: true`.
 3. Run the primary migration script against the cloned system root while the clone still points at `vN`.
 4. Flip the cloned target module entry in `.als/system.yaml` to `version: N+1` and `skills:` matching manifest `skill_paths`.
 5. Run whole-system validation against the clone.
-6. Project the cloned target module's active skills into `.claude/skills/`.
+6. Project the cloned target module's active Claude assets into `.claude/`.
 
 ```bash
 bun ${CLAUDE_PLUGIN_ROOT}/alsc/compiler/src/deploy.ts <clone-root> <module-id>
@@ -151,7 +151,7 @@ Never touch live data or `.als/system.yaml` before a final operator approval.
 2. Require explicit fresh approval.
 3. Track every live file you mutate so rollback can be precise.
    - Track modified tracked files separately from newly created untracked files.
-   - Include `.claude/skills/` changes in that tracking.
+   - Include `.claude/skills/` and `.claude/delamains/` changes in that tracking.
 4. If `data_migration_required: true`, run the proven primary migration script against the live system root while `.als/system.yaml` still points at `vN`.
 5. Flip the target module in live `.als/system.yaml` to `version: N+1` and `skills:` matching manifest `skill_paths`.
 6. Run whole-system validation.
@@ -161,13 +161,13 @@ Never touch live data or `.als/system.yaml` before a final operator approval.
    - keep `MANIFEST.md` at `status: staged`
    - keep the staged bundle's migration assets for inspection
    - stop and report the failure
-8. If validation passes, project the target module's active skills into `.claude/skills/`.
+8. If validation passes, project the target module's active Claude assets into `.claude/`.
 
 ```bash
 bun ${CLAUDE_PLUGIN_ROOT}/alsc/compiler/src/deploy.ts <system-root> <module-id>
 ```
 
-   - Overwrite projected dirs for skills in the new active set.
+   - Overwrite projected dirs for skills and Delamains in the new active set.
    - Delete projected dirs for old active skill ids retired or renamed by this module cutover.
 9. If projection fails after validation:
    - restore tracked files touched by the failed cutover with `git restore --worktree --source=HEAD -- <paths...>`
@@ -193,7 +193,7 @@ The successful cutover commit should include only:
 
 - live target-module record changes
 - the target module's version and `skills:` flip in `.als/system.yaml`
-- `.claude/skills/` changes for the target module's cutover
+- `.claude/skills/` and `.claude/delamains/` changes for the target module's cutover
 - `vN+1/migrations/MANIFEST.md`
 - `vN+1/migrations/REPORT.md`
 - the finalized primary migration script and directly related migration assets in the target bundle

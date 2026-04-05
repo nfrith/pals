@@ -92,6 +92,29 @@ export interface ClaudeSkillProjectionCollision {
   target_kind: "file" | "directory";
 }
 
+export interface ClaudeDelamainProjectionPlan {
+  module_id: string;
+  module_version: number;
+  delamain_name: string;
+  source_dir: string;
+  target_dir: string;
+}
+
+export interface ClaudeDelamainProjectionCollision {
+  module_id: string;
+  delamain_name: string;
+  source_dir: string;
+  target_dir: string;
+  target_kind: "file" | "directory";
+}
+
+export interface ClaudeDelamainNameConflict {
+  delamain_name: string;
+  // This list always contains at least two distinct module ids when emitted.
+  module_ids: string[];
+  target_dir: string;
+}
+
 export interface ClaudeSkillDeployOutput {
   schema: string;
   status: "pass" | "fail";
@@ -104,6 +127,11 @@ export interface ClaudeSkillDeployOutput {
   planned_skill_count: number;
   written_skill_count: number;
   planned_skills: ClaudeSkillProjectionPlan[];
-  existing_targets: ClaudeSkillProjectionCollision[];
+  existing_skill_targets: ClaudeSkillProjectionCollision[];
+  planned_delamain_count: number;
+  written_delamain_count: number;
+  planned_delamains: ClaudeDelamainProjectionPlan[];
+  existing_delamain_targets: ClaudeDelamainProjectionCollision[];
+  delamain_name_conflicts: ClaudeDelamainNameConflict[];
   error: string | null;
 }

@@ -1,11 +1,18 @@
 import { expect, test } from "bun:test";
-import { mkdir, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, rm, writeFile } from "node:fs/promises";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { deployClaudeSkillsFromConfig } from "../src/claude-skills.ts";
 import { loadSystemValidationContext } from "../src/validate.ts";
-import { withFixtureSandbox } from "./helpers/fixture.ts";
+import {
+  removePath,
+  updateShapeYaml,
+  updateSystemYaml,
+  withExampleSystemSandbox,
+  withFixtureSandbox,
+  writePath,
+} from "./helpers/fixture.ts";
 
 const compilerRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -22,16 +29,28 @@ test.concurrent("deploy CLI projects active skills into .claude/skills and is id
     expect(first.exitCode).toBe(0);
 
     const firstOutput = JSON.parse(new TextDecoder().decode(first.stdout)) as {
+      schema: string;
       status: string;
       planned_skill_count: number;
       written_skill_count: number;
       planned_skills: Array<Record<string, unknown>>;
-      existing_targets: unknown[];
+      existing_skill_targets: unknown[];
+      planned_delamain_count: number;
+      written_delamain_count: number;
+      planned_delamains: unknown[];
+      existing_delamain_targets: unknown[];
+      delamain_name_conflicts: unknown[];
     };
+    expect(firstOutput.schema).toBe("als-claude-deploy-output@2");
     expect(firstOutput.status).toBe("pass");
     expect(firstOutput.planned_skill_count).toBe(5);
     expect(firstOutput.written_skill_count).toBe(5);
-    expect(firstOutput.existing_targets).toEqual([]);
+    expect(firstOutput.existing_skill_targets).toEqual([]);
+    expect(firstOutput.planned_delamain_count).toBe(0);
+    expect(firstOutput.written_delamain_count).toBe(0);
+    expect(firstOutput.planned_delamains).toEqual([]);
+    expect(firstOutput.existing_delamain_targets).toEqual([]);
+    expect(firstOutput.delamain_name_conflicts).toEqual([]);
     for (const plan of firstOutput.planned_skills) {
       expect(plan).not.toHaveProperty("source_dir_abs");
       expect(plan).not.toHaveProperty("target_dir_abs");
@@ -69,14 +88,20 @@ test.concurrent("deploy CLI dry-run reports planned work without creating .claud
 
     expect(process.exitCode).toBe(0);
     const output = JSON.parse(new TextDecoder().decode(process.stdout)) as {
+      schema: string;
       status: string;
       planned_skill_count: number;
       written_skill_count: number;
       planned_skills: Array<Record<string, unknown>>;
+      planned_delamain_count: number;
+      written_delamain_count: number;
     };
+    expect(output.schema).toBe("als-claude-deploy-output@2");
     expect(output.status).toBe("pass");
     expect(output.planned_skill_count).toBeGreaterThan(0);
     expect(output.written_skill_count).toBe(0);
+    expect(output.planned_delamain_count).toBe(0);
+    expect(output.written_delamain_count).toBe(0);
     expect(existsSync(join(root, ".claude/skills"))).toBe(false);
     for (const plan of output.planned_skills) {
       expect(plan).not.toHaveProperty("source_dir_abs");
@@ -118,11 +143,13 @@ test.concurrent("deploy CLI fails unknown module filters before planning work", 
       status: string;
       validation_status: string;
       planned_skill_count: number;
+      planned_delamain_count: number;
       error: string | null;
     };
     expect(output.status).toBe("fail");
     expect(output.validation_status).toBe("fail");
     expect(output.planned_skill_count).toBe(0);
+    expect(output.planned_delamain_count).toBe(0);
     expect(output.error).toContain("Unknown module filter 'ghost-module'");
   });
 });
@@ -142,15 +169,17 @@ test.concurrent("deploy CLI fails preflight when empty targets are required", as
     expect(process.exitCode).toBe(1);
     const output = JSON.parse(new TextDecoder().decode(process.stdout)) as {
       status: string;
-      existing_targets: Array<{ skill_id: string; target_dir: string; target_kind: string }>;
+      existing_skill_targets: Array<{ skill_id: string; target_dir: string; target_kind: string }>;
+      existing_delamain_targets: unknown[];
       error: string | null;
     };
     expect(output.status).toBe("fail");
     expect(output.error).toContain("target paths already exist");
-    expect(output.existing_targets).toHaveLength(1);
-    expect(output.existing_targets[0].skill_id).toBe("backlog-module");
-    expect(output.existing_targets[0].target_dir).toContain(".claude/skills/backlog-module");
-    expect(output.existing_targets[0].target_kind).toBe("directory");
+    expect(output.existing_skill_targets).toHaveLength(1);
+    expect(output.existing_delamain_targets).toEqual([]);
+    expect(output.existing_skill_targets[0].skill_id).toBe("backlog-module");
+    expect(output.existing_skill_targets[0].target_dir).toContain(".claude/skills/backlog-module");
+    expect(output.existing_skill_targets[0].target_kind).toBe("directory");
   });
 });
 
@@ -169,7 +198,300 @@ test.concurrent("deploy library projects skills when validation status is warn",
     expect(output.validation_status).toBe("warn");
     expect(output.planned_skill_count).toBe(1);
     expect(output.written_skill_count).toBe(1);
+    expect(output.planned_delamain_count).toBe(0);
+    expect(output.written_delamain_count).toBe(0);
     expect(existsSync(join(root, ".claude/skills/backlog-module/SKILL.md"))).toBe(true);
+  });
+});
+
+test.concurrent("deploy CLI projects bound Delamain bundles into .claude/delamains and is idempotent", async () => {
+  await withExampleSystemSandbox("software-factory", "deploy-delamain-idempotent", async ({ root }) => {
+    await rm(join(root, ".claude/delamains"), { recursive: true, force: true });
+
+    const first = Bun.spawnSync({
+      cmd: ["bun", "src/deploy.ts", root],
+      cwd: compilerRoot,
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    expect(first.exitCode).toBe(0);
+
+    const firstOutput = JSON.parse(new TextDecoder().decode(first.stdout)) as {
+      schema: string;
+      status: string;
+      planned_skill_count: number;
+      written_skill_count: number;
+      planned_delamain_count: number;
+      written_delamain_count: number;
+      planned_delamains: Array<Record<string, unknown>>;
+      existing_delamain_targets: unknown[];
+      delamain_name_conflicts: unknown[];
+    };
+    expect(firstOutput.schema).toBe("als-claude-deploy-output@2");
+    expect(firstOutput.status).toBe("pass");
+    expect(firstOutput.planned_skill_count).toBe(0);
+    expect(firstOutput.written_skill_count).toBe(0);
+    expect(firstOutput.planned_delamain_count).toBe(1);
+    expect(firstOutput.written_delamain_count).toBe(1);
+    expect(firstOutput.existing_delamain_targets).toEqual([]);
+    expect(firstOutput.delamain_name_conflicts).toEqual([]);
+    expect(firstOutput.planned_delamains).toHaveLength(1);
+    expect(firstOutput.planned_delamains[0]?.delamain_name).toBe("development-pipeline");
+    expect(firstOutput.planned_delamains[0]?.source_dir).toBe(".als/modules/factory/v1/delamains/development-pipeline");
+    expect(firstOutput.planned_delamains[0]?.target_dir).toBe(".claude/delamains/development-pipeline");
+    for (const plan of firstOutput.planned_delamains) {
+      expect(plan).not.toHaveProperty("source_dir_abs");
+      expect(plan).not.toHaveProperty("target_dir_abs");
+    }
+
+    const firstSnapshot = snapshotTree(join(root, ".claude/delamains"));
+    expect(firstSnapshot["development-pipeline/delamain.yaml"]).toContain("phases:");
+    expect(firstSnapshot["development-pipeline/agents/planning.md"]).toContain("description:");
+    expect(firstSnapshot["development-pipeline/sub-agents/developer.md"]).toContain("description:");
+    expect(firstSnapshot["development-pipeline/dispatcher/src/dispatcher.ts"]).toContain("resolve(");
+
+    const second = Bun.spawnSync({
+      cmd: ["bun", "src/deploy.ts", root],
+      cwd: compilerRoot,
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    expect(second.exitCode).toBe(0);
+
+    const secondSnapshot = snapshotTree(join(root, ".claude/delamains"));
+    expect(secondSnapshot).toEqual(firstSnapshot);
+  });
+});
+
+test.concurrent("deploy CLI dry-run reports Delamain work without creating .claude/delamains", async () => {
+  await withExampleSystemSandbox("software-factory", "deploy-delamain-dry-run", async ({ root }) => {
+    await rm(join(root, ".claude/delamains"), { recursive: true, force: true });
+
+    const process = Bun.spawnSync({
+      cmd: ["bun", "src/deploy.ts", "--dry-run", root],
+      cwd: compilerRoot,
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+
+    expect(process.exitCode).toBe(0);
+    const output = JSON.parse(new TextDecoder().decode(process.stdout)) as {
+      status: string;
+      planned_skill_count: number;
+      written_skill_count: number;
+      planned_delamain_count: number;
+      written_delamain_count: number;
+      planned_delamains: Array<Record<string, unknown>>;
+    };
+    expect(output.status).toBe("pass");
+    expect(output.planned_skill_count).toBe(0);
+    expect(output.written_skill_count).toBe(0);
+    expect(output.planned_delamain_count).toBe(1);
+    expect(output.written_delamain_count).toBe(0);
+    expect(output.planned_delamains[0]?.delamain_name).toBe("development-pipeline");
+    for (const plan of output.planned_delamains) {
+      expect(plan).not.toHaveProperty("source_dir_abs");
+      expect(plan).not.toHaveProperty("target_dir_abs");
+    }
+    expect(existsSync(join(root, ".claude/delamains"))).toBe(false);
+  });
+});
+
+test.concurrent("deploy CLI excludes unused Delamains that are only present in the registry", async () => {
+  await withExampleSystemSandbox("software-factory", "deploy-unused-delamain", async ({ root }) => {
+    await cp(
+      join(root, ".als/modules/factory/v1/delamains/development-pipeline"),
+      join(root, ".als/modules/factory/v1/delamains/unused-flow"),
+      { recursive: true },
+    );
+    await updateShapeYaml(root, "factory", 1, (shape) => {
+      const delamains = (shape.delamains ?? {}) as Record<string, unknown>;
+      delamains["unused-flow"] = {
+        path: "delamains/unused-flow/delamain.yaml",
+      };
+      shape.delamains = delamains;
+    });
+
+    const process = Bun.spawnSync({
+      cmd: ["bun", "src/deploy.ts", "--dry-run", root],
+      cwd: compilerRoot,
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+
+    expect(process.exitCode).toBe(0);
+    const output = JSON.parse(new TextDecoder().decode(process.stdout)) as {
+      status: string;
+      planned_delamain_count: number;
+      planned_delamains: Array<{ delamain_name: string }>;
+    };
+    expect(output.status).toBe("pass");
+    expect(output.planned_delamain_count).toBe(1);
+    expect(output.planned_delamains.map((plan) => plan.delamain_name)).toEqual(["development-pipeline"]);
+  });
+});
+
+test.concurrent("deploy CLI fails preflight when empty targets are required for Delamain projection", async () => {
+  await withExampleSystemSandbox("software-factory", "deploy-delamain-collision", async ({ root }) => {
+    await mkdir(join(root, ".claude/delamains/development-pipeline"), { recursive: true });
+    await writeFile(join(root, ".claude/delamains/development-pipeline/delamain.yaml"), "collision\n");
+
+    const process = Bun.spawnSync({
+      cmd: ["bun", "src/deploy.ts", "--dry-run", "--require-empty-targets", root],
+      cwd: compilerRoot,
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+
+    expect(process.exitCode).toBe(1);
+    const output = JSON.parse(new TextDecoder().decode(process.stdout)) as {
+      status: string;
+      existing_skill_targets: unknown[];
+      existing_delamain_targets: Array<{ delamain_name: string; target_dir: string; target_kind: string }>;
+      error: string | null;
+    };
+    expect(output.status).toBe("fail");
+    expect(output.error).toContain("target paths already exist");
+    expect(output.existing_skill_targets).toEqual([]);
+    expect(output.existing_delamain_targets).toHaveLength(1);
+    expect(output.existing_delamain_targets[0]?.delamain_name).toBe("development-pipeline");
+    expect(output.existing_delamain_targets[0]?.target_dir).toContain(".claude/delamains/development-pipeline");
+    expect(output.existing_delamain_targets[0]?.target_kind).toBe("directory");
+  });
+});
+
+test.concurrent("deploy CLI fails when flat Delamain names collide across modules", async () => {
+  await withExampleSystemSandbox("software-factory", "deploy-delamain-name-conflict", async ({ root }) => {
+    await cp(join(root, ".als/modules/factory"), join(root, ".als/modules/release"), { recursive: true });
+    await cp(join(root, "workspace/factory"), join(root, "workspace/release"), { recursive: true });
+    await updateSystemYaml(root, (system) => {
+      const modules = system.modules as Record<string, unknown>;
+      modules.release = {
+        path: "workspace/release",
+        version: 1,
+        skills: [],
+      };
+    });
+
+    const process = Bun.spawnSync({
+      cmd: ["bun", "src/deploy.ts", "--dry-run", root],
+      cwd: compilerRoot,
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+
+    expect(process.exitCode).toBe(1);
+    const output = JSON.parse(new TextDecoder().decode(process.stdout)) as {
+      status: string;
+      planned_delamain_count: number;
+      delamain_name_conflicts: Array<{ delamain_name: string; module_ids: string[]; target_dir: string }>;
+      error: string | null;
+    };
+    expect(output.status).toBe("fail");
+    expect(output.planned_delamain_count).toBe(2);
+    expect(output.error).toContain("Delamain names would collide");
+    expect(output.delamain_name_conflicts).toHaveLength(1);
+    expect(output.delamain_name_conflicts[0]?.delamain_name).toBe("development-pipeline");
+    expect(output.delamain_name_conflicts[0]?.module_ids).toEqual(["factory", "release"]);
+    expect(output.delamain_name_conflicts[0]?.target_dir).toBe(".claude/delamains/development-pipeline");
+  });
+});
+
+test.concurrent("deploy library preserves prior planned skills when a later module shape file is missing", async () => {
+  await withFixtureSandbox("deploy-shape-missing", async ({ root }) => {
+    await removePath(root, ".als/modules/people/v1/shape.yaml");
+
+    const validationContext = loadSystemValidationContext(root);
+    expect(validationContext.system_config).not.toBeNull();
+
+    const output = deployClaudeSkillsFromConfig(root, validationContext.system_config!, "pass", {
+      dry_run: true,
+    }) as {
+      status: string;
+      validation_status: string;
+      planned_skill_count: number;
+      planned_skills: Array<{ module_id: string }>;
+      error: string | null;
+    };
+    expect(output.status).toBe("fail");
+    expect(output.validation_status).toBe("pass");
+    expect(output.planned_skill_count).toBeGreaterThan(0);
+    expect(output.planned_skills.length).toBe(output.planned_skill_count);
+    expect(output.planned_skills.map((plan) => plan.module_id)).toContain("people");
+    expect(output.planned_skills.map((plan) => plan.module_id)).toContain("backlog");
+    expect(output.error).toContain("Could not read shape.yaml");
+    expect(output.error).toContain("module 'people'");
+  });
+});
+
+test.concurrent("deploy library reports YAML parse failures while planning Claude projection", async () => {
+  await withFixtureSandbox("deploy-shape-parse-failure", async ({ root }) => {
+    await writePath(root, ".als/modules/people/v1/shape.yaml", "dependencies: [\n");
+
+    const validationContext = loadSystemValidationContext(root);
+    expect(validationContext.system_config).not.toBeNull();
+
+    const output = deployClaudeSkillsFromConfig(root, validationContext.system_config!, "pass", {
+      dry_run: true,
+    }) as {
+      status: string;
+      validation_status: string;
+      planned_skill_count: number;
+      error: string | null;
+    };
+    expect(output.status).toBe("fail");
+    expect(output.validation_status).toBe("pass");
+    expect(output.planned_skill_count).toBeGreaterThan(0);
+    expect(output.error).toContain("Could not parse shape.yaml");
+    expect(output.error).toContain("module 'people'");
+  });
+});
+
+test.concurrent("deploy library reports schema validation details when shape.yaml is structurally invalid", async () => {
+  await withFixtureSandbox("deploy-shape-invalid-schema", async ({ root }) => {
+    await writePath(root, ".als/modules/people/v1/shape.yaml", "dependencies: []\nentities: []\n");
+
+    const validationContext = loadSystemValidationContext(root);
+    expect(validationContext.system_config).not.toBeNull();
+
+    const output = deployClaudeSkillsFromConfig(root, validationContext.system_config!, "pass", {
+      dry_run: true,
+    }) as {
+      status: string;
+      validation_status: string;
+      planned_skill_count: number;
+      error: string | null;
+    };
+    expect(output.status).toBe("fail");
+    expect(output.validation_status).toBe("pass");
+    expect(output.planned_skill_count).toBeGreaterThan(0);
+    expect(output.error).toContain("Could not validate shape.yaml");
+    expect(output.error).toContain("entities");
+  });
+});
+
+test.concurrent("deploy library fails closed when one entity declares multiple Delamain fields", async () => {
+  await withExampleSystemSandbox("software-factory", "deploy-delamain-multi-binding", async ({ root }) => {
+    await updateShapeYaml(root, "factory", 1, (shape) => {
+      const entities = shape.entities as Record<string, { fields: Record<string, unknown> }>;
+      entities["work-item"]!.fields["secondary_status"] = {
+        type: "delamain",
+        allow_null: true,
+        delamain: "development-pipeline",
+      };
+    });
+
+    const validationContext = loadSystemValidationContext(root);
+    expect(validationContext.system_config).not.toBeNull();
+
+    const output = deployClaudeSkillsFromConfig(root, validationContext.system_config!, "pass", {
+      dry_run: true,
+    });
+
+    expect(output.status).toBe("fail");
+    expect(output.planned_delamain_count).toBe(0);
+    expect(output.error).toContain("multiple Delamain bindings");
+    expect(output.error).toContain("secondary_status");
   });
 });
 

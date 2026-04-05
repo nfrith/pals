@@ -89,7 +89,7 @@ Update the ALS canonical shape-language documentation after the fixture-first pa
 Do not hardcode the document's home in your reasoning. The location is expected to move.
 
 Current reference location:
-- `../../../skills/new/references/shape-language.md`
+- `../../../skills/docs/references/shape-language.md`
 
 If that path no longer holds the canonical shape-language documentation:
 - locate the new canonical file before editing

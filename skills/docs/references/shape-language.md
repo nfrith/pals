@@ -589,6 +589,62 @@ Rules:
 - A Delamain-declared `session-field` name must not collide with any explicit entity field name or any other implicit Delamain session field name materialized on the same effective entity schema.
 - `sub-agent` is optional and only valid on `actor: agent` states.
 
+### Delamain agent files
+
+Agent files are markdown files with YAML frontmatter and a markdown body. They live inside the delamain bundle at the paths declared by state `path` and `sub-agent` fields.
+
+State agent example (`agents/planning.md`):
+
+```markdown
+---
+name: planning
+description: Planning agent for the development pipeline
+tools: Read, Edit, Grep
+model: sonnet
+---
+
+You are the planning agent for the development pipeline...
+```
+
+Sub-agent example (`sub-agents/developer.md`):
+
+```markdown
+---
+name: developer
+description: Implementation sub-agent
+tools: Read, Edit, Bash, Grep
+model: sonnet
+---
+
+You carry out the implementation plan...
+```
+
+Required frontmatter:
+
+- `name` — agent identifier string
+- `description` — what the agent does
+
+Optional frontmatter:
+
+- `tools` — comma-separated list of allowed Claude Code tools (default: Read, Edit)
+- `model` — `sonnet`, `opus`, or `haiku` (default: sonnet)
+
+Body:
+
+- The markdown body after frontmatter is the agent's prompt.
+- The dispatcher appends runtime context (item ID, current state, legal transitions) at dispatch time.
+- Agent prompts are not interpreted semantically by the compiler — they are prose assets.
+
+Rules:
+
+- Every resolved state-agent and sub-agent markdown file must contain YAML frontmatter.
+- Every resolved state-agent and sub-agent markdown file must contain a non-empty markdown body after frontmatter.
+- State-agent and sub-agent markdown files must declare frontmatter `name` and `description`.
+- Agent file paths resolve relative to the delamain bundle root directory.
+- Resolved paths must remain inside the same active module version bundle.
+- Additional Claude-style frontmatter such as `tools`, `model`, or `color` is allowed.
+- The compiler does not validate prompt content, tool lists, or model selection in this pass.
+
 ### JSONL row field types
 
 JSONL `rows.fields` reuse a strict subset of the field types above:

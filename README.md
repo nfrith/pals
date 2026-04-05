@@ -27,7 +27,7 @@ The goal is simple: fewer ad hoc file conventions, less drift, and a clearer bou
 The current public preview is centered on two usable surfaces:
 
 - `alsc validate` validates an ALS system and emits machine-readable JSON
-- `alsc deploy claude` projects active ALS skill bundles into `.claude/skills/`
+- `alsc deploy claude` projects active ALS Claude assets into `.claude/skills/` and `.claude/delamains/`
 - `example-systems/` provides reference systems and fixtures for the current ALS v1 contract
 
 ## Install

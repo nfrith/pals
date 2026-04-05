@@ -1,0 +1,13 @@
+{
+  "name": "development-pipeline-dispatcher",
+  "version": "0.1.0",
+  "description": "Watcher + dispatcher for the development-pipeline delamain — filesystem-based agent invocation",
+  "type": "module",
+  "scripts": {
+    "start": "bun run src/index.ts"
+  },
+  "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "latest",
+    "yaml": "^2.7.0"
+  }
+}

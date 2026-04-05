@@ -59,7 +59,7 @@ infra-inspect          →  read-only across everything
 ```
 CRUD ──────────── Lifecycle ──────────── Aggregate-layer
 least domain-aware                      most domain-aware
-simplest to explain                     hardest to explain
+simplest to explain                     breaks first on complex modules
 breaks first on complex modules         holds longest
 ```
 

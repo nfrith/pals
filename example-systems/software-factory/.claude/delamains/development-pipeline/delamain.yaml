@@ -1,0 +1,158 @@
+phases: [intake, planning, implementation, deployment, closed]
+
+states:
+  draft:
+    initial: true
+    phase: intake
+    actor: operator
+  queued:
+    phase: intake
+    actor: agent
+    resumable: false
+    path: agents/queued.md
+  planning:
+    phase: planning
+    actor: agent
+    resumable: true
+    session-field: planner_session
+    path: agents/planning.md
+  plan-input:
+    phase: planning
+    actor: operator
+  plan-ready:
+    phase: planning
+    actor: operator
+  ready:
+    phase: implementation
+    actor: agent
+    resumable: false
+    path: agents/ready.md
+  in-dev:
+    phase: implementation
+    actor: agent
+    resumable: true
+    session-field: dev_session
+    path: agents/in-dev.md
+    sub-agent: sub-agents/developer.md
+  in-review:
+    phase: implementation
+    actor: agent
+    resumable: false
+    path: agents/in-review.md
+  uat-test:
+    phase: implementation
+    actor: operator
+  deployment-ready:
+    phase: deployment
+    actor: agent
+    resumable: false
+    path: agents/deployment-ready.md
+  deploying:
+    phase: deployment
+    actor: agent
+    resumable: false
+    path: agents/deploying.md
+  deployment-testing:
+    phase: deployment
+    actor: agent
+    resumable: false
+    path: agents/deployment-testing.md
+  deployment-failure:
+    phase: deployment
+    actor: operator
+  completed:
+    phase: closed
+    terminal: true
+  deferred:
+    phase: closed
+    terminal: true
+  cancelled:
+    phase: closed
+    terminal: true
+
+transitions:
+  - class: advance
+    from: draft
+    to: queued
+  - class: advance
+    from: queued
+    to: planning
+  - class: advance
+    from: planning
+    to: plan-input
+  - class: advance
+    from: planning
+    to: plan-ready
+  - class: rework
+    from: plan-input
+    to: queued
+  - class: advance
+    from: plan-ready
+    to: ready
+  - class: rework
+    from: plan-ready
+    to: queued
+  - class: advance
+    from: ready
+    to: in-dev
+  - class: advance
+    from: in-dev
+    to: in-review
+  - class: rework
+    from: in-review
+    to: ready
+  - class: advance
+    from: in-review
+    to: uat-test
+  - class: advance
+    from: uat-test
+    to: deployment-ready
+  - class: rework
+    from: uat-test
+    to: queued
+  - class: advance
+    from: deployment-ready
+    to: deploying
+  - class: advance
+    from: deploying
+    to: deployment-testing
+  - class: exit
+    from: deployment-testing
+    to: completed
+  - class: rework
+    from: deployment-testing
+    to: deployment-failure
+  - class: rework
+    from: deployment-failure
+    to: ready
+  - class: rework
+    from: deployment-failure
+    to: queued
+  - class: exit
+    from:
+      - draft
+      - queued
+      - planning
+      - plan-input
+      - plan-ready
+      - ready
+      - in-dev
+      - in-review
+      - uat-test
+      - deployment-ready
+      - deployment-failure
+    to: deferred
+  - class: exit
+    from:
+      - draft
+      - queued
+      - planning
+      - plan-input
+      - plan-ready
+      - ready
+      - in-dev
+      - in-review
+      - uat-test
+      - deployment-ready
+      - deployment-failure
+    to: cancelled

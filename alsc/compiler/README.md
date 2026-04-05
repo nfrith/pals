@@ -1,6 +1,6 @@
 # ALS Compiler
 
-Bun-based validator for ALS systems. Validates module shapes, records, refs, and body structure, and projects active skill bundles into Claude Code.
+Bun-based validator for ALS systems. Validates module shapes, records, refs, and body structure, and projects active Claude skill bundles and Delamain bundles into Claude Code.
 
 This compiler is part of the [ALS plugin](../../README.md) and is invoked by plugin skills and hooks. It is not published as a standalone package.
 
@@ -13,7 +13,7 @@ bun src/cli.ts validate <system-root>
 bun src/cli.ts validate <system-root> <module-id>
 ```
 
-Deploy active Claude skills from the validated ALS system:
+Deploy active Claude skills and Delamains from the validated ALS system:
 
 ```bash
 bun src/cli.ts deploy claude <system-root>

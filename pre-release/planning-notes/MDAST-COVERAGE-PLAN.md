@@ -222,7 +222,7 @@ That is also a valid outcome, but it should be made explicit.
 - Installed mdast node definitions:
   - `alsc/compiler/node_modules/@types/mdast/index.d.ts`
 - Current shape-language docs:
-  - `alsc/skills/new/references/shape-language.md`
+  - `skills/docs/references/shape-language.md`
 - Current reference system shapes:
   - `example-systems/centralized-metadata-happy-path/.als/modules/backlog/v1/shape.yaml`
   - `example-systems/centralized-metadata-happy-path/.als/modules/experiments/v2/shape.yaml`

@@ -10,7 +10,7 @@ const MAIN_USAGE = `Usage:
 
 Commands:
   validate        Validate an ALS system and emit JSON.
-  deploy claude   Project active ALS skills into .claude/skills.
+  deploy claude   Project active ALS Claude assets into .claude/.
 `;
 
 const VALIDATE_USAGE = "Usage: alsc validate <system-root> [module-id]";

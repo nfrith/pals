@@ -10,7 +10,7 @@ Prepare the next version of an ALS v1 module bundle through structured discovery
 `change` is the v1 successor to v0 `als-mutate`.
 
 It prepares a committed `vN+1/` bundle under `.als/modules/<module_id>/` and stops there.
-It does not modify `.als/system.yaml`, does not touch live records, does not execute the migration, and does not live-deploy `.claude/skills/`.
+It does not modify `.als/system.yaml`, does not touch live records, does not execute the migration, and does not live-deploy `.claude/skills/` or `.claude/delamains/`.
 
 ## Input
 
@@ -28,11 +28,11 @@ Do not ask the operator for a skill path. Resolve the target module from `.als/s
 
 Before interviewing the operator or authoring files, read these references:
 
-- `../new/references/shape-language.md`
+- `../docs/references/shape-language.md`
 - `references/manifest-template.md`
 - `../validate/SKILL.md`
 
-Use `shape-language.md` as the canonical ALS v1 source contract.
+Use `shape-language.md` from the sibling docs skill as the canonical ALS v1 source contract.
 Use `manifest-template.md` as the manifest contract for `vN+1/migrations/MANIFEST.md`.
 
 ## Scope & Boundaries
@@ -55,7 +55,7 @@ Use `manifest-template.md` as the manifest contract for `vN+1/migrations/MANIFES
 - Change the module's active `version`
 - Modify any live module records
 - Execute migration scripts
-- Live-deploy or delete `.claude/skills/`
+- Live-deploy or delete `.claude/skills/` or `.claude/delamains/`
 - Reuse the previous bundle's `migrations/` directory
 - Overwrite an existing future `vN+1/` bundle without explicit operator review
 
@@ -219,7 +219,7 @@ Create:
 
 5. **Preflight the future skill namespace.**
    - Confirm the staged future active skill ids would remain globally unique if `vN+1` became live.
-   - Do not live-deploy `.claude/skills/` during `change`.
+   - Do not live-deploy `.claude/skills/` or `.claude/delamains/` during `change`.
 
 6. **Always create one additional migration artifact.**
    - `MANIFEST.md` alone is invalid for `vN+1`.

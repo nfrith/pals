@@ -28,7 +28,7 @@ What hits you in prod:
 SDR 001 makes declaration equal presence. Every declared field must appear. Every declared section must appear. There is no optional-field mechanism:
 
 - `sdr/001-explicit-declaration-semantics.md`
-- `alsc/skills/new/references/shape-language.md`
+- `skills/docs/references/shape-language.md`
 - `alsc/compiler/src/validate.ts`
 
 This is clean for strict validation, but it makes evolution expensive.
@@ -55,7 +55,7 @@ Relevant implementation surfaces:
 
 - `alsc/compiler/src/refs.ts`
 - `alsc/compiler/src/validate.ts`
-- `alsc/skills/new/references/shape-language.md`
+- `skills/docs/references/shape-language.md`
 
 What hits you in prod:
 
@@ -155,7 +155,7 @@ The repo says skill/app management was removed from the initial v1 scope, but `s
 
 - `AGENTS.md`
 - `alsc/compiler/src/schema.ts`
-- `alsc/skills/new/references/shape-language.md`
+- `skills/docs/references/shape-language.md`
 - `example-systems/centralized-metadata-happy-path/README.md`
 
 What hits you in prod:
