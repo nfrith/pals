@@ -1,10 +1,7 @@
 import { z } from "zod";
+import { fieldNameSchema as fieldName, kebabNameSchema as entityName, nonEmptyStringSchema as nonEmptyString } from "./naming.ts";
 import { parsePathTemplate } from "./parser/path-template.ts";
-
-const entityName = z.string().regex(/^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/);
-const fieldName = z.string().regex(/^[a-z][a-z0-9_]*$/);
 const moduleMountPath = z.string().regex(/^[a-z][a-z0-9]*(?:-[a-z0-9]+)*(?:\/[a-z][a-z0-9]*(?:-[a-z0-9]+)*)*$/);
-const nonEmptyString = z.string().min(1);
 const positiveInt = z.number().int().positive();
 
 export interface GuidanceShape {
@@ -104,6 +101,10 @@ export interface JsonlRowsShape {
   fields: Record<string, JsonlRowFieldShape>;
 }
 
+export interface DelamainRegistryEntryShape {
+  path: string;
+}
+
 export function splitModuleMountPath(modulePath: string): string[] {
   return modulePath.split("/");
 }
@@ -134,6 +135,10 @@ const filePathBaseSchema = z.enum(["system_root", "host_absolute"]);
 const commonFieldShape = {
   allow_null: z.boolean(),
 };
+
+const delamainRegistryEntrySchema: z.ZodType<DelamainRegistryEntryShape> = z.object({
+  path: nonEmptyString,
+});
 
 const allowedValuesSchema = z.array(nonEmptyString).min(1).superRefine((value, ctx) => {
   const seenValues = new Set<string>();
@@ -198,6 +203,11 @@ const fieldSchema = z.discriminatedUnion("type", [
     type: z.literal("enum"),
     ...commonFieldShape,
     allowed_values: allowedValuesSchema,
+  }),
+  z.object({
+    type: z.literal("delamain"),
+    ...commonFieldShape,
+    delamain: entityName,
   }),
   z.object({
     type: z.literal("ref"),
@@ -652,6 +662,7 @@ export const moduleShapeSchema = z.object({
   dependencies: z.array(z.object({
     module: entityName,
   })),
+  delamains: z.record(entityName, delamainRegistryEntrySchema).optional(),
   entities: z.record(entityName, entitySchema),
 }).superRefine((value, ctx) => {
   const seenDependencies = new Set<string>();
@@ -783,6 +794,7 @@ export type JsonlEntityShape = z.infer<typeof jsonlEntitySchema>;
 export type EntityVariantShape = z.infer<typeof variantSchema>;
 export type FilePathBase = z.infer<typeof filePathBaseSchema>;
 export type FieldShape = z.infer<typeof fieldSchema>;
+export type DelamainRegistryEntry = z.infer<typeof delamainRegistryEntrySchema>;
 export type JsonlRowFieldShape = z.infer<typeof jsonlRowFieldSchema>;
 export type JsonlRowListItemShape = z.infer<typeof jsonlRowListItemSchema>;
 

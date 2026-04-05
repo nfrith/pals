@@ -9,13 +9,13 @@ states:
     phase: intake
     actor: agent
     resumable: false
-    path: delamains/development-pipeline/agents/queued.md
+    path: agents/queued.md
   planning:
     phase: planning
     actor: agent
     resumable: true
     session-field: planner_session
-    path: delamains/development-pipeline/agents/planning.md
+    path: agents/planning.md
   plan-input:
     phase: planning
     actor: operator
@@ -26,19 +26,19 @@ states:
     phase: implementation
     actor: agent
     resumable: false
-    path: delamains/development-pipeline/agents/ready.md
+    path: agents/ready.md
   in-dev:
     phase: implementation
     actor: agent
     resumable: true
     session-field: dev_session
-    path: delamains/development-pipeline/agents/in-dev.md
-    sub-agent: delamains/development-pipeline/sub-agents/developer.md
+    path: agents/in-dev.md
+    sub-agent: sub-agents/developer.md
   in-review:
     phase: implementation
     actor: agent
     resumable: false
-    path: delamains/development-pipeline/agents/in-review.md
+    path: agents/in-review.md
   uat-test:
     phase: implementation
     actor: operator
@@ -46,17 +46,17 @@ states:
     phase: deployment
     actor: agent
     resumable: false
-    path: delamains/development-pipeline/agents/deployment-ready.md
+    path: agents/deployment-ready.md
   deploying:
     phase: deployment
     actor: agent
     resumable: false
-    path: delamains/development-pipeline/agents/deploying.md
+    path: agents/deploying.md
   deployment-testing:
     phase: deployment
     actor: agent
     resumable: false
-    path: delamains/development-pipeline/agents/deployment-testing.md
+    path: agents/deployment-testing.md
   deployment-failure:
     phase: deployment
     actor: operator
@@ -71,84 +71,64 @@ states:
     terminal: true
 
 transitions:
-  - id: draft-to-queued
-    class: advance
+  - class: advance
     from: draft
     to: queued
-  - id: queued-to-planning
-    class: advance
+  - class: advance
     from: queued
     to: planning
-  - id: planning-to-plan-input
-    class: advance
+  - class: advance
     from: planning
     to: plan-input
-  - id: planning-to-plan-ready
-    class: advance
+  - class: advance
     from: planning
     to: plan-ready
-  - id: plan-input-to-queued
-    class: rework
+  - class: rework
     from: plan-input
     to: queued
-  - id: plan-ready-to-ready
-    class: advance
+  - class: advance
     from: plan-ready
     to: ready
-  - id: plan-ready-to-queued
-    class: rework
+  - class: rework
     from: plan-ready
     to: queued
-  - id: ready-to-in-dev
-    class: advance
+  - class: advance
     from: ready
     to: in-dev
-  - id: in-dev-to-in-review
-    class: advance
+  - class: advance
     from: in-dev
     to: in-review
-  - id: in-review-to-ready
-    class: rework
+  - class: rework
     from: in-review
     to: ready
-  - id: in-review-to-uat-test
-    class: advance
+  - class: advance
     from: in-review
     to: uat-test
-  - id: uat-test-to-deployment-ready
-    class: advance
+  - class: advance
     from: uat-test
     to: deployment-ready
-  - id: uat-test-to-queued
-    class: rework
+  - class: rework
     from: uat-test
     to: queued
-  - id: deployment-ready-to-deploying
-    class: advance
+  - class: advance
     from: deployment-ready
     to: deploying
-  - id: deploying-to-deployment-testing
-    class: advance
+  - class: advance
     from: deploying
     to: deployment-testing
-  - id: deployment-testing-to-completed
-    class: exit
+  - class: exit
     from: deployment-testing
     to: completed
-  - id: deployment-testing-to-deployment-failure
-    class: rework
+  - class: rework
     from: deployment-testing
     to: deployment-failure
-  - id: deployment-failure-to-ready
-    class: rework
+  - class: rework
     from: deployment-failure
     to: ready
-  - id: deployment-failure-to-queued
-    class: rework
+  - class: rework
     from: deployment-failure
     to: queued
-  - id: any-to-deferred
-    class: exit
+  - class: exit
     from:
       - draft
       - queued
@@ -162,8 +142,7 @@ transitions:
       - deployment-ready
       - deployment-failure
     to: deferred
-  - id: any-to-cancelled
-    class: exit
+  - class: exit
     from:
       - draft
       - queued

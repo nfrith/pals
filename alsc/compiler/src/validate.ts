@@ -1,4 +1,4 @@
-import { basename, isAbsolute, join, parse, relative, resolve } from "node:path";
+import { basename, dirname, isAbsolute, join, parse, relative, resolve } from "node:path";
 import { readFileSync, readdirSync, statSync, type Dirent } from "node:fs";
 import matter from "gray-matter";
 import { parse as parseYaml, YAMLParseError } from "yaml";
@@ -43,6 +43,12 @@ import {
   type VariantEntityShape,
 } from "./schema.ts";
 import {
+  collectDelamainSessionFields,
+  delamainShapeSchema,
+  type DelamainShape,
+  validateDelamainDefinition,
+} from "./delamain.ts";
+import {
   inferredMigrationsPath,
   inferredModuleBundlePath,
   inferredShapePath,
@@ -56,13 +62,25 @@ interface LoadedModuleContext {
   system_id: string;
   system_root_abs: string;
   module_id: string;
+  module_bundle_abs: string;
+  module_bundle_rel: string;
   module_path_abs: string;
   module_path_rel: string;
   shape_path_abs: string;
   shape_path_rel: string;
   module_version: number;
   shape: ModuleShape;
+  delamains: Map<string, LoadedDelamainBundle>;
   templates: Map<string, ParsedPathTemplate>;
+}
+
+interface LoadedDelamainBundle {
+  name: string;
+  primary_path_abs: string;
+  primary_path_rel: string;
+  bundle_root_abs: string;
+  shape: DelamainShape;
+  session_fields: string[];
 }
 
 interface ParsedRecord {
@@ -343,6 +361,8 @@ function loadModuleState(systemRootAbs: string, systemConfig: SystemConfig, modu
   const registryEntry = systemConfig.modules[moduleId];
   const modulePathAbs = resolveModulePath(systemRootAbs, registryEntry.path);
   const modulePathRel = toRepoRelative(modulePathAbs);
+  const moduleBundleAbs = resolve(systemRootAbs, inferredModuleBundlePath(moduleId, registryEntry.version));
+  const moduleBundleRel = toRepoRelative(moduleBundleAbs);
   const shapePathAbs = resolve(systemRootAbs, inferredShapePath(moduleId, registryEntry.version));
   const shapePathRel = toRepoRelative(shapePathAbs);
 
@@ -361,20 +381,25 @@ function loadModuleState(systemRootAbs: string, systemConfig: SystemConfig, modu
     };
   }
 
+  const delamainLoad = loadDelamainBundles(moduleId, moduleBundleAbs, shapePathRel, shapeResult.data);
+
   const context: LoadedModuleContext = {
     system_id: systemConfig.system_id,
     system_root_abs: systemRootAbs,
     module_id: moduleId,
+    module_bundle_abs: moduleBundleAbs,
+    module_bundle_rel: moduleBundleRel,
     module_path_abs: modulePathAbs,
     module_path_rel: modulePathRel,
     shape_path_abs: shapePathAbs,
     shape_path_rel: shapePathRel,
     module_version: registryEntry.version,
     shape: shapeResult.data,
+    delamains: delamainLoad.bundles,
     templates: new Map(Object.entries(shapeResult.data.entities).map(([entityName, entity]) => [entityName, parsePathTemplate(entity.path, entityName)])),
   };
 
-  const diagnostics: CompilerDiagnostic[] = [...shapeResult.diagnostics];
+  const diagnostics: CompilerDiagnostic[] = [...shapeResult.diagnostics, ...delamainLoad.diagnostics];
   diagnostics.push(...validateShapeContracts(context, systemConfig));
 
   const discovery = discoverRecordFiles(context.module_path_abs, context.module_id);
@@ -409,6 +434,334 @@ function loadModuleState(systemRootAbs: string, systemConfig: SystemConfig, modu
   };
 }
 
+function loadDelamainBundles(
+  moduleId: string,
+  moduleBundleAbs: string,
+  shapePathRel: string,
+  shape: ModuleShape,
+): { bundles: Map<string, LoadedDelamainBundle>; diagnostics: CompilerDiagnostic[] } {
+  const bundles = new Map<string, LoadedDelamainBundle>();
+  const diagnostics: CompilerDiagnostic[] = [];
+
+  for (const [delamainName, registryEntry] of Object.entries(shape.delamains ?? {})) {
+    const resolvedPrimaryPath = resolvePathInsideRoot(moduleBundleAbs, registryEntry.path);
+    if (!resolvedPrimaryPath) {
+      diagnostics.push(
+        diag(
+          codes.DELAMAIN_FILE_INVALID,
+          "error",
+          "module_shape",
+          shapePathRel,
+          `Delamain '${delamainName}' registry path escapes the active module version bundle`,
+          {
+            module_id: moduleId,
+            field: `delamains.${delamainName}.path`,
+            reason: reasons.DELAMAIN_BUNDLE_PATH_ESCAPE,
+            expected: "path inside the active module version bundle",
+            actual: registryEntry.path,
+          },
+        ),
+      );
+      continue;
+    }
+
+    const primaryPathAbs = resolvedPrimaryPath;
+    const primaryPathRel = toRepoRelative(primaryPathAbs);
+    const primaryStat = safeStatResult(primaryPathAbs);
+    if (primaryStat.kind !== "ok") {
+      diagnostics.push(buildDelamainFileTargetDiagnostic(moduleId, shapePathRel, `delamains.${delamainName}.path`, delamainName, registryEntry.path, primaryStat));
+      continue;
+    }
+
+    if (!primaryStat.stat.isFile()) {
+      diagnostics.push(
+        diag(
+          codes.DELAMAIN_FILE_INVALID,
+          "error",
+          "module_shape",
+          shapePathRel,
+          `Delamain '${delamainName}' registry path must resolve to a file`,
+          {
+            module_id: moduleId,
+            field: `delamains.${delamainName}.path`,
+            reason: reasons.DELAMAIN_BUNDLE_TARGET_NOT_FILE,
+            expected: "file",
+            actual: registryEntry.path,
+          },
+        ),
+      );
+      continue;
+    }
+
+    const parsedDelamain = parseYamlFile<DelamainShape>(
+      primaryPathAbs,
+      delamainShapeSchema,
+      "module_shape",
+      codes.DELAMAIN_INVALID,
+      moduleId,
+    );
+    diagnostics.push(...parsedDelamain.diagnostics);
+    if (!parsedDelamain.success) {
+      continue;
+    }
+
+    for (const issue of validateDelamainDefinition(parsedDelamain.data)) {
+      diagnostics.push(
+        diag(
+          codes.DELAMAIN_CONTRACT_INVALID,
+          "error",
+          "module_shape",
+          primaryPathRel,
+          issue.message,
+          {
+            module_id: moduleId,
+            field: issue.path.join(".") || null,
+          },
+        ),
+      );
+    }
+
+    const bundle: LoadedDelamainBundle = {
+      name: delamainName,
+      primary_path_abs: primaryPathAbs,
+      primary_path_rel: primaryPathRel,
+      bundle_root_abs: dirname(primaryPathAbs),
+      shape: parsedDelamain.data,
+      session_fields: collectDelamainSessionFields(parsedDelamain.data),
+    };
+
+    diagnostics.push(...validateDelamainPromptAssets(moduleId, moduleBundleAbs, bundle));
+    bundles.set(delamainName, bundle);
+  }
+
+  return { bundles, diagnostics };
+}
+
+function validateDelamainPromptAssets(
+  moduleId: string,
+  moduleBundleAbs: string,
+  bundle: LoadedDelamainBundle,
+): CompilerDiagnostic[] {
+  const diagnostics: CompilerDiagnostic[] = [];
+
+  for (const [stateName, state] of Object.entries(bundle.shape.states)) {
+    if (state.path) {
+      diagnostics.push(
+        ...validateDelamainPromptAsset(
+          moduleId,
+          moduleBundleAbs,
+          bundle,
+          state.path,
+          `states.${stateName}.path`,
+          `Delamain state '${stateName}' agent path`,
+        ),
+      );
+    }
+
+    const subAgentPath = state["sub-agent"];
+    if (subAgentPath) {
+      diagnostics.push(
+        ...validateDelamainPromptAsset(
+          moduleId,
+          moduleBundleAbs,
+          bundle,
+          subAgentPath,
+          `states.${stateName}.sub-agent`,
+          `Delamain state '${stateName}' sub-agent path`,
+        ),
+      );
+    }
+  }
+
+  return diagnostics;
+}
+
+function validateDelamainPromptAsset(
+  moduleId: string,
+  moduleBundleAbs: string,
+  bundle: LoadedDelamainBundle,
+  authoredPath: string,
+  fieldPath: string,
+  label: string,
+): CompilerDiagnostic[] {
+  const diagnostics: CompilerDiagnostic[] = [];
+  const resolvedAssetPath = resolvePathInsideRoot(bundle.bundle_root_abs, authoredPath);
+
+  if (!resolvedAssetPath || !isPathInsideRoot(moduleBundleAbs, resolvedAssetPath)) {
+    diagnostics.push(
+      diag(
+        codes.DELAMAIN_FILE_INVALID,
+        "error",
+        "module_shape",
+        bundle.primary_path_rel,
+        `${label} must remain inside the active module version bundle`,
+        {
+          module_id: moduleId,
+          field: fieldPath,
+          reason: reasons.DELAMAIN_ASSET_PATH_ESCAPE,
+          expected: "path inside the active module version bundle",
+          actual: authoredPath,
+        },
+      ),
+    );
+    return diagnostics;
+  }
+
+  if (!resolvedAssetPath.endsWith(".md")) {
+    diagnostics.push(
+      diag(
+        codes.DELAMAIN_PROMPT_INVALID,
+        "error",
+        "module_shape",
+        bundle.primary_path_rel,
+        `${label} must resolve to a markdown file`,
+        {
+          module_id: moduleId,
+          field: fieldPath,
+          expected: "markdown file",
+          actual: authoredPath,
+        },
+      ),
+    );
+    return diagnostics;
+  }
+
+  const assetRel = toRepoRelative(resolvedAssetPath);
+  const assetStat = safeStatResult(resolvedAssetPath);
+  if (assetStat.kind !== "ok") {
+    diagnostics.push(buildDelamainAssetTargetDiagnostic(moduleId, bundle.primary_path_rel, fieldPath, authoredPath, assetStat));
+    return diagnostics;
+  }
+
+  if (!assetStat.stat.isFile()) {
+    diagnostics.push(
+      diag(
+        codes.DELAMAIN_FILE_INVALID,
+        "error",
+        "module_shape",
+        bundle.primary_path_rel,
+        `${label} must resolve to a file`,
+        {
+          module_id: moduleId,
+          field: fieldPath,
+          reason: reasons.DELAMAIN_ASSET_TARGET_NOT_FILE,
+          expected: "file",
+          actual: authoredPath,
+        },
+      ),
+    );
+    return diagnostics;
+  }
+
+  const assetRead = safeReadTextFile(resolvedAssetPath);
+  if (assetRead.error) {
+    diagnostics.push(
+      diag(
+        codes.DELAMAIN_FILE_INVALID,
+        "error",
+        "module_shape",
+        assetRel,
+        "Could not read Delamain prompt asset",
+        {
+          module_id: moduleId,
+          field: fieldPath,
+          reason: reasons.DELAMAIN_ASSET_TARGET_UNREADABLE,
+          expected: "readable markdown file",
+          actual: {
+            code: assetRead.error.code ?? null,
+            message: assetRead.error.message,
+          },
+        },
+      ),
+    );
+    return diagnostics;
+  }
+
+  let parsed;
+  try {
+    parsed = parseFrontmatter(assetRead.contents);
+  } catch (error) {
+    if (!(error instanceof FrontmatterProcessingError)) {
+      throw error;
+    }
+
+    diagnostics.push(
+      diag(
+        codes.DELAMAIN_PROMPT_INVALID,
+        "error",
+        "module_shape",
+        assetRel,
+        "Failed to parse Delamain prompt frontmatter",
+        {
+          module_id: moduleId,
+          field: fieldPath,
+          actual: error instanceof Error ? error.message : String(error),
+        },
+      ),
+    );
+    return diagnostics;
+  }
+
+  if (!isPlainObject(parsed.data) || Object.keys(parsed.data).length === 0) {
+    diagnostics.push(
+      diag(
+        codes.DELAMAIN_PROMPT_INVALID,
+        "error",
+        "module_shape",
+        assetRel,
+        "Delamain prompt assets must declare YAML frontmatter",
+        {
+          module_id: moduleId,
+          field: fieldPath,
+          expected: "markdown file with YAML frontmatter",
+          actual: null,
+        },
+      ),
+    );
+  }
+
+  if (parsed.content.trim().length === 0) {
+    diagnostics.push(
+      diag(
+        codes.DELAMAIN_PROMPT_INVALID,
+        "error",
+        "module_shape",
+        assetRel,
+        "Delamain prompt assets must contain a non-empty markdown body",
+        {
+          module_id: moduleId,
+          field: fieldPath,
+          expected: "non-empty markdown body",
+          actual: "",
+        },
+      ),
+    );
+  }
+
+  const promptFrontmatter = isPlainObject(parsed.data) ? parsed.data : {};
+  for (const requiredField of ["name", "description"] as const) {
+    if (typeof promptFrontmatter[requiredField] !== "string" || promptFrontmatter[requiredField].trim().length === 0) {
+      diagnostics.push(
+        diag(
+          codes.DELAMAIN_PROMPT_INVALID,
+          "error",
+          "module_shape",
+          assetRel,
+          `Delamain prompt assets must declare frontmatter ${requiredField}`,
+          {
+            module_id: moduleId,
+            field: requiredField,
+            expected: "non-empty string",
+            actual: promptFrontmatter[requiredField] ?? null,
+          },
+        ),
+      );
+    }
+  }
+
+  return diagnostics;
+}
+
 function validateRecord(
   record: ParsedRecord,
   context: LoadedModuleContext,
@@ -426,7 +779,7 @@ function validateRecord(
     entity_name: record.entity_name,
     record_file: record.file_rel,
     shape_file: context.shape_path_rel,
-  });
+  }, context.delamains);
   diagnostics.push(...validateFrontmatter(record, context, effectiveContract.fields, effectiveContract.known_field_names));
   diagnostics.push(...effectiveContract.diagnostics);
   diagnostics.push(...validateBody(record, effectiveContract.body, effectiveContract.body_diagnostics));
@@ -455,7 +808,7 @@ function validateResolvedReferencesOnly(
     entity_name: record.entity_name,
     record_file: record.file_rel,
     shape_file: context.shape_path_rel,
-  });
+  }, context.delamains);
 
   return validateResolvedReferences(record, context, recordIndex, effectiveContract.fields, allowedTargetModuleIds);
 }
@@ -619,6 +972,51 @@ function validateFieldValue(
             actual: value,
           }),
         );
+      }
+      break;
+
+    case "delamain":
+      if (typeof value !== "string") {
+        diagnostics.push(
+          diag(codes.FM_TYPE_MISMATCH, "error", "record_frontmatter", record.file_rel, `Field '${fieldName}' must be a Delamain state name`, {
+            module_id: record.module_id,
+            entity: record.entity_name,
+            field: fieldName,
+            expected: "Delamain state name",
+            actual: typeof value,
+          }),
+        );
+      } else {
+        const bundle = context.delamains.get(fieldShape.delamain);
+        if (!bundle) {
+          diagnostics.push(
+            diag(
+              codes.DELAMAIN_CONTRACT_INVALID,
+              "error",
+              "record_frontmatter",
+              record.file_rel,
+              `Could not validate field '${fieldName}' because Delamain '${fieldShape.delamain}' did not load`,
+              {
+                module_id: record.module_id,
+                entity: record.entity_name,
+                field: fieldName,
+                reason: reasons.DELAMAIN_BINDING_UNRESOLVED,
+                expected: `loaded Delamain '${fieldShape.delamain}'`,
+                actual: fieldShape.delamain,
+              },
+            ),
+          );
+        } else if (!(value in bundle.shape.states)) {
+          diagnostics.push(
+            diag(codes.FM_ENUM_INVALID, "error", "record_frontmatter", record.file_rel, `Field '${fieldName}' has invalid Delamain state '${value}'`, {
+              module_id: record.module_id,
+              entity: record.entity_name,
+              field: fieldName,
+              expected: Object.keys(bundle.shape.states).sort(),
+              actual: value,
+            }),
+          );
+        }
       }
       break;
 
@@ -1434,24 +1832,26 @@ export function resolveEffectiveEntityContract(
   entityShape: MarkdownEntityShape,
   frontmatter: Record<string, unknown>,
   meta: EffectiveEntityContractContext,
+  delamains: Map<string, LoadedDelamainBundle> = new Map(),
 ): EffectiveEntityContract {
   if (!isVariantEntityShape(entityShape)) {
+    const synthesized = synthesizeDelamainSessionFields(entityShape.fields, frontmatter, delamains, meta, null);
     return {
-      fields: entityShape.fields,
-      known_field_names: Object.keys(entityShape.fields).sort(),
+      fields: synthesized.fields,
+      known_field_names: materializeKnownFieldNames(synthesized.fields, synthesized.supplemental_known_field_names),
       body: {
         title: entityShape.body.title,
         preamble: entityShape.body.preamble,
         sections: entityShape.body.sections,
       },
-      diagnostics: [],
+      diagnostics: synthesized.diagnostics,
       body_diagnostics: [],
     };
   }
 
   const discriminatorField = entityShape.discriminator;
   const expectedVariants = Object.keys(entityShape.variants).sort();
-  const knownFieldNames = collectKnownFieldNames(entityShape);
+  const knownFieldNames = collectKnownFieldNames(entityShape, delamains);
 
   if (!(discriminatorField in frontmatter)) {
     return {
@@ -1537,6 +1937,7 @@ export function resolveEffectiveEntityContract(
     ...entityShape.fields,
     ...variant.fields,
   };
+  const synthesized = synthesizeDelamainSessionFields(fields, frontmatter, delamains, meta, discriminatorValue);
   const diagnostics: CompilerDiagnostic[] = [];
   const sections: SectionShape[] = [];
 
@@ -1566,8 +1967,8 @@ export function resolveEffectiveEntityContract(
   });
 
   return {
-    fields,
-    known_field_names: Object.keys(fields).sort(),
+    fields: synthesized.fields,
+    known_field_names: materializeKnownFieldNames(synthesized.fields, synthesized.supplemental_known_field_names),
     body: diagnostics.length > 0
       ? null
       : {
@@ -1575,7 +1976,7 @@ export function resolveEffectiveEntityContract(
           preamble: entityShape.body?.preamble,
           sections,
         },
-    diagnostics,
+    diagnostics: diagnostics.concat(synthesized.diagnostics),
     body_diagnostics: [],
   };
 }
@@ -1669,16 +2070,153 @@ function unresolvedVariantBodyDiagnostic(
   });
 }
 
-function collectKnownFieldNames(entityShape: VariantEntityShape): string[] {
+function collectKnownFieldNames(entityShape: VariantEntityShape, delamains: Map<string, LoadedDelamainBundle>): string[] {
   const knownFieldNames = new Set(Object.keys(entityShape.fields));
+
+  const rootBinding = selectEffectiveDelamainBinding(entityShape.fields);
+  if (rootBinding) {
+    for (const sessionFieldName of collectImplicitSessionFieldNames(rootBinding.delamain_name, delamains)) {
+      knownFieldNames.add(sessionFieldName);
+    }
+  }
 
   for (const variant of Object.values(entityShape.variants)) {
     for (const fieldName of Object.keys(variant.fields)) {
       knownFieldNames.add(fieldName);
     }
+
+    if (!rootBinding) {
+      const variantBinding = selectEffectiveDelamainBinding(variant.fields);
+      if (variantBinding) {
+        for (const sessionFieldName of collectImplicitSessionFieldNames(variantBinding.delamain_name, delamains)) {
+          knownFieldNames.add(sessionFieldName);
+        }
+      }
+    }
   }
 
   return Array.from(knownFieldNames).sort();
+}
+
+function synthesizeDelamainSessionFields(
+  fields: Record<string, FieldShape>,
+  frontmatter: Record<string, unknown>,
+  delamains: Map<string, LoadedDelamainBundle>,
+  meta: EffectiveEntityContractContext,
+  variantName: string | null,
+): { fields: Record<string, FieldShape>; diagnostics: CompilerDiagnostic[]; supplemental_known_field_names: string[] } {
+  const binding = selectEffectiveDelamainBinding(fields);
+  if (!binding) {
+    return {
+      fields,
+      diagnostics: [],
+      supplemental_known_field_names: [],
+    };
+  }
+
+  const bundle = delamains.get(binding.delamain_name);
+  if (!bundle) {
+    return {
+      fields,
+      diagnostics: [
+        diag(
+          codes.DELAMAIN_CONTRACT_INVALID,
+          "error",
+          "record_frontmatter",
+          meta.record_file,
+          `Could not materialize Delamain session fields because Delamain '${binding.delamain_name}' did not load`,
+          {
+            module_id: meta.module_id,
+            entity: meta.entity_name,
+            field: variantName ? `${variantName}.${binding.field_path}` : binding.field_path,
+            reason: reasons.DELAMAIN_BINDING_UNRESOLVED,
+            expected: `loaded Delamain '${binding.delamain_name}'`,
+            actual: binding.delamain_name,
+          },
+        ),
+      ],
+      supplemental_known_field_names: Object.keys(frontmatter),
+    };
+  }
+
+  const nextFields: Record<string, FieldShape> = { ...fields };
+  const diagnostics: CompilerDiagnostic[] = [];
+
+  for (const sessionFieldName of bundle.session_fields) {
+    if (sessionFieldName in nextFields) {
+      diagnostics.push(
+        diag(
+          codes.DELAMAIN_CONTRACT_INVALID,
+          "error",
+          "record_frontmatter",
+          meta.record_file,
+          `Delamain session-field '${sessionFieldName}' collides with an explicit field on the active effective entity schema`,
+          {
+            module_id: meta.module_id,
+            entity: meta.entity_name,
+            field: variantName ? `${variantName}.${sessionFieldName}` : sessionFieldName,
+            reason: reasons.DELAMAIN_SESSION_FIELD_COLLISION,
+            expected: "session-field name that does not collide with explicit fields",
+            actual: sessionFieldName,
+          },
+        ),
+      );
+      continue;
+    }
+
+    nextFields[sessionFieldName] = {
+      type: "string",
+      allow_null: true,
+    };
+  }
+
+  return {
+    fields: nextFields,
+    diagnostics,
+    supplemental_known_field_names: [],
+  };
+}
+
+function materializeKnownFieldNames(
+  fields: Record<string, FieldShape>,
+  supplementalKnownFieldNames: string[],
+): string[] {
+  return Array.from(new Set([...Object.keys(fields), ...supplementalKnownFieldNames])).sort();
+}
+
+function collectImplicitSessionFieldNames(
+  delamainName: string,
+  delamains: Map<string, LoadedDelamainBundle>,
+): string[] {
+  return delamains.get(delamainName)?.session_fields ?? [];
+}
+
+function selectEffectiveDelamainBinding(
+  fields: Record<string, FieldShape>,
+): { field_path: string; delamain_name: string } | null {
+  const bindings = collectDelamainBindings(fields);
+  if (bindings.length !== 1) {
+    return null;
+  }
+
+  return bindings[0];
+}
+
+function collectDelamainBindings(
+  fields: Record<string, FieldShape>,
+  prefix = "",
+): Array<{ field_path: string; delamain_name: string }> {
+  const bindings: Array<{ field_path: string; delamain_name: string }> = [];
+
+  for (const [fieldName, fieldShape] of Object.entries(fields)) {
+    if (fieldShape.type !== "delamain") continue;
+    bindings.push({
+      field_path: `${prefix}${fieldName}`,
+      delamain_name: fieldShape.delamain,
+    });
+  }
+
+  return bindings;
 }
 
 function validateRefContract(
@@ -2114,24 +2652,26 @@ function validateShapeContracts(
     }
 
     for (const [fieldName, fieldShape] of Object.entries(entityShape.fields)) {
-      diagnostics.push(...validateFieldDependencyContract(context, dependencySet, entityName, fieldName, fieldShape));
+      diagnostics.push(...validateFieldContract(context, dependencySet, entityName, fieldName, fieldShape));
     }
 
     if (isVariantEntityShape(entityShape)) {
       for (const [variantName, variant] of Object.entries(entityShape.variants)) {
         for (const [fieldName, fieldShape] of Object.entries(variant.fields)) {
           diagnostics.push(
-            ...validateFieldDependencyContract(context, dependencySet, entityName, `${variantName}.${fieldName}`, fieldShape),
+            ...validateFieldContract(context, dependencySet, entityName, `${variantName}.${fieldName}`, fieldShape),
           );
         }
       }
     }
+
+    diagnostics.push(...validateEntityDelamainContracts(context, entityName, entityShape));
   }
 
   return diagnostics;
 }
 
-function validateFieldDependencyContract(
+function validateFieldContract(
   context: LoadedModuleContext,
   dependencySet: Set<string>,
   entityName: string,
@@ -2162,6 +2702,220 @@ function validateFieldDependencyContract(
         actual: fieldShape.items.target.module,
       }),
     );
+  }
+
+  if (fieldShape.type === "delamain") {
+    if (!(fieldShape.delamain in (context.shape.delamains ?? {}))) {
+      diagnostics.push(
+        diag(
+          codes.DELAMAIN_CONTRACT_INVALID,
+          "error",
+          "module_shape",
+          context.shape_path_rel,
+          `Field '${fieldName}' references unknown Delamain '${fieldShape.delamain}'`,
+          {
+            module_id: context.module_id,
+            entity: entityName,
+            field: fieldName,
+            expected: Object.keys(context.shape.delamains ?? {}).sort(),
+            actual: fieldShape.delamain,
+          },
+        ),
+      );
+    }
+  }
+
+  return diagnostics;
+}
+
+function validateEntityDelamainContracts(
+  context: LoadedModuleContext,
+  entityName: string,
+  entityShape: MarkdownEntityShape,
+): CompilerDiagnostic[] {
+  if (!isVariantEntityShape(entityShape)) {
+    return validatePlainEntityDelamainContracts(context, entityName, entityShape);
+  }
+
+  return validateVariantEntityDelamainContracts(context, entityName, entityShape);
+}
+
+function validatePlainEntityDelamainContracts(
+  context: LoadedModuleContext,
+  entityName: string,
+  entityShape: MarkdownEntityShape,
+): CompilerDiagnostic[] {
+  const diagnostics: CompilerDiagnostic[] = [];
+  const rootBindings = collectDelamainBindings(entityShape.fields);
+
+  if (rootBindings.length > 1) {
+    diagnostics.push(
+      ...buildTooManyDelamainDiagnostics(
+        context,
+        entityName,
+        rootBindings.map((binding) => binding.field_path),
+        "Plain entities may declare at most one Delamain-bound field",
+      ),
+    );
+  }
+
+  if (rootBindings.length === 1) {
+    diagnostics.push(...validateEffectiveSchemaSessionFieldCollisions(
+      context,
+      entityName,
+      null,
+      Object.keys(entityShape.fields),
+      rootBindings[0].delamain_name,
+    ));
+  }
+
+  return diagnostics;
+}
+
+function validateVariantEntityDelamainContracts(
+  context: LoadedModuleContext,
+  entityName: string,
+  entityShape: VariantEntityShape,
+): CompilerDiagnostic[] {
+  const diagnostics: CompilerDiagnostic[] = [];
+  const rootBindings = collectDelamainBindings(entityShape.fields);
+
+  if (rootBindings.length > 1) {
+    diagnostics.push(
+      ...buildTooManyDelamainDiagnostics(
+        context,
+        entityName,
+        rootBindings.map((binding) => binding.field_path),
+        "Variant entity root fields may declare at most one Delamain-bound field",
+      ),
+    );
+  }
+
+  for (const [variantName, variant] of Object.entries(entityShape.variants)) {
+    const variantBindings = collectDelamainBindings(variant.fields, `${variantName}.`);
+
+    if (rootBindings.length > 0 && variantBindings.length > 0) {
+      diagnostics.push(
+        ...buildTooManyDelamainDiagnostics(
+          context,
+          entityName,
+          variantBindings.map((binding) => binding.field_path),
+          `Variant '${variantName}' cannot declare a Delamain-bound field when root fields already declare one`,
+        ),
+      );
+      continue;
+    }
+
+    if (variantBindings.length > 1) {
+      diagnostics.push(
+        ...buildTooManyDelamainDiagnostics(
+          context,
+          entityName,
+          variantBindings.map((binding) => binding.field_path),
+          `Variant '${variantName}' may declare at most one Delamain-bound field`,
+        ),
+      );
+      continue;
+    }
+
+    const effectiveBinding = rootBindings[0] ?? variantBindings[0] ?? null;
+    if (!effectiveBinding) {
+      continue;
+    }
+
+    diagnostics.push(...validateEffectiveSchemaSessionFieldCollisions(
+      context,
+      entityName,
+      variantName,
+      Object.keys(entityShape.fields).concat(Object.keys(variant.fields)),
+      effectiveBinding.delamain_name,
+    ));
+  }
+
+  return diagnostics;
+}
+
+function buildTooManyDelamainDiagnostics(
+  context: LoadedModuleContext,
+  entityName: string,
+  fieldPaths: string[],
+  message: string,
+): CompilerDiagnostic[] {
+  return fieldPaths.map((fieldPath) =>
+    diag(
+      codes.DELAMAIN_CONTRACT_INVALID,
+      "error",
+      "module_shape",
+      context.shape_path_rel,
+      message,
+      {
+        module_id: context.module_id,
+        entity: entityName,
+        field: fieldPath,
+        reason: reasons.DELAMAIN_EFFECTIVE_FIELD_CONFLICT,
+        expected: "at most one Delamain-bound field per effective entity schema",
+        actual: fieldPath,
+      },
+    )
+  );
+}
+
+function validateEffectiveSchemaSessionFieldCollisions(
+  context: LoadedModuleContext,
+  entityName: string,
+  variantName: string | null,
+  explicitFieldNames: string[],
+  delamainName: string,
+): CompilerDiagnostic[] {
+  const diagnostics: CompilerDiagnostic[] = [];
+  const bundle = context.delamains.get(delamainName);
+  if (!bundle) {
+    return diagnostics;
+  }
+
+  const explicitFieldNameSet = new Set(explicitFieldNames);
+  const seenImplicit = new Set<string>();
+  for (const sessionFieldName of bundle.session_fields) {
+    if (explicitFieldNameSet.has(sessionFieldName)) {
+      diagnostics.push(
+        diag(
+          codes.DELAMAIN_CONTRACT_INVALID,
+          "error",
+          "module_shape",
+          context.shape_path_rel,
+          `Delamain session-field '${sessionFieldName}' collides with an explicit field on the same effective entity schema`,
+          {
+            module_id: context.module_id,
+            entity: entityName,
+            field: variantName ? `variants.${variantName}.fields.${sessionFieldName}` : sessionFieldName,
+            reason: reasons.DELAMAIN_SESSION_FIELD_COLLISION,
+            expected: "session-field name that does not collide with explicit fields",
+            actual: sessionFieldName,
+          },
+        ),
+      );
+    }
+
+    if (seenImplicit.has(sessionFieldName)) {
+      diagnostics.push(
+        diag(
+          codes.DELAMAIN_CONTRACT_INVALID,
+          "error",
+          "module_shape",
+          context.shape_path_rel,
+          `Delamain session-field '${sessionFieldName}' collides with another implicit session field on the same effective entity schema`,
+          {
+            module_id: context.module_id,
+            entity: entityName,
+            field: variantName ? `variants.${variantName}` : entityName,
+            reason: reasons.DELAMAIN_SESSION_FIELD_COLLISION,
+            expected: "unique implicit session-field names",
+            actual: sessionFieldName,
+          },
+        ),
+      );
+    }
+    seenImplicit.add(sessionFieldName);
   }
 
   return diagnostics;
@@ -2580,6 +3334,104 @@ function safeStat(pathAbs: string): ReturnType<typeof statSync> | null {
 
     throw error;
   }
+}
+
+function buildDelamainFileTargetDiagnostic(
+  moduleId: string,
+  shapePathRel: string,
+  fieldPath: string,
+  delamainName: string,
+  authoredPath: string,
+  statResult: SafeStatResult,
+): CompilerDiagnostic {
+  if (statResult.kind === "missing") {
+    return diag(
+      codes.DELAMAIN_FILE_INVALID,
+      "error",
+      "module_shape",
+      shapePathRel,
+      `Delamain '${delamainName}' registry path could not be resolved`,
+      {
+        module_id: moduleId,
+        field: fieldPath,
+        reason: reasons.DELAMAIN_BUNDLE_TARGET_MISSING,
+        expected: "existing Delamain primary file",
+        actual: authoredPath,
+      },
+    );
+  }
+
+  return diag(
+    codes.DELAMAIN_FILE_INVALID,
+    "error",
+    "module_shape",
+    shapePathRel,
+    `Could not read Delamain '${delamainName}' registry target`,
+    {
+      module_id: moduleId,
+      field: fieldPath,
+      reason: reasons.DELAMAIN_BUNDLE_TARGET_UNREADABLE,
+      expected: "readable Delamain primary file",
+      actual: {
+        code: statResult.error.code ?? null,
+        message: statResult.error.message,
+      },
+    },
+  );
+}
+
+function buildDelamainAssetTargetDiagnostic(
+  moduleId: string,
+  fileRel: string,
+  fieldPath: string,
+  authoredPath: string,
+  statResult: SafeStatResult,
+): CompilerDiagnostic {
+  if (statResult.kind === "missing") {
+    return diag(
+      codes.DELAMAIN_FILE_INVALID,
+      "error",
+      "module_shape",
+      fileRel,
+      "Delamain prompt asset path could not be resolved",
+      {
+        module_id: moduleId,
+        field: fieldPath,
+        reason: reasons.DELAMAIN_ASSET_TARGET_MISSING,
+        expected: "existing markdown prompt asset",
+        actual: authoredPath,
+      },
+    );
+  }
+
+  return diag(
+    codes.DELAMAIN_FILE_INVALID,
+    "error",
+    "module_shape",
+    fileRel,
+    "Could not read Delamain prompt asset",
+    {
+      module_id: moduleId,
+      field: fieldPath,
+      reason: reasons.DELAMAIN_ASSET_TARGET_UNREADABLE,
+      expected: "readable markdown prompt asset",
+      actual: {
+        code: statResult.error.code ?? null,
+        message: statResult.error.message,
+      },
+    },
+  );
+}
+
+function isPathInsideRoot(rootAbs: string, candidateAbs: string): boolean {
+  const relativePath = relative(rootAbs, candidateAbs).replace(/\\/g, "/");
+  if (relativePath === "") return true;
+  return relativePath !== ".." && !relativePath.startsWith("../") && !isAbsolute(relativePath);
+}
+
+function resolvePathInsideRoot(rootAbs: string, authoredPath: string): string | null {
+  const resolvedPath = resolve(rootAbs, authoredPath);
+  return isPathInsideRoot(rootAbs, resolvedPath) ? resolvedPath : null;
 }
 
 function safeStatResult(pathAbs: string): SafeStatResult {

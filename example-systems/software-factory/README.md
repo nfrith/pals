@@ -15,12 +15,14 @@ It exists to pressure-test a backlog-style software delivery model without relyi
 
 ## Important Note
 
-- The module shape in this fixture intentionally uses proposed workflow syntax from SDR 018.
-- That means this fixture is design-reference material first. It is not intended to be a current compiler smoke target before the workflow primitive is implemented.
+- The module shape in this fixture intentionally uses the accepted Delamain draft surface from SDRs 018 and 020.
+- That means this fixture is design-reference material first. It is not intended to be a current compiler smoke target before Delamain is implemented in the compiler.
 - The draft surface here uses an explicit Delamain registry plus `type: delamain` in `shape.yaml`, with the primary definition file at `vN/delamains/<name>/delamain.yaml`.
-- The Delamain file carries explicit `states`, state `actor`, state-local `path`, explicit `resumable`, optional `session-field`, path-valued optional `sub-agent`, explicit `transitions`, transition `class`, stable transition `id`, and phase order.
+- The Delamain file carries explicit `states`, state `actor`, state-local `path`, explicit `resumable`, optional `session-field`, path-valued optional `sub-agent`, explicit `transitions`, transition `class`, and phase order.
 - This draft also paints Delamain-local prompt assets inside the Delamain bundle: one state agent markdown file per agent-owned state under `agents/`, plus optional helper prompts under `sub-agents/`.
+- Delamain-local prompt asset paths are authored relative to the Delamain bundle root, not relative to the module bundle root.
 - The fixture also sketches Delamain-owned resumable session fields, which are appended after the shape-declared frontmatter fields instead of being declared explicitly in `shape.yaml`.
+- The fixture already satisfies the accepted restriction that each effective entity schema may bind at most one Delamain.
 
 ## Module
 

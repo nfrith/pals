@@ -308,6 +308,18 @@ test.concurrent("rich body content fixture validates clean", async () => {
   });
 });
 
+test.concurrent("software factory Delamain fixture validates clean", async () => {
+  await withExampleSystemSandbox("software-factory", "software-factory-smoke", async ({ root }) => {
+    const result = validateFixture(root);
+
+    expect(result.status).toBe("pass");
+    expect(result.summary.modules_checked).toBe(1);
+    expect(result.summary.error_count).toBe(0);
+    expect(result.modules).toHaveLength(1);
+    expect(result.modules[0].module_id).toBe("factory");
+  });
+});
+
 test.concurrent("multi-format design reference validates clean", async () => {
   await withExampleSystemSandbox("multi-format-design-reference", "multi-format-smoke", async ({ root }) => {
     const baseline = validateFixture(root);

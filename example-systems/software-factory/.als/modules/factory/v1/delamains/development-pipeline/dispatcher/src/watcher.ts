@@ -32,7 +32,7 @@ function parseFrontmatter(raw: string): Record<string, string> {
 /**
  * Scan an items directory and return all parseable work items.
  * Matches the software-factory shape: entities.work-item with
- * fields id, status (delamain_state), kind (enum).
+ * fields id, status (delamain), kind (enum).
  */
 export async function scan(itemsDir: string): Promise<WorkItem[]> {
   const entries = await readdir(itemsDir).catch(() => [] as string[]);

@@ -60,6 +60,10 @@ Lives at `.als/modules/{module_id}/v{version}/`.
 ```yaml
 dependencies: []                      # required even when empty
 
+delamains:
+  development-pipeline:
+    path: delamains/development-pipeline/delamain.yaml
+
 entities:
   # ... entity definitions
 ```
@@ -79,6 +83,10 @@ Rules:
 - The live active skill interface is declared in `.als/system.yaml`, but the canonical skill bundles live under `skills/{skill_id}/SKILL.md`
 - Migration assets for `vK > 1` live under `migrations/` in the target bundle `vK`
 - `dependencies` is required. Use an empty list when the module has no cross-module references.
+- `delamains` is optional. Omit it when the module does not use Delamain-bound fields.
+- `delamains` maps Delamain names to primary definition file paths relative to the active module version bundle.
+- Delamain registry paths must resolve to files inside the same active module version bundle.
+- Delamain registry paths in `shape.yaml` are module-bundle-relative. Delamain-local asset paths inside `delamain.yaml` are Delamain-bundle-relative.
 - If a ref targets another module, that module must be listed in `dependencies`.
 - `entities`: keyed by entity name matching `^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$`
 - Authored ALS v1 shape files do not include a top-level `schema` field.
@@ -375,6 +383,35 @@ status:
 
 Must include `allowed_values` — a list of at least one unique string.
 
+#### delamain
+
+```yaml
+delamains:
+  development-pipeline:
+    path: delamains/development-pipeline/delamain.yaml
+
+entities:
+  work-item:
+    fields:
+      status:
+        type: delamain
+        allow_null: false
+        delamain: development-pipeline
+```
+
+Must declare `delamain` and reference a Delamain name declared in the module bundle's `delamains` registry.
+
+A `type: delamain` field:
+
+- uses the referenced Delamain's declared state names as its legal persisted values
+- does not also declare `allowed_values`
+- remains a frontmatter field like any other field, but its current-value set comes from the Delamain bundle instead of inline enum values
+- may appear at most once per effective entity schema
+- for plain entities, that means at most one `type: delamain` field on the entity
+- for variant entities, root/base fields may declare at most one `type: delamain` field; if root/base fields declare one, variants declare none
+- for variant entities whose root/base fields declare no `type: delamain` field, each variant may declare at most one `type: delamain` field in that variant's effective schema
+- invalid persisted Delamain state values are reported through the same frontmatter invalid-value diagnostic family used for plain enums
+
 #### ref
 
 ```yaml
@@ -479,6 +516,78 @@ folders:
 - `list<enum>` rejects duplicate members.
 - `list<string>`, `list<ref>`, and `list<file_path>` do not enforce uniqueness.
 - Empty lists are allowed. `allow_null` only controls whether the field value may be `null`.
+
+### Delamain bundles
+
+Delamain bundles live under `.als/modules/{module_id}/v{version}/delamains/{name}/`.
+
+The primary definition file is a YAML file, typically `delamain.yaml`, referenced from the module bundle's `delamains` registry.
+
+Example:
+
+```yaml
+phases: [intake, planning, implementation, closed]
+
+states:
+  draft:
+    initial: true
+    phase: intake
+    actor: operator
+  planning:
+    phase: planning
+    actor: agent
+    resumable: true
+    session-field: planner_session
+    path: agents/planning.md
+  in-dev:
+    phase: implementation
+    actor: agent
+    resumable: true
+    session-field: dev_session
+    path: agents/in-dev.md
+    sub-agent: sub-agents/developer.md
+  completed:
+    phase: closed
+    terminal: true
+
+transitions:
+  - class: advance
+    from: draft
+    to: planning
+  - class: advance
+    from: planning
+    to: in-dev
+  - class: exit
+    from: in-dev
+    to: completed
+```
+
+Rules:
+
+- Delamain primary definition files declare ordered `phases`, authoritative `states`, and explicit `transitions`.
+- Each Delamain primary definition file has exactly one `initial: true` state.
+- Every state declares `phase`.
+- Every declared phase must contain at least one state.
+- The initial state must be in the first declared phase.
+- Terminal states must be in the last declared phase.
+- Non-terminal states declare `actor: operator | agent`.
+- Terminal states do not declare `actor`.
+- Transitions declare `class: advance | rework | exit`, `from`, and `to`.
+- `advance` and `rework` use a single-state `from`.
+- `exit` uses a single-state `from` or a non-empty list-valued `from`.
+- Self-loop transitions are rejected.
+- Every state must be reachable from the initial state.
+- Terminal states must not have outgoing transitions.
+- Every non-terminal state must have at least one outgoing transition.
+- Every non-terminal state must have a path to at least one terminal state.
+- Delamain-local asset paths such as state `path` and `sub-agent` resolve relative to the directory containing the Delamain primary definition file, not relative to the module bundle root.
+- Resolved Delamain-local asset paths must remain inside the same active module version bundle.
+- `actor: agent` states declare exactly one `path` plus explicit boolean `resumable`.
+- If `resumable: true`, the state declares exactly one `session-field`.
+- If `resumable: false`, the state does not declare `session-field`.
+- `session-field` names become implicit nullable string frontmatter fields on entities bound to that Delamain.
+- A Delamain-declared `session-field` name must not collide with any explicit entity field name or any other implicit Delamain session field name materialized on the same effective entity schema.
+- `sub-agent` is optional and only valid on `actor: agent` states.
 
 ### JSONL row field types
 

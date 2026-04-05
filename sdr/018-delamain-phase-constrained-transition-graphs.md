@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed
+Accepted
 
 ## Context
 
@@ -28,9 +28,14 @@ Proposed
 - The named Delamain must appear in the `shape.yaml` registry.
 - The named Delamain resolves through the declared registry entry, not through filename convention alone.
 - The named Delamain becomes the authoritative value set for that field. A `delamain` field does not also declare `allowed_values`.
+- ALS allows at most one `delamain` field per effective entity schema.
+- For plain entities, that means at most one `delamain` field on the entity.
+- For variant entities, root/base fields may declare at most one `delamain` field; if root/base fields declare one, variants declare none.
+- For variant entities whose root/base fields declare no `delamain` field, each variant may declare at most one `delamain` field in that variant's effective schema.
 - A Delamain primary definition file declares ordered `phases`.
 - A Delamain primary definition file declares authoritative `states`.
 - A Delamain primary definition file declares explicit `transitions`.
+- Delamain-local asset paths resolve relative to the directory containing the Delamain primary definition file, which is the Delamain bundle root.
 - Delamain phase names are unique within one primary definition file.
 - State names are the legal persisted values for the bound field.
 - Each state may declare `initial: true`.
@@ -66,7 +71,12 @@ Proposed
 - Required: every referenced Delamain appears in the `shape.yaml` registry.
 - Required: `shape.yaml` remains the field-binding and Delamain-registry surface; Delamain definitions live in primary files inside Delamain bundles.
 - Required: every `delamain` field references a declared Delamain primary file in the same module bundle.
+- Required: plain entities declare at most one `delamain` field.
+- Required: if a variant entity's root/base fields declare a `delamain` field, its variants declare no `delamain` fields.
+- Required: if a variant entity's root/base fields declare no `delamain` field, each variant declares at most one `delamain` field in that variant's effective schema.
 - Required: every Delamain primary definition file declares ordered `phases`.
+- Required: Delamain-local asset paths resolve relative to the directory containing the Delamain primary definition file.
+- Required: Delamain-local asset paths resolve to files that remain inside the same module-version bundle.
 - Required: Delamain phase names are unique within one primary definition file.
 - Required: Delamain state names are unique within one primary definition file.
 - Required: each Delamain primary definition file has exactly one `initial: true` state.
@@ -102,7 +112,10 @@ Proposed
 - Allowed: multiple terminal states.
 - Allowed: one `exit` transition entry that expands a shared `from` list into multiple legal source states for the same `to`.
 - Allowed: modules that continue using plain `enum` fields for status-like values when no workflow declaration is needed.
+- Allowed: parent and child entities may each declare their own `delamain` fields because each entity schema is validated independently.
+- Allowed: sibling entities may each declare their own `delamain` fields because each entity schema is validated independently.
 - Rejected: duplicating Delamain state values in `allowed_values` on a `delamain` field.
+- Rejected: multiple `delamain` fields in the same effective entity schema.
 - Rejected: inferring legal transitions from lifecycle phases alone.
 - Rejected: declaring executor ownership on transitions instead of states.
 - Rejected: list-valued `from` declarations on `advance` or `rework` transitions.
@@ -117,7 +130,9 @@ Proposed
 - Extend module loading so bundles may contain Delamain primary files and related assets under `delamains/`.
 - Extend shape parsing so modules may declare a `delamains` registry.
 - Extend frontmatter field parsing so shapes may declare `type: delamain` plus required `delamain`.
+- Add field-binding validation so each effective entity schema may declare at most one `type: delamain` field.
 - Add Delamain-file loading and validation for unknown Delamain references, duplicate Delamain names in the registry, duplicate phase names, duplicate state names, missing or multiple initial states, missing phases, unknown phase names, empty phases, initial states outside the first phase, terminal states outside the last phase, states marked both initial and terminal, missing actor on non-terminal states, actor declared on terminal states, forbidden list-valued `from` declarations on `advance` or `rework`, empty `from` lists, duplicate values inside `from` lists, self-loop transitions, and transitions that reference undeclared states.
+- Add Delamain-local asset-path resolution relative to the Delamain primary definition file and reject resolved targets that escape the same module-version bundle.
 - Add Delamain transition-class validation for `advance`, `rework`, and `exit` against declared phase order and terminal-state annotations.
 - Add Delamain graph validation for reachability from the initial state, missing outgoing transitions on non-terminal states, missing paths from non-terminal states to terminal states, forbidden outgoing transitions on terminal states, and duplicate effective edges after list expansion.
 - Treat Delamain state names as the legal current-value set for the bound field during snapshot validation.
@@ -127,7 +142,7 @@ Proposed
 
 ## Docs and Fixture Impact
 
-- Update the canonical shape-language reference to document the `delamains` registry in `shape.yaml`, `delamain`, Delamain bundles under `delamains/`, state `actor`, transition `class`, `states`, `transitions`, `phases`, and the boundary between Delamain and later runtime constructs.
+- Update the canonical shape-language reference to document the `delamains` registry in `shape.yaml`, `delamain`, Delamain bundles under `delamains/`, Delamain-local path resolution from the bundle root, state `actor`, transition `class`, `states`, `transitions`, `phases`, and the boundary between Delamain and later runtime constructs.
 - Add a forward-looking `software-factory` design-reference example system that paints a backlog-style software delivery flow without using entity variants.
 - Use that fixture to show `kind` as ordinary classification.
 - Use that fixture to show `status` as Delamain-governed state.
@@ -139,6 +154,8 @@ Proposed
 
 - Add a standalone lifecycle primitive first.
 - Rejected because lifecycle phases are useful metadata but are too weak to express legal transitions.
+- Allow multiple Delamain-bound fields on the same effective entity schema.
+- Rejected because one record with multiple independently active Delamain graphs would create ambiguous ownership, competing runtime behavior, and frontmatter collision pressure.
 - Add a full workflow engine first.
 - Rejected because that would mix state contracts, runtime dispatch, operator UX, and side effects into one early DSL.
 - Use a generic construct name such as `workflow` or `process graph`.

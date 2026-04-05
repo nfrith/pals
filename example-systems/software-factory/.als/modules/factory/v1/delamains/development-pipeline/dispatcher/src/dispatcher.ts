@@ -76,10 +76,10 @@ export interface ResolvedConfig {
 // -------------------------------------------------------------------
 // ALS crawl — derive everything from system.yaml
 //
-// Constraint: one delamain_state field per entity.
+// Constraint: one delamain field per effective entity schema.
 // When ALS supports variants, it will be one delamain per variant.
-// The dispatcher finds THE entity with a delamain_state field and
-// uses its delamain binding as the single dispatch target.
+// The dispatcher finds THE entity with a delamain field and uses
+// its delamain binding as the single dispatch target.
 // -------------------------------------------------------------------
 
 function parseMd(raw: string): { meta: Record<string, string>; body: string } {
@@ -181,7 +181,7 @@ export async function resolve(systemRoot: string): Promise<ResolvedConfig> {
     `v${mod.version}`,
   );
 
-  // 2. shape.yaml → entity with delamain_state + delamain registry
+  // 2. shape.yaml → entity with delamain field + Delamain registry
   const shape = parseYaml(
     await readFile(join(moduleDir, "shape.yaml"), "utf-8"),
   ) as ShapeConfig;
@@ -192,7 +192,7 @@ export async function resolve(systemRoot: string): Promise<ResolvedConfig> {
 
   for (const [, entity] of Object.entries(shape.entities)) {
     for (const [fieldId, field] of Object.entries(entity.fields)) {
-      if (field.type === "delamain_state" && field.delamain) {
+      if (field.type === "delamain" && field.delamain) {
         statusField = fieldId;
         delamainName = field.delamain;
         entityPath = entity.path;
@@ -203,7 +203,7 @@ export async function resolve(systemRoot: string): Promise<ResolvedConfig> {
   }
 
   if (!delamainName || !entityPath || !statusField) {
-    throw new Error("No delamain_state field found in any entity");
+    throw new Error("No delamain field found in any entity");
   }
 
   // Items dir: module workspace path + entity path dirname
@@ -215,16 +215,22 @@ export async function resolve(systemRoot: string): Promise<ResolvedConfig> {
     throw new Error(`Delamain "${delamainName}" not in shape registry`);
   }
 
+  const delamainFullPath = join(moduleDir, delamainPath);
+  const delamainDir = dirname(delamainFullPath);
+
   const delamain = parseYaml(
-    await readFile(join(moduleDir, delamainPath), "utf-8"),
+    await readFile(delamainFullPath, "utf-8"),
   ) as DelamainConfig;
 
   const agents: Record<string, AgentDef> = {};
 
+  // Agent paths resolve relative to the delamain bundle root
+  // (the directory containing delamain.yaml), not the module root.
+  // This enables deployment to .claude/delamains/ without path rewriting.
   async function loadAgent(agentKey: string, agentPath: string) {
     try {
       const { meta, body } = parseMd(
-        await readFile(join(moduleDir, agentPath), "utf-8"),
+        await readFile(join(delamainDir, agentPath), "utf-8"),
       );
       if (!body) return;
 
@@ -252,7 +258,7 @@ export async function resolve(systemRoot: string): Promise<ResolvedConfig> {
     if (state.actor !== "agent" || !state.path) continue;
     await loadAgent(stateId, state.path);
 
-    // Sub-agent path is now a full module-relative path
+    // Sub-agent path is delamain-relative
     const subAgentPath = state["sub-agent"];
     if (subAgentPath) {
       const subAgentName = basename(subAgentPath, ".md");

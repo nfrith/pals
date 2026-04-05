@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed
+Accepted
 
 ## Context
 
@@ -19,16 +19,18 @@ Proposed
 - Delamain-local agents are bound to states, not to transitions, in this pass.
 - A non-terminal state declares `actor: operator | agent`.
 - An `actor: agent` state declares `path: <markdown-path>`.
-- The `path` field on a state resolves directly to a markdown file in the same module-version bundle.
+- The `path` field on a state resolves relative to the directory containing the Delamain primary definition file, which is the Delamain bundle root.
+- The resolved `path` target remains inside the same module-version bundle.
 - An `actor: agent` state declares `resumable: true | false`.
 - `resumable` declares whether the host should persist the state agent session and attempt resume when a record re-enters that same state later.
 - If `resumable: true`, the state declares `session-field: <field-id>`.
 - `session-field` identifies the frontmatter field where the host persists the resumable agent session id for that state.
 - Delamain-declared `session-field` values do not need to appear in `shape.yaml` entity fields.
 - Hosts append Delamain-declared session fields after the shape-declared frontmatter fields when materializing entity frontmatter.
-- A Delamain-declared `session-field` name must not collide with any other frontmatter field name materialized on an entity bound to that Delamain, whether explicit in `shape.yaml` or implicit from another Delamain session field.
+- A Delamain-declared `session-field` name must not collide with any other frontmatter field name materialized on the same effective entity schema bound to that Delamain, whether explicit in `shape.yaml` or implicit from another Delamain session field.
 - An `actor: agent` state may also declare `sub-agent: <markdown-path>`.
-- `sub-agent` resolves directly to an auxiliary prompt asset in the same module-version bundle.
+- `sub-agent` resolves relative to the directory containing the Delamain primary definition file, which is the Delamain bundle root.
+- The resolved `sub-agent` target remains inside the same module-version bundle.
 - Agent files are markdown files with YAML frontmatter plus a markdown body.
 - The authored file shape intentionally mirrors Claude sub-agent files in this first draft.
 - Delamain-local state agents are prompt assets. Their body prose is not interpreted semantically by the compiler in this pass.
@@ -41,7 +43,8 @@ Proposed
 
 ## Normative Effect
 
-- Required: every `path` on an `actor: agent` state resolves to a markdown file in the same module-version bundle.
+- Required: every `path` on an `actor: agent` state resolves relative to the directory containing the Delamain primary definition file.
+- Required: every resolved `path` target remains inside the same module-version bundle and is a markdown file.
 - Required: every resolved state-agent markdown file contains YAML frontmatter.
 - Required: every resolved state-agent markdown file contains a non-empty markdown body after frontmatter.
 - Required: state-agent markdown files declare frontmatter `name`.
@@ -58,10 +61,11 @@ Proposed
 - Required: if a non-terminal state declares `actor: agent`, then that state declares exactly one `path`.
 - Required: if a non-terminal state declares `actor: operator`, then that state does not declare `path`, `resumable`, `session-field`, or `sub-agent`.
 - Required: `session-field` names are unique within one Delamain bundle.
-- Required: a Delamain-declared `session-field` name does not collide with any explicit entity field name on an entity bound to that Delamain.
-- Required: a Delamain-declared `session-field` name does not collide with any other implicit Delamain session field name materialized on the same bound entity.
-- Required: Delamain-declared `session-field` names are treated as implicit nullable string frontmatter fields on entities bound to that Delamain.
-- Required: if a state declares `sub-agent`, the referenced markdown file resolves in the same module-version bundle.
+- Required: a Delamain-declared `session-field` name does not collide with any explicit field name materialized on the same effective entity schema bound to that Delamain.
+- Required: a Delamain-declared `session-field` name does not collide with any other implicit Delamain session field name materialized on the same effective entity schema.
+- Required: Delamain-declared `session-field` names are treated as implicit nullable string frontmatter fields on effective entity schemas bound to that Delamain.
+- Required: if a state declares `sub-agent`, the referenced path resolves relative to the directory containing the Delamain primary definition file.
+- Required: if a state declares `sub-agent`, the resolved target remains inside the same module-version bundle and is a markdown file.
 - Required: every resolved sub-agent markdown file contains YAML frontmatter.
 - Required: every resolved sub-agent markdown file contains a non-empty markdown body after frontmatter.
 - Required: sub-agent markdown files declare frontmatter `name`.
@@ -88,12 +92,13 @@ Proposed
 - Add validation that `resumable: true` states declare exactly one `session-field`.
 - Add validation that `resumable: false` states do not declare `session-field`.
 - Add validation that `actor: operator` states do not declare `path`, `resumable`, `session-field`, or `sub-agent`.
-- Add validation that Delamain-declared `session-field` names are unique, do not collide with explicit entity field names, do not collide with other implicit Delamain session fields materialized on the same entity, and are surfaced as implicit nullable string frontmatter fields after the shape-declared fields.
+- Add validation that Delamain-declared `session-field` names are unique, do not collide with explicit field names materialized on the same effective entity schema, do not collide with other implicit Delamain session fields materialized on that same effective schema, and are surfaced as implicit nullable string frontmatter fields after the shape-declared fields.
+- Add path-resolution validation for `path` and `sub-agent` relative to the Delamain bundle root and reject resolved targets that escape the same module-version bundle.
 - Do not interpret prompt body semantics, tool lists, model selection, or instruction quality inside the compiler in this pass.
 
 ## Docs and Fixture Impact
 
-- Update the canonical shape-language reference later to document state-level `path`, required `resumable`, optional `session-field`, path-valued optional `sub-agent`, and the Delamain-bundle file layout for prompt assets.
+- Update the canonical shape-language reference later to document state-level `path`, required `resumable`, optional `session-field`, path-valued optional `sub-agent`, Delamain-relative path resolution from the bundle root, and the Delamain-bundle file layout for prompt assets.
 - Revise the `software-factory` design-reference example so its `development-pipeline` Delamain declares direct state-level agent paths rather than a separate registry.
 - Remove explicit planner and dev session fields from the fixture `shape.yaml` and let the Delamain declaration supply them implicitly.
 - Add one Delamain-local agent markdown file per agent-owned state in that example.
@@ -113,6 +118,8 @@ Proposed
 - Rejected because the current need is Delamain-local prompt assets whose reuse and independence are not yet proven.
 - Resolve state agent files by naming convention from state ids.
 - Rejected because the authored surface should keep the binding explicit and minimize hidden assumptions.
+- Resolve Delamain-local agent paths relative to the module bundle root.
+- Rejected because Delamain-local assets need stable authored paths that continue to resolve when a Delamain bundle is deployed outside `.als/modules/`.
 - Allow operator-owned states to declare Delamain-local agents too.
 - Rejected because this draft is for autonomous prompt assets, while operator loops belong to later orchestrator-layer constructs.
 
