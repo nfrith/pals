@@ -34,6 +34,10 @@ Check whether `.als/system.yaml` exists in the working directory.
 
 This is the most important phase. Do not rush it. The goal is to extract a domain model from the operator's head — the entities, their relationships, their lifecycle, their rules, the narrative content that accompanies them, and the operational interface for working with them.
 
+### Using AskUserQuestion
+
+Use the AskUserQuestion tool at every decision point where there are enumerable options. This keeps the interview structured and reduces ambiguity. Reserve freeform conversation for the opening question and domain exploration where options cannot be pre-enumerated. Specific moments where AskUserQuestion applies are noted inline below.
+
 ### Opening
 
 Start with one open question:
@@ -73,6 +77,89 @@ For each entity, ask:
 - "Can any of these be null or unknown?" — nullable fields
 
 Do not accept vague answers for enums. Get the actual values. "What are the valid statuses?" not "does it have a status?"
+
+### Lifecycle Depth Probe
+
+After collecting fields, check whether any entity has a rich lifecycle that could benefit from agent automation. This is the gateway to Delamain — but do not use that word with the operator. Frame it in domain terms.
+
+If an entity has a status field with 4+ states, use AskUserQuestion:
+
+> "That's a rich lifecycle. Do you want agents to automate some of those transitions, or is this purely operator-driven?"
+
+Options:
+- "Yes — some states should be agent-automated"
+- "No — all transitions are manual"
+
+If the operator says **no**, the status field stays as a plain `type: enum`. Move to Sections.
+
+If the operator says **yes**, enter the Delamain Design sub-interview below. The status field will become `type: delamain` and the module will include a Delamain bundle with agent files and a dispatcher.
+
+Not every module needs a Delamain. Many modules are pure storage with operator-driven skills. Only proceed with Delamain design when the operator explicitly wants agent automation of their lifecycle.
+
+### Delamain Design
+
+This sub-interview designs the transition graph, actor assignments, and session behavior. Read `../docs/references/shape-language.md` (the Delamain bundles and Delamain agent files sections) and `../docs/references/dispatcher.md` before proceeding.
+
+#### Step 1: Phases
+
+Group the operator's states into ordered lifecycle phases. Phases are coarse groupings — work flows forward through them. Attempt to infer phases from the state names before asking.
+
+Present the proposed grouping via AskUserQuestion and let the operator confirm or adjust:
+
+> "I've grouped your states into these lifecycle phases. Does this look right?"
+
+Show the grouping as a readable list (e.g., "intake: draft, queued | planning: planning, plan-review | implementation: in-dev, in-review | closed: completed, cancelled").
+
+Options:
+- "Looks good"
+- "Needs changes" (then collect corrections)
+
+#### Step 2: Actor Assignment
+
+For each non-terminal state, determine whether the actor is an operator (human) or an agent (automated). Present the proposed assignments as a batch via AskUserQuestion:
+
+> "For each state, who does the work — an agent or an operator?"
+
+Show a table of states with proposed actors. Infer from context: states involving human judgment (review, approval, testing) are typically operator; states involving generation, classification, or execution are typically agent.
+
+Options:
+- "Approve these assignments"
+- "Needs changes" (then collect corrections)
+
+#### Step 3: Transitions
+
+Generate the transition graph from the phase groupings rather than asking the operator to design it. Most operators cannot think in graph theory. Propose:
+
+- `advance` transitions from each non-terminal state to the next logical state (forward within phase or to the next phase)
+- `rework` transitions back to earlier phases where rework makes sense
+- `exit` transitions from all non-terminal states to terminal states (e.g., cancelled, deferred)
+
+Present the graph in readable form and ask via AskUserQuestion:
+
+> "Here's the proposed transition graph. What's missing or wrong?"
+
+Options:
+- "Looks good"
+- "Missing transitions" (then collect specifics)
+- "Remove some transitions" (then collect specifics)
+
+#### Step 4: Resumability
+
+Determine which agent-owned states should be resumable (persist their session across invocations). This decision depends on the operator's technical literacy.
+
+**If the operator uses developer vocabulary** (sessions, state machines, idempotency, etc.), ask directly via AskUserQuestion:
+
+> "Some agent states can pause and resume later — for example, a planning agent that waits for operator input. Which of these agent states should be resumable?"
+
+Present agent states as multiSelect options.
+
+**If the operator is non-technical**, infer resumability from state characteristics without asking:
+- Long-running work states (planning, development, research) → resumable
+- Quick automated states (triage, classification, validation, deployment checks) → not resumable
+
+State the inference to the operator for confirmation but do not ask them to reason about session mechanics.
+
+For each resumable state, generate a session field name by convention: `{state_name}_session` (e.g., `planner_session`, `dev_session`). These are implicit — they do not appear in shape.yaml.
 
 ### Sections
 
@@ -147,6 +234,7 @@ Once you have enough information, synthesize and present the design. Do NOT prod
 5. **Fields per entity**: a table showing field name, type, nullability, and for enums the allowed values
 6. **Sections per entity**: the ordered list of sections with what goes in each
 7. **Skills**: the decomposition pattern chosen, with each skill name and its scope
+8. **Delamain** (if designed): the transition graph, actor assignments, resumability, and agent file roster
 
 ### Example proposal format
 
@@ -205,6 +293,29 @@ Skills (lifecycle pattern):
   experiments-manage-experiment →  update status, modify config, archive
 ```
 
+If Delamain was designed, add:
+
+```
+Delamain: experiment-pipeline
+Phases: [setup, execution, analysis, closed]
+
+States:
+  draft        setup       operator
+  queued       setup       agent
+  running      execution   agent       resumable (run_session)
+  analysis     analysis    agent
+  completed    closed      terminal
+  cancelled    closed      terminal
+
+Transitions:
+  advance: draft → queued → running → analysis → completed
+  rework:  analysis → queued
+  exit:    [all non-terminal] → cancelled
+
+Agent files: 3 (queued, running, analysis)
+Dispatcher: generic template (zero config)
+```
+
 After presenting, ask: **"Does this capture what you need? What would you change?"**
 
 Iterate until the operator confirms. Do not move to Phase 4 until they explicitly approve.
@@ -222,9 +333,10 @@ Once approved, create everything.
 5. Create the module's shape YAML at `.als/modules/{module_id}/v1/shape.yaml`
 6. If the module has skills, create `.als/modules/{module_id}/v1/skills/`
 7. Create a `SKILL.md` for each skill at `.als/modules/{module_id}/v1/skills/{skill_name}/SKILL.md`
-8. Create the module's data directory at `{path}/`
-9. Create the subdirectory tree implied by the path templates (empty directories)
-10. Validate the live system:
+8. If a Delamain was designed, create the Delamain bundle (see "Delamain bundle authoring" below)
+9. Create the module's data directory at `{path}/`
+10. Create the subdirectory tree implied by the path templates (empty directories)
+11. Validate the live system:
 
 ```bash
 bun ${CLAUDE_PLUGIN_ROOT}/alsc/compiler/src/cli.ts validate <system-root>
@@ -250,9 +362,10 @@ bun ${CLAUDE_PLUGIN_ROOT}/alsc/compiler/src/cli.ts deploy claude <system-root> [
 3. Register the module in `.als/system.yaml` (add to the `modules` map with `skills` array)
 4. If the module has skills, create `.als/modules/{module_id}/v1/skills/`
 5. Create a `SKILL.md` for each skill at `.als/modules/{module_id}/v1/skills/{skill_name}/SKILL.md`
-6. Create the module's data directory at `{path}/`
-7. Create the subdirectory tree implied by the path templates (empty directories)
-8. Validate the live system:
+6. If a Delamain was designed, create the Delamain bundle (see "Delamain bundle authoring" below)
+7. Create the module's data directory at `{path}/`
+8. Create the subdirectory tree implied by the path templates (empty directories)
+9. Validate the live system:
 
 ```bash
 bun ${CLAUDE_PLUGIN_ROOT}/alsc/compiler/src/cli.ts validate <system-root>
@@ -285,6 +398,100 @@ Name procedures using the operator's domain vocabulary. A devops person "provisi
 
 Each skill must declare its scope boundaries — what entities it manages, what operations it performs, and which sibling skills handle everything else.
 
+### Delamain bundle authoring
+
+Only create this when the operator approved a Delamain design in Phase 3. Read `../docs/references/shape-language.md` (Delamain bundles and Delamain agent files sections) for the full format spec.
+
+#### 1. Register in shape.yaml
+
+Add the `delamains` registry to `shape.yaml` and change the entity's status field from `type: enum` to `type: delamain`:
+
+```yaml
+delamains:
+  {delamain-name}:
+    path: delamains/{delamain-name}/delamain.yaml
+
+entities:
+  {entity-name}:
+    fields:
+      status:
+        type: delamain
+        allow_null: false
+        delamain: {delamain-name}
+```
+
+Remove `allowed_values` from the status field — the Delamain states are the legal values.
+
+#### 2. Create the bundle directory
+
+```
+.als/modules/{module_id}/v1/delamains/{delamain-name}/
+├── delamain.yaml
+├── agents/
+│   └── {state-name}.md        # one per actor: agent state
+└── dispatcher/
+    ├── package.json
+    ├── tsconfig.json
+    └── src/
+        ├── index.ts
+        ├── watcher.ts
+        └── dispatcher.ts
+```
+
+#### 3. Write delamain.yaml
+
+Produce the YAML from the approved design: `phases`, `states` (with `actor`, `path`, `resumable`, `session-field` as designed), and `transitions` (with `class`, `from`, `to`).
+
+Agent paths use the pattern `agents/{state-name}.md` and resolve relative to the delamain bundle root.
+
+#### 4. Scaffold agent files
+
+Create one markdown file per `actor: agent` state at `agents/{state-name}.md`:
+
+```markdown
+---
+name: {state-name}
+description: {State name} agent for the {delamain-name} pipeline
+tools: Read, Edit, Grep
+model: sonnet
+---
+
+# TODO: Write the {state-name} agent prompt
+
+## Context
+
+- This agent is dispatched when items enter the `{state-name}` state.
+- Legal transitions from this state: {list transitions}
+
+## Responsibilities
+
+- [Define what this agent does in this state]
+- [Define the criteria for choosing each outgoing transition]
+```
+
+The body is a TODO scaffold. The skill cannot write domain-specific agent prompts — the operator or a later session fills these in.
+
+#### 5. Copy the dispatcher template
+
+Copy the generic dispatcher template into the bundle:
+
+```bash
+cp -r ${CLAUDE_PLUGIN_ROOT}/skills/new/references/dispatcher/ .als/modules/{module_id}/v1/delamains/{delamain-name}/dispatcher/
+```
+
+Then install dependencies:
+
+```bash
+cd .als/modules/{module_id}/v1/delamains/{delamain-name}/dispatcher && bun install
+```
+
+The dispatcher requires zero modification — it derives everything from the ALS declaration surface at runtime.
+
 ### After creation
 
 Tell the operator what was created and where. Suggest they can now create their first record by hand or with help, and that the compiler will validate everything when it runs.
+
+If a Delamain was created, also tell the operator:
+- Agent files are TODO scaffolds that need prompts written before the dispatcher can run.
+- The dispatcher is ready to run once agent prompts are authored: `cd <delamain-bundle>/dispatcher && bun run src/index.ts`
+- Session fields are implicit — they do not need to be added to shape.yaml or entity frontmatter manually. The dispatcher handles persistence.
