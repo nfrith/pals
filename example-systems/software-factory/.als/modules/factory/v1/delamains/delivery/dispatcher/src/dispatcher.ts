@@ -1,4 +1,4 @@
-import { readdir, readFile } from "fs/promises";
+import { readFile } from "fs/promises";
 import { join, dirname } from "path";
 import { parse as parseYaml } from "yaml";
 import { query } from "@anthropic-ai/claude-agent-sdk";
@@ -30,13 +30,20 @@ interface Transition {
   from: string | string[];
   to: string;
   actor: string;
-  agent: string;
+}
+
+interface StateDef {
+  phase: string;
+  initial?: boolean;
+  terminal?: boolean;
+  actor?: string;
+  agent?: string;
 }
 
 interface DelamainConfig {
   phases: string[];
-  states: Record<string, unknown>;
-  agents: Record<string, { path: string }>;
+  states: Record<string, StateDef>;
+  agents?: Record<string, { path: string }>;
   transitions: Transition[];
 }
 
@@ -48,9 +55,9 @@ interface AgentDef {
 }
 
 export interface DispatchEntry {
-  fromStatus: string;
-  toStatus: string;
+  state: string;
   agentName: string;
+  transitions: Array<Pick<Transition, "id" | "class" | "to">>;
 }
 
 export interface ResolvedConfig {
@@ -133,7 +140,7 @@ export async function resolve(systemRoot: string): Promise<ResolvedConfig> {
   // system.yaml path (workspace/factory) + entity path dirname (items/)
   const itemsDir = join(systemRoot, mod.path, dirname(entityPath));
 
-  // 3. delivery.yaml → transitions + agents registry
+  // 3. delivery.yaml → states, transitions, and agents registry
   const delamainPath = shape.delamains[delamainName]?.path;
   if (!delamainPath) {
     throw new Error(`Delamain "${delamainName}" not in shape registry`);
@@ -145,7 +152,7 @@ export async function resolve(systemRoot: string): Promise<ResolvedConfig> {
 
   // 4. Load agent files from the agents registry
   const agents: Record<string, AgentDef> = {};
-  for (const [agentKey, agentRef] of Object.entries(delamain.agents)) {
+  for (const [agentKey, agentRef] of Object.entries(delamain.agents ?? {})) {
     try {
       const { meta, body } = parseMd(
         await readFile(join(moduleDir, agentRef.path), "utf-8"),
@@ -172,20 +179,25 @@ export async function resolve(systemRoot: string): Promise<ResolvedConfig> {
     }
   }
 
-  // 5. Build dispatch table from system-actor transitions
+  // 5. Build dispatch table from agent-owned states
   const dispatchTable: DispatchEntry[] = [];
-  for (const t of delamain.transitions) {
-    if (t.actor !== "system") continue;
-    if (!agents[t.agent]) continue;
+  for (const [stateId, state] of Object.entries(delamain.states)) {
+    if (state.actor !== "agent") continue;
+    if (!state.agent) continue;
+    if (!agents[state.agent]) continue;
 
-    const sources = Array.isArray(t.from) ? t.from : [t.from];
-    for (const from of sources) {
-      dispatchTable.push({
-        fromStatus: from,
-        toStatus: t.to,
-        agentName: t.agent,
-      });
-    }
+    const transitions = delamain.transitions
+      .filter((t) => {
+        const sources = Array.isArray(t.from) ? t.from : [t.from];
+        return sources.includes(stateId);
+      })
+      .map((t) => ({ id: t.id, class: t.class, to: t.to }));
+
+    dispatchTable.push({
+      state: stateId,
+      agentName: state.agent,
+      transitions,
+    });
   }
 
   return {
@@ -211,17 +223,22 @@ export async function dispatch(
   agents: Record<string, AgentDef>,
   systemRoot: string,
 ): Promise<{ success: boolean; sessionId?: string }> {
+  const transitionLines = entry.transitions.map(
+    (t) => `- ${t.id}: ${t.class} -> ${t.to}`,
+  );
   const prompt = [
     `Use the ${entry.agentName} agent to handle ${itemId}.`,
     ``,
     `item_id: ${itemId}`,
     `item_file: ${itemFile}`,
-    `from: ${entry.fromStatus}`,
-    `to: ${entry.toStatus}`,
+    `current_state: ${entry.state}`,
     `date: ${today()}`,
+    ``,
+    `legal_transitions:`,
+    ...transitionLines,
   ].join("\n");
 
-  console.log(`[dispatcher] ${itemId} → ${entry.agentName}`);
+  console.log(`[dispatcher] ${itemId} @ ${entry.state} → ${entry.agentName}`);
 
   let sessionId: string | undefined;
 

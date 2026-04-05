@@ -27,7 +27,7 @@ console.log(`[dispatcher] status field: ${config.statusField}`);
 console.log(`[dispatcher] items: ${config.itemsDir}`);
 console.log(`[dispatcher] agents loaded: ${Object.keys(config.agents).length}`);
 console.log(
-  `[dispatcher] dispatch table: ${config.dispatchTable.map((e) => `${e.fromStatus}→${e.toStatus}`).join(", ")}`,
+  `[dispatcher] dispatch table: ${config.dispatchTable.map((e) => `${e.state}→${e.agentName}`).join(", ")}`,
 );
 console.log(`[dispatcher] polling every ${POLL_MS}ms`);
 
@@ -39,7 +39,7 @@ const lastSeen = new Map<string, string>();
 const active = new Set<string>();
 
 function findRule(status: string): DispatchEntry | undefined {
-  return config.dispatchTable.find((e) => e.fromStatus === status);
+  return config.dispatchTable.find((e) => e.state === status);
 }
 
 async function tick() {

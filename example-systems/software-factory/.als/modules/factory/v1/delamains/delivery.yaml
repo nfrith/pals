@@ -4,30 +4,51 @@ states:
   draft:
     initial: true
     phase: intake
+    actor: operator
   queued:
     phase: intake
+    actor: agent
+    agent: queued
   planning:
     phase: planning
+    actor: agent
+    agent: planning
   plan-input:
     phase: planning
+    actor: operator
   plan-ready:
     phase: planning
+    actor: operator
   ready:
     phase: implementation
+    actor: agent
+    agent: ready
   in-dev:
     phase: implementation
+    actor: agent
+    agent: in-dev
   in-review:
     phase: implementation
+    actor: agent
+    agent: in-review
   uat-test:
     phase: implementation
+    actor: operator
   deployment-ready:
     phase: deployment
+    actor: agent
+    agent: deployment-ready
   deploying:
     phase: deployment
+    actor: agent
+    agent: deploying
   deployment-testing:
     phase: deployment
+    actor: agent
+    agent: deployment-testing
   deployment-failure:
     phase: deployment
+    actor: operator
   completed:
     phase: closed
     terminal: true
@@ -39,164 +60,100 @@ states:
     terminal: true
 
 agents:
-  draft-to-queued:
-    path: delamains/delivery/agents/draft-to-queued.md
-  queued-to-planning:
-    path: delamains/delivery/agents/queued-to-planning.md
-  planning-to-plan-input:
-    path: delamains/delivery/agents/planning-to-plan-input.md
-  planning-to-plan-ready:
-    path: delamains/delivery/agents/planning-to-plan-ready.md
-  plan-input-to-queued:
-    path: delamains/delivery/agents/plan-input-to-queued.md
-  plan-ready-to-ready:
-    path: delamains/delivery/agents/plan-ready-to-ready.md
-  plan-ready-to-queued:
-    path: delamains/delivery/agents/plan-ready-to-queued.md
-  ready-to-in-dev:
-    path: delamains/delivery/agents/ready-to-in-dev.md
-  in-dev-to-in-review:
-    path: delamains/delivery/agents/in-dev-to-in-review.md
-  in-review-to-ready:
-    path: delamains/delivery/agents/in-review-to-ready.md
-  in-review-to-uat-test:
-    path: delamains/delivery/agents/in-review-to-uat-test.md
-  uat-test-to-deployment-ready:
-    path: delamains/delivery/agents/uat-test-to-deployment-ready.md
-  uat-test-to-queued:
-    path: delamains/delivery/agents/uat-test-to-queued.md
-  deployment-ready-to-deploying:
-    path: delamains/delivery/agents/deployment-ready-to-deploying.md
-  deploying-to-deployment-testing:
-    path: delamains/delivery/agents/deploying-to-deployment-testing.md
-  deployment-testing-to-completed:
-    path: delamains/delivery/agents/deployment-testing-to-completed.md
-  deployment-testing-to-deployment-failure:
-    path: delamains/delivery/agents/deployment-testing-to-deployment-failure.md
-  deployment-failure-to-ready:
-    path: delamains/delivery/agents/deployment-failure-to-ready.md
-  deployment-failure-to-queued:
-    path: delamains/delivery/agents/deployment-failure-to-queued.md
-  any-to-deferred:
-    path: delamains/delivery/agents/any-to-deferred.md
-  any-to-cancelled:
-    path: delamains/delivery/agents/any-to-cancelled.md
+  queued:
+    path: delamains/delivery/agents/queued.md
+  planning:
+    path: delamains/delivery/agents/planning.md
+  ready:
+    path: delamains/delivery/agents/ready.md
+  in-dev:
+    path: delamains/delivery/agents/in-dev.md
+  in-review:
+    path: delamains/delivery/agents/in-review.md
+  deployment-ready:
+    path: delamains/delivery/agents/deployment-ready.md
+  deploying:
+    path: delamains/delivery/agents/deploying.md
+  deployment-testing:
+    path: delamains/delivery/agents/deployment-testing.md
 
 transitions:
   - id: draft-to-queued
     class: advance
     from: draft
     to: queued
-    actor: operator
-    agent: draft-to-queued
   - id: queued-to-planning
     class: advance
     from: queued
     to: planning
-    actor: system
-    agent: queued-to-planning
   - id: planning-to-plan-input
     class: advance
     from: planning
     to: plan-input
-    actor: agent
-    agent: planning-to-plan-input
   - id: planning-to-plan-ready
     class: advance
     from: planning
     to: plan-ready
-    actor: agent
-    agent: planning-to-plan-ready
   - id: plan-input-to-queued
     class: rework
     from: plan-input
     to: queued
-    actor: operator
-    agent: plan-input-to-queued
   - id: plan-ready-to-ready
     class: advance
     from: plan-ready
     to: ready
-    actor: operator
-    agent: plan-ready-to-ready
   - id: plan-ready-to-queued
     class: rework
     from: plan-ready
     to: queued
-    actor: operator
-    agent: plan-ready-to-queued
   - id: ready-to-in-dev
     class: advance
     from: ready
     to: in-dev
-    actor: system
-    agent: ready-to-in-dev
   - id: in-dev-to-in-review
     class: advance
     from: in-dev
     to: in-review
-    actor: agent
-    agent: in-dev-to-in-review
   - id: in-review-to-ready
     class: rework
     from: in-review
     to: ready
-    actor: agent
-    agent: in-review-to-ready
   - id: in-review-to-uat-test
     class: advance
     from: in-review
     to: uat-test
-    actor: agent
-    agent: in-review-to-uat-test
   - id: uat-test-to-deployment-ready
     class: advance
     from: uat-test
     to: deployment-ready
-    actor: operator
-    agent: uat-test-to-deployment-ready
   - id: uat-test-to-queued
     class: rework
     from: uat-test
     to: queued
-    actor: operator
-    agent: uat-test-to-queued
   - id: deployment-ready-to-deploying
     class: advance
     from: deployment-ready
     to: deploying
-    actor: system
-    agent: deployment-ready-to-deploying
   - id: deploying-to-deployment-testing
     class: advance
     from: deploying
     to: deployment-testing
-    actor: agent
-    agent: deploying-to-deployment-testing
   - id: deployment-testing-to-completed
     class: exit
     from: deployment-testing
     to: completed
-    actor: agent
-    agent: deployment-testing-to-completed
   - id: deployment-testing-to-deployment-failure
     class: rework
     from: deployment-testing
     to: deployment-failure
-    actor: agent
-    agent: deployment-testing-to-deployment-failure
   - id: deployment-failure-to-ready
     class: rework
     from: deployment-failure
     to: ready
-    actor: operator
-    agent: deployment-failure-to-ready
   - id: deployment-failure-to-queued
     class: rework
     from: deployment-failure
     to: queued
-    actor: operator
-    agent: deployment-failure-to-queued
   - id: any-to-deferred
     class: exit
     from:
@@ -212,8 +169,6 @@ transitions:
       - deployment-ready
       - deployment-failure
     to: deferred
-    actor: operator
-    agent: any-to-deferred
   - id: any-to-cancelled
     class: exit
     from:
@@ -229,5 +184,3 @@ transitions:
       - deployment-ready
       - deployment-failure
     to: cancelled
-    actor: operator
-    agent: any-to-cancelled

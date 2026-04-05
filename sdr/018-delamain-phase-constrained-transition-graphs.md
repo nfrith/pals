@@ -36,16 +36,16 @@ Proposed
 - Each state may declare `initial: true`.
 - Each state may declare `terminal: true`.
 - Each state may declare `phase: <phase-name>`.
+- Each non-terminal state declares `actor: operator | agent`.
 - `phases` are the ordered lifecycle layers of the Delamain graph. ALS does not add a separate standalone lifecycle primitive in this pass.
 - Every transition declares `class: advance | rework | exit`.
 - `advance` and `rework` transitions declare `from: <state-name>`.
 - `exit` transitions declare `from: <state-name>` or `from: [<state-name>, ...]`.
 - A transition declares `to: <state-name>`.
-- A transition declares `actor: operator | agent | system`.
-- `actor` identifies the required executor of the transition.
-- `actor: operator` means the transition requires operator action.
-- `actor: agent` means the transition requires agent action.
-- `actor: system` means the transition requires autonomous runtime action.
+- `actor` identifies the required executor of work performed while a record is in that state.
+- `actor: operator` means progress from that state requires operator action.
+- `actor: agent` means progress from that state requires agent action.
+- Effective transition ownership is inherited from the source state, not declared on the transition itself.
 - `advance` means the target is non-terminal and is in the same phase or the next declared phase.
 - `rework` means the target is non-terminal and is in the same phase or an earlier declared phase.
 - `exit` means the target is terminal.
@@ -76,10 +76,11 @@ Proposed
 - Required: the initial state is in the first declared phase.
 - Required: terminal states are in the last declared phase.
 - Required: no state is both `initial: true` and `terminal: true`.
+- Required: every non-terminal state declares `actor`.
+- Required: terminal states do not declare `actor`.
 - Required: every transition `from` and `to` value references declared states.
 - Required: every transition declares `class`.
-- Required: every transition declares `actor`.
-- Required: `actor` identifies the required executor of the transition.
+- Required: transitions do not declare `actor`.
 - Required: self-loop transitions are rejected.
 - Required: every state is reachable from the Delamain initial state after expanding list-valued `from` declarations into effective edges.
 - Required: `delamain_state` fields use the referenced Delamain file's declared state names as their legal persisted values.
@@ -99,10 +100,11 @@ Proposed
 - Required: every non-terminal state has a path to at least one terminal state.
 - Required: duplicate effective transitions are rejected after expanding list-valued `from` declarations.
 - Allowed: multiple terminal states.
-- Allowed: one `exit` transition entry that expands a shared `from` list into multiple legal source states for the same `to` and `actor`.
+- Allowed: one `exit` transition entry that expands a shared `from` list into multiple legal source states for the same `to`.
 - Allowed: modules that continue using plain `enum` fields for status-like values when no workflow declaration is needed.
 - Rejected: duplicating Delamain state values in `allowed_values` on a `delamain_state` field.
 - Rejected: inferring legal transitions from lifecycle phases alone.
+- Rejected: declaring executor ownership on transitions instead of states.
 - Rejected: list-valued `from` declarations on `advance` or `rework` transitions.
 - Rejected: state-local attention or queue-membership flags inside Delamain companion files in this pass.
 - Rejected: embedding dispatch commands, agent prompts, context actions, or operator menus inside Delamain companion files in this pass.
@@ -115,7 +117,7 @@ Proposed
 - Extend module loading so bundles may contain Delamain companion files under `delamains/`.
 - Extend shape parsing so modules may declare a `delamains` registry.
 - Extend frontmatter field parsing so shapes may declare `type: delamain_state` plus required `delamain`.
-- Add Delamain-file loading and validation for unknown Delamain references, duplicate Delamain names in the registry, duplicate phase names, duplicate state names, missing or multiple initial states, missing phases, unknown phase names, empty phases, initial states outside the first phase, terminal states outside the last phase, states marked both initial and terminal, forbidden list-valued `from` declarations on `advance` or `rework`, empty `from` lists, duplicate values inside `from` lists, self-loop transitions, and transitions that reference undeclared states.
+- Add Delamain-file loading and validation for unknown Delamain references, duplicate Delamain names in the registry, duplicate phase names, duplicate state names, missing or multiple initial states, missing phases, unknown phase names, empty phases, initial states outside the first phase, terminal states outside the last phase, states marked both initial and terminal, missing actor on non-terminal states, actor declared on terminal states, forbidden list-valued `from` declarations on `advance` or `rework`, empty `from` lists, duplicate values inside `from` lists, self-loop transitions, and transitions that reference undeclared states.
 - Add Delamain transition-class validation for `advance`, `rework`, and `exit` against declared phase order and terminal-state annotations.
 - Add Delamain graph validation for reachability from the initial state, missing outgoing transitions on non-terminal states, missing paths from non-terminal states to terminal states, forbidden outgoing transitions on terminal states, and duplicate effective edges after list expansion.
 - Treat Delamain state names as the legal current-value set for the bound field during snapshot validation.
@@ -125,7 +127,7 @@ Proposed
 
 ## Docs and Fixture Impact
 
-- Update the canonical shape-language reference to document the `delamains` registry in `shape.yaml`, `delamain_state`, companion files under `delamains/`, transition `class`, transition `actor`, `states`, `transitions`, `phases`, and the boundary between Delamain and later runtime constructs.
+- Update the canonical shape-language reference to document the `delamains` registry in `shape.yaml`, `delamain_state`, companion files under `delamains/`, state `actor`, transition `class`, `states`, `transitions`, `phases`, and the boundary between Delamain and later runtime constructs.
 - Add a forward-looking `software-factory` design-reference example system that paints a backlog-style software delivery flow without using entity variants.
 - Use that fixture to show `kind` as ordinary classification.
 - Use that fixture to show `status` as Delamain-governed state.
@@ -143,10 +145,12 @@ Proposed
 - Rejected because ALS may grow multiple graph-like constructs and the authored surface needs one specific name for this one.
 - Extend `type: enum` with transition metadata inside `shape.yaml`.
 - Rejected because once a field is Delamain-governed, it is no longer just a plain enum and the resulting large graphs do not belong inline in the shape file.
+- Keep executor ownership on transitions.
+- Rejected because dispatch is triggered by current state, and state ownership is the coherent place to express who advances work from that state.
 - Allow `advance` and `rework` to use list-valued `from`.
 - Rejected because those classes are intended to express one specific semantic move from one source state, while shared many-source exits are the narrow case where list expansion remains coherent.
 - Allow only single-state `from` values.
-- Rejected because realistic workflows quickly repeat the same `to` and `actor` across many source states, creating avoidable authored noise.
+- Rejected because realistic workflows quickly repeat the same `to` across many source states, creating avoidable authored noise.
 - Resolve Delamain files by filename convention alone.
 - Rejected because the authored shape should minimize hidden assumptions and give agents an explicit binding surface they can trust directly.
 - Require at least one `terminal: true` state as a separate rule.
@@ -155,10 +159,10 @@ Proposed
 - Rejected because reachability from the initial state plus outgoing-transition requirements for non-terminal states already make orphan states invalid.
 - Require the initial state to have no incoming transitions.
 - Rejected because some Delamain graphs may validly re-enter the initial state, and the first pass should not ban that shape without a stronger use case.
-- Require `attention: true` states to have at least one outgoing `actor: operator` transition.
+- Require `attention: true` states to be operator-owned states.
 - Rejected because queue and operator-surface concerns belong to a later orchestrator-layer construct rather than to the first Delamain state-graph contract.
 - Keep `attention` as a state-local flag in Delamain.
-- Rejected because Delamain now treats required executors as edge semantics and leaves queue/surface semantics to later constructs.
+- Rejected because Delamain now treats required executors as state semantics and leaves queue/surface semantics to later constructs.
 - Add free-text semantic fields such as `meaning` as part of the first Delamain contract.
 - Rejected because the first pass should encode coherence in machine-checkable transition classes rather than relying on prose.
 - Put dispatch hooks directly in the first Delamain primitive.
@@ -168,8 +172,7 @@ Proposed
 
 - Should a later pass add more Delamain transition classes beyond `advance`, `rework`, and `exit`?
 - Should a later pass add symbolic selectors such as `from: non-terminal`, or is `from: [state, ...]` sufficient for the intended authoring pressure?
-- Should a later orchestrator-layer construct derive its queue from Delamain transition ownership alone, or declare queue membership explicitly?
-- Should `actor: agent` and `actor: system` remain distinct, or collapse into one non-operator executor class in a later pass?
+- Should a later orchestrator-layer construct derive its queue from Delamain state ownership alone, or declare queue membership explicitly?
 - What is the smallest ALS-controlled write surface that can validate transitions as transitions rather than only validating the resulting snapshot?
 
 ## Non-Goals
