@@ -2,6 +2,11 @@ als_version: 1
 system_id: rich-body-content
 
 modules:
+  observability:
+    path: workspace/observability
+    version: 1
+    skills: []
+
   playbooks:
     path: operations/playbooks
     version: 1

@@ -329,7 +329,7 @@ test.concurrent("markdown entities must not declare rows", async () => {
 });
 
 test.concurrent("jsonl entities must use .jsonl paths", async () => {
-  await withExampleSystemSandbox("multi-format-design-reference", "shape-jsonl-path-suffix", async ({ root }) => {
+  await withExampleSystemSandbox("rich-body-content", "shape-jsonl-path-suffix", async ({ root }) => {
     await updateShapeYaml(root, "observability", 1, (shape) => {
       const entities = shape.entities as Record<string, Record<string, unknown>>;
       entities["metric-stream"].path = "streams/{id}.md";
@@ -342,7 +342,7 @@ test.concurrent("jsonl entities must use .jsonl paths", async () => {
 });
 
 test.concurrent("markdown identity.parent cannot target jsonl entities", async () => {
-  await withExampleSystemSandbox("multi-format-design-reference", "shape-markdown-parent-jsonl", async ({ root }) => {
+  await withExampleSystemSandbox("rich-body-content", "shape-markdown-parent-jsonl", async ({ root }) => {
     await updateShapeYaml(root, "observability", 1, (shape) => {
       const entities = shape.entities as Record<string, Record<string, unknown>>;
       const dashboard = entities.dashboard;
@@ -364,7 +364,7 @@ test.concurrent("markdown identity.parent cannot target jsonl entities", async (
 });
 
 test.concurrent("jsonl entities must declare at least one row field", async () => {
-  await withExampleSystemSandbox("multi-format-design-reference", "shape-jsonl-empty-rows", async ({ root }) => {
+  await withExampleSystemSandbox("rich-body-content", "shape-jsonl-empty-rows", async ({ root }) => {
     await updateShapeYaml(root, "observability", 1, (shape) => {
       const entities = shape.entities as Record<string, Record<string, unknown>>;
       const metricStream = entities["metric-stream"];
@@ -380,7 +380,7 @@ test.concurrent("jsonl entities must declare at least one row field", async () =
 });
 
 test.concurrent("jsonl entities cannot declare markdown-only surfaces", async () => {
-  await withExampleSystemSandbox("multi-format-design-reference", "shape-jsonl-forbidden-identity", async ({ root }) => {
+  await withExampleSystemSandbox("rich-body-content", "shape-jsonl-forbidden-identity", async ({ root }) => {
     await updateShapeYaml(root, "observability", 1, (shape) => {
       const entities = shape.entities as Record<string, Record<string, unknown>>;
       entities["metric-stream"].identity = {
@@ -395,7 +395,7 @@ test.concurrent("jsonl entities cannot declare markdown-only surfaces", async ()
 });
 
 test.concurrent("jsonl row schemas reject unsupported ref fields", async () => {
-  await withExampleSystemSandbox("multi-format-design-reference", "shape-jsonl-row-ref", async ({ root }) => {
+  await withExampleSystemSandbox("rich-body-content", "shape-jsonl-row-ref", async ({ root }) => {
     await updateShapeYaml(root, "observability", 1, (shape) => {
       const entities = shape.entities as Record<string, Record<string, unknown>>;
       const metricStream = entities["metric-stream"];

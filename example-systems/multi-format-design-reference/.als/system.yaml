@@ -1,8 +1,0 @@
-als_version: 1
-system_id: multi-format-design-reference
-
-modules:
-  observability:
-    path: workspace/observability
-    version: 1
-    skills: []

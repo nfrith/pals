@@ -10,7 +10,7 @@ import {
 } from "./helpers/fixture.ts";
 
 test.concurrent("jsonl lines must parse as valid json objects", async () => {
-  await withExampleSystemSandbox("multi-format-design-reference", "jsonl-invalid-line", async ({ root }) => {
+  await withExampleSystemSandbox("rich-body-content", "jsonl-invalid-line", async ({ root }) => {
     await updateTextFile(root, "workspace/observability/streams/STR-0001.jsonl", () => [
       "{\"observed_at\":\"2026-04-01T10:00:00Z\",\"metric\":\"latency_ms\",\"window\":\"p50\",\"value\":41.8,\"tags\":[\"api-gateway\",\"baseline\"]}",
       "{\"observed_at\":",
@@ -23,7 +23,7 @@ test.concurrent("jsonl lines must parse as valid json objects", async () => {
 });
 
 test.concurrent("jsonl parse errors do not suppress row-schema diagnostics from valid lines", async () => {
-  await withExampleSystemSandbox("multi-format-design-reference", "jsonl-parse-and-row-errors", async ({ root }) => {
+  await withExampleSystemSandbox("rich-body-content", "jsonl-parse-and-row-errors", async ({ root }) => {
     await updateTextFile(root, "workspace/observability/streams/STR-0001.jsonl", () => [
       "{\"observed_at\":\"2026-04-01T10:00:00Z\",\"window\":\"p50\",\"value\":41.8,\"tags\":[\"api-gateway\",\"baseline\"]}",
       "{\"observed_at\":",
@@ -37,7 +37,7 @@ test.concurrent("jsonl parse errors do not suppress row-schema diagnostics from 
 });
 
 test.concurrent("jsonl lines must be objects", async () => {
-  await withExampleSystemSandbox("multi-format-design-reference", "jsonl-non-object-line", async ({ root }) => {
+  await withExampleSystemSandbox("rich-body-content", "jsonl-non-object-line", async ({ root }) => {
     await updateTextFile(root, "workspace/observability/streams/STR-0001.jsonl", () => [
       "{\"observed_at\":\"2026-04-01T10:00:00Z\",\"metric\":\"latency_ms\",\"window\":\"p50\",\"value\":41.8,\"tags\":[\"api-gateway\",\"baseline\"]}",
       "42",
@@ -50,7 +50,7 @@ test.concurrent("jsonl lines must be objects", async () => {
 });
 
 test.concurrent("empty jsonl entity files are valid", async () => {
-  await withExampleSystemSandbox("multi-format-design-reference", "jsonl-empty-file", async ({ root }) => {
+  await withExampleSystemSandbox("rich-body-content", "jsonl-empty-file", async ({ root }) => {
     await updateTextFile(root, "workspace/observability/streams/STR-0001.jsonl", () => "");
 
     const result = validateFixture(root);
@@ -60,7 +60,7 @@ test.concurrent("empty jsonl entity files are valid", async () => {
 });
 
 test.concurrent("jsonl rows must include every declared field", async () => {
-  await withExampleSystemSandbox("multi-format-design-reference", "jsonl-missing-row-field", async ({ root }) => {
+  await withExampleSystemSandbox("rich-body-content", "jsonl-missing-row-field", async ({ root }) => {
     await updateTextFile(root, "workspace/observability/streams/STR-0001.jsonl", () => [
       "{\"observed_at\":\"2026-04-01T10:00:00Z\",\"window\":\"p50\",\"value\":41.8,\"tags\":[\"api-gateway\",\"baseline\"]}",
     ].join("\n"));
@@ -72,7 +72,7 @@ test.concurrent("jsonl rows must include every declared field", async () => {
 });
 
 test.concurrent("jsonl rows reject undeclared extra fields", async () => {
-  await withExampleSystemSandbox("multi-format-design-reference", "jsonl-extra-row-field", async ({ root }) => {
+  await withExampleSystemSandbox("rich-body-content", "jsonl-extra-row-field", async ({ root }) => {
     await updateTextFile(root, "workspace/observability/streams/STR-0001.jsonl", () => [
       "{\"observed_at\":\"2026-04-01T10:00:00Z\",\"metric\":\"latency_ms\",\"window\":\"p50\",\"value\":41.8,\"tags\":[\"api-gateway\",\"baseline\"],\"extra\":true}",
     ].join("\n"));
@@ -84,7 +84,7 @@ test.concurrent("jsonl rows reject undeclared extra fields", async () => {
 });
 
 test.concurrent("jsonl row fields must match declared scalar types", async () => {
-  await withExampleSystemSandbox("multi-format-design-reference", "jsonl-row-type-mismatch", async ({ root }) => {
+  await withExampleSystemSandbox("rich-body-content", "jsonl-row-type-mismatch", async ({ root }) => {
     await updateTextFile(root, "workspace/observability/streams/STR-0001.jsonl", () => [
       "{\"observed_at\":\"2026-04-01T10:00:00Z\",\"metric\":\"latency_ms\",\"window\":\"p50\",\"value\":\"41.8\",\"tags\":[\"api-gateway\",\"baseline\"]}",
     ].join("\n"));
@@ -96,7 +96,7 @@ test.concurrent("jsonl row fields must match declared scalar types", async () =>
 });
 
 test.concurrent("jsonl non-nullable row fields reject explicit null", async () => {
-  await withExampleSystemSandbox("multi-format-design-reference", "jsonl-row-nullability", async ({ root }) => {
+  await withExampleSystemSandbox("rich-body-content", "jsonl-row-nullability", async ({ root }) => {
     await updateTextFile(root, "workspace/observability/streams/STR-0001.jsonl", () => [
       "{\"observed_at\":\"2026-04-01T10:00:00Z\",\"metric\":\"latency_ms\",\"window\":\"p50\",\"value\":41.8,\"tags\":null}",
     ].join("\n"));
@@ -108,7 +108,7 @@ test.concurrent("jsonl non-nullable row fields reject explicit null", async () =
 });
 
 test.concurrent("jsonl row dates remain YYYY-MM-DD only", async () => {
-  await withExampleSystemSandbox("multi-format-design-reference", "jsonl-date-format", async ({ root }) => {
+  await withExampleSystemSandbox("rich-body-content", "jsonl-date-format", async ({ root }) => {
     await updateShapeYaml(root, "observability", 1, (shape) => {
       const entities = shape.entities as Record<string, Record<string, unknown>>;
       const metricStream = entities["metric-stream"];
@@ -131,7 +131,7 @@ test.concurrent("jsonl row dates remain YYYY-MM-DD only", async () => {
 });
 
 test.concurrent("jsonl rows reject invalid enum values", async () => {
-  await withExampleSystemSandbox("multi-format-design-reference", "jsonl-row-enum-invalid", async ({ root }) => {
+  await withExampleSystemSandbox("rich-body-content", "jsonl-row-enum-invalid", async ({ root }) => {
     await updateTextFile(root, "workspace/observability/streams/STR-0001.jsonl", () => [
       "{\"observed_at\":\"2026-04-01T10:00:00Z\",\"metric\":\"latency_ms\",\"window\":\"p75\",\"value\":41.8,\"tags\":[\"api-gateway\",\"baseline\"]}",
     ].join("\n"));
@@ -143,7 +143,7 @@ test.concurrent("jsonl rows reject invalid enum values", async () => {
 });
 
 test.concurrent("nullable jsonl row fields allow explicit null while still requiring presence", async () => {
-  await withExampleSystemSandbox("multi-format-design-reference", "jsonl-nullable-row-field", async ({ root }) => {
+  await withExampleSystemSandbox("rich-body-content", "jsonl-nullable-row-field", async ({ root }) => {
     await updateShapeYaml(root, "observability", 1, (shape) => {
       const entities = shape.entities as Record<string, Record<string, unknown>>;
       const metricStream = entities["metric-stream"];
@@ -164,7 +164,7 @@ test.concurrent("nullable jsonl row fields allow explicit null while still requi
 });
 
 test.concurrent("jsonl list fields reject invalid item types", async () => {
-  await withExampleSystemSandbox("multi-format-design-reference", "jsonl-row-array-item", async ({ root }) => {
+  await withExampleSystemSandbox("rich-body-content", "jsonl-row-array-item", async ({ root }) => {
     await updateTextFile(root, "workspace/observability/streams/STR-0001.jsonl", () => [
       "{\"observed_at\":\"2026-04-01T10:00:00Z\",\"metric\":\"latency_ms\",\"window\":\"p50\",\"value\":41.8,\"tags\":[123]}",
     ].join("\n"));
@@ -176,9 +176,9 @@ test.concurrent("jsonl list fields reject invalid item types", async () => {
 });
 
 test.concurrent("markdown refs to jsonl entities must resolve", async () => {
-  await withExampleSystemSandbox("multi-format-design-reference", "jsonl-ref-unresolved", async ({ root }) => {
+  await withExampleSystemSandbox("rich-body-content", "jsonl-ref-unresolved", async ({ root }) => {
     await updateRecord(root, "workspace/observability/dashboards/DB-0001.md", (record) => {
-      record.data.stream_ref = "[STR-9999](als://multi-format-design-reference/observability/metric-stream/STR-9999)";
+      record.data.stream_ref = "[STR-9999](als://rich-body-content/observability/metric-stream/STR-9999)";
     });
 
     const result = validateFixture(root);

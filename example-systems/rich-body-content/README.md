@@ -6,6 +6,7 @@ This fixture is the active design sandbox for the forward-looking ALS v1 body co
 
 - The records here already exercise richer Markdown than the original happy-path fixture.
 - The module shapes here intentionally use a draft body schema based on SDR 006 and SDR 007.
+- The fixture now also carries the `observability` module that exercises mixed markdown and JSONL entities inside one ALS system.
 - The goal is to make the YAML surface easy to inspect and revise before compiler work begins.
 
 ## Draft Body Surface
@@ -20,6 +21,12 @@ The shapes in this fixture use:
 - table blocks declared as `table.syntax: gfm`
 - exact `outline.nodes` with explicit heading text and explicit heading depth
 - optional `outline.preamble` for prose before the first required outlined heading
+
+## Multi-Format Coverage
+
+- `observability` keeps a markdown `dashboard` entity alongside a JSONL `metric-stream` entity.
+- The dashboard record links to the JSONL entity through a normal ALS ref, so this fixture now covers the current cross-format ref contract.
+- The rejected mixed-schema JSONL artifact remains checked in at `content/rejected/mixed-schema-stream.jsonl` so it stays outside the validated module tree.
 
 ## Intentional Choices In This Fixture
 
