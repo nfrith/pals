@@ -72,8 +72,11 @@ for pair in $entries; do
 done
 unset IFS
 
-# All clean — allow stop
-[[ $fail_count -gt 0 ]] || exit 0
+# All clean — clear breadcrumbs and allow stop
+if [[ $fail_count -eq 0 ]]; then
+  rm -f "$breadcrumb_file"
+  exit 0
+fi
 
 # Something broken — block stop
 reason="ALS validation gate: ${fail_count} system(s)/module(s) still have errors. Fix all validation errors before finishing."
