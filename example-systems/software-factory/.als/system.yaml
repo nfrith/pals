@@ -1,9 +1,0 @@
-als_version: 1
-system_id: software-factory
-
-modules:
-  factory:
-    path: workspace/factory
-    version: 1
-    skills:
-      - factory-operate

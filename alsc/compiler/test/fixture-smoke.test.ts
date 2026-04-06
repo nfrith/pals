@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { VALIDATION_OUTPUT_SCHEMA_LITERAL } from "../src/contracts.ts";
-import { updateRecord, updateShapeYaml, validateFixture, withExampleSystemSandbox, withFixtureSandbox } from "./helpers/fixture.ts";
+import { updateRecord, updateShapeYaml, validateFixture, withFixtureSandbox } from "./helpers/fixture.ts";
 
 const compilerRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -54,7 +54,7 @@ test.concurrent("merged reference fixture validates clean", async () => {
     expect(result.module_filter).toBeNull();
     expect(result.summary.error_count).toBe(0);
     expect(result.summary.files_ignored).toBe(baseline.summary.files_ignored);
-    expect(result.summary.modules_checked).toBe(17);
+    expect(result.summary.modules_checked).toBe(18);
   });
 });
 
@@ -204,15 +204,16 @@ test.concurrent("host absolute file path fields validate clean", async () => {
   });
 });
 
-test.concurrent("software factory Delamain fixture validates clean", async () => {
-  await withExampleSystemSandbox("software-factory", "software-factory-smoke", async ({ root }) => {
-    const result = validateFixture(root);
+test.concurrent("factory module inside the merged reference fixture validates clean", async () => {
+  await withFixtureSandbox("factory-smoke", async ({ root }) => {
+    const result = validateFixture(root, "factory");
 
     expect(result.status).toBe("pass");
     expect(result.summary.modules_checked).toBe(1);
     expect(result.summary.error_count).toBe(0);
     expect(result.modules).toHaveLength(1);
     expect(result.modules[0].module_id).toBe("factory");
+    expect(result.module_filter).toBe("factory");
   });
 });
 

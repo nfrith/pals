@@ -1,6 +1,6 @@
 ---
 name: factory-operate
-description: Operator console for the software-factory pipeline. Scans work items for operator attention, presents context actions, and handles all CRUD. The single skill for interacting with the factory module.
+description: Operator console for the factory development pipeline. Scans work items for operator attention, presents context actions, and handles all CRUD. The single skill for interacting with the factory module.
 model: sonnet
 allowed-tools: Bash(bash *)
 ---

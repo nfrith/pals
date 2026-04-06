@@ -10,13 +10,12 @@ import {
   updateSystemYaml,
   updateTextFile,
   validateFixture,
-  withExampleSystemSandbox,
   withFixtureSandbox,
   writePath,
 } from "./helpers/fixture.ts";
 
 test.concurrent("plain entities reject multiple Delamain-bound fields in the same effective schema", async () => {
-  await withExampleSystemSandbox("software-factory", "delamain-plain-conflict", async ({ root }) => {
+  await withFixtureSandbox("delamain-plain-conflict", async ({ root }) => {
     await updateShapeYaml(root, "factory", 1, (shape) => {
       const entities = shape.entities as Record<string, Record<string, unknown>>;
       const fields = entities["work-item"].fields as Record<string, Record<string, unknown>>;
@@ -40,7 +39,7 @@ test.concurrent("plain entities reject multiple Delamain-bound fields in the sam
 });
 
 test.concurrent("Delamain prompt assets must stay inside the active module version bundle", async () => {
-  await withExampleSystemSandbox("software-factory", "delamain-path-escape", async ({ root }) => {
+  await withFixtureSandbox("delamain-path-escape", async ({ root }) => {
     await updateYamlTextFile(
       root,
       ".als/modules/factory/v1/delamains/development-pipeline/delamain.yaml",
@@ -57,7 +56,7 @@ test.concurrent("Delamain prompt assets must stay inside the active module versi
 });
 
 test.concurrent("Delamain prompt assets must declare name and description frontmatter", async () => {
-  await withExampleSystemSandbox("software-factory", "delamain-prompt-invalid", async ({ root }) => {
+  await withFixtureSandbox("delamain-prompt-invalid", async ({ root }) => {
     await updateMarkdownFrontmatterFile(
       root,
       ".als/modules/factory/v1/delamains/development-pipeline/agents/planning.md",
@@ -73,7 +72,7 @@ test.concurrent("Delamain prompt assets must declare name and description frontm
 });
 
 test.concurrent("malformed Delamain prompt frontmatter produces a diagnostic instead of crashing validation", async () => {
-  await withExampleSystemSandbox("software-factory", "delamain-prompt-frontmatter-parse", async ({ root }) => {
+  await withFixtureSandbox("delamain-prompt-frontmatter-parse", async ({ root }) => {
     await updateTextFile(
       root,
       ".als/modules/factory/v1/delamains/development-pipeline/agents/planning.md",
@@ -87,7 +86,7 @@ test.concurrent("malformed Delamain prompt frontmatter produces a diagnostic ins
 });
 
 test.concurrent("Delamain session fields cannot collide with explicit fields on the same effective schema", async () => {
-  await withExampleSystemSandbox("software-factory", "delamain-session-field-collision", async ({ root }) => {
+  await withFixtureSandbox("delamain-session-field-collision", async ({ root }) => {
     await updateShapeYaml(root, "factory", 1, (shape) => {
       const entities = shape.entities as Record<string, Record<string, unknown>>;
       const fields = entities["work-item"].fields as Record<string, Record<string, unknown>>;
@@ -104,7 +103,7 @@ test.concurrent("Delamain session fields cannot collide with explicit fields on 
 });
 
 test.concurrent("invalid persisted Delamain state values are rejected in record frontmatter", async () => {
-  await withExampleSystemSandbox("software-factory", "delamain-invalid-state-value", async ({ root }) => {
+  await withFixtureSandbox("delamain-invalid-state-value", async ({ root }) => {
     await updateRecord(root, "workspace/factory/items/SWF-001.md", (record) => {
       record.data.status = "imaginary-state";
     });
@@ -116,7 +115,7 @@ test.concurrent("invalid persisted Delamain state values are rejected in record 
 });
 
 test.concurrent("missing Delamain bundles fail closed during record validation without spurious unknown session-field errors", async () => {
-  await withExampleSystemSandbox("software-factory", "delamain-bundle-missing", async ({ root }) => {
+  await withFixtureSandbox("delamain-bundle-missing", async ({ root }) => {
     await updateTextFile(
       root,
       "workspace/factory/items/SWF-001.md",

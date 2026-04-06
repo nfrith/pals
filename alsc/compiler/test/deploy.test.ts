@@ -9,7 +9,6 @@ import {
   removePath,
   updateShapeYaml,
   updateSystemYaml,
-  withExampleSystemSandbox,
   withFixtureSandbox,
   writePath,
 } from "./helpers/fixture.ts";
@@ -19,6 +18,7 @@ const compilerRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 test("deploy CLI projects active skills into .claude/skills and is idempotent", async () => {
   await withFixtureSandbox("deploy-cli-idempotent", async ({ root }) => {
     await rm(join(root, ".claude/skills"), { recursive: true, force: true });
+    await rm(join(root, ".claude/delamains"), { recursive: true, force: true });
 
     const first = Bun.spawnSync({
       cmd: ["bun", "src/deploy.ts", root],
@@ -37,31 +37,46 @@ test("deploy CLI projects active skills into .claude/skills and is idempotent", 
       existing_skill_targets: unknown[];
       planned_delamain_count: number;
       written_delamain_count: number;
-      planned_delamains: unknown[];
+      planned_delamains: Array<Record<string, unknown>>;
       existing_delamain_targets: unknown[];
       delamain_name_conflicts: unknown[];
     };
     expect(firstOutput.schema).toBe("als-claude-deploy-output@2");
     expect(firstOutput.status).toBe("pass");
-    expect(firstOutput.planned_skill_count).toBe(19);
-    expect(firstOutput.written_skill_count).toBe(19);
+    expect(firstOutput.planned_skill_count).toBe(20);
+    expect(firstOutput.written_skill_count).toBe(20);
     expect(firstOutput.existing_skill_targets).toEqual([]);
-    expect(firstOutput.planned_delamain_count).toBe(0);
-    expect(firstOutput.written_delamain_count).toBe(0);
-    expect(firstOutput.planned_delamains).toEqual([]);
+    expect(firstOutput.planned_delamain_count).toBe(1);
+    expect(firstOutput.written_delamain_count).toBe(1);
     expect(firstOutput.existing_delamain_targets).toEqual([]);
     expect(firstOutput.delamain_name_conflicts).toEqual([]);
+    expect(firstOutput.planned_delamains).toHaveLength(1);
+    expect(firstOutput.planned_delamains[0]?.delamain_name).toBe("development-pipeline");
+    expect(firstOutput.planned_delamains[0]?.source_dir).toBe(".als/modules/factory/v1/delamains/development-pipeline");
+    expect(firstOutput.planned_delamains[0]?.target_dir).toBe(".claude/delamains/development-pipeline");
     for (const plan of firstOutput.planned_skills) {
       expect(plan).not.toHaveProperty("source_dir_abs");
       expect(plan).not.toHaveProperty("target_dir_abs");
       expect(plan.source_dir).toEqual(expect.stringMatching(/^\.als\/modules\//));
       expect(plan.target_dir).toEqual(expect.stringMatching(/^\.claude\/skills\//));
     }
+    for (const plan of firstOutput.planned_delamains) {
+      expect(plan).not.toHaveProperty("source_dir_abs");
+      expect(plan).not.toHaveProperty("target_dir_abs");
+    }
 
-    const firstSnapshot = snapshotTree(join(root, ".claude/skills"));
-    expect(firstSnapshot["backlog-module/SKILL.md"]).toContain("name: backlog-module");
-    expect(firstSnapshot["people-module/SKILL.md"]).toContain("name: people-module");
-    expect(firstSnapshot["playbooks-module/SKILL.md"]).toContain("name: playbooks-module");
+    const firstSkillSnapshot = snapshotTree(join(root, ".claude/skills"));
+    expect(firstSkillSnapshot["backlog-module/SKILL.md"]).toContain("name: backlog-module");
+    expect(firstSkillSnapshot["people-module/SKILL.md"]).toContain("name: people-module");
+    expect(firstSkillSnapshot["playbooks-module/SKILL.md"]).toContain("name: playbooks-module");
+    expect(firstSkillSnapshot["factory-operate/SKILL.md"]).toContain("name: factory-operate");
+    const firstDelamainSnapshot = snapshotTree(join(root, ".claude/delamains"));
+    expect(firstDelamainSnapshot["development-pipeline/delamain.yaml"]).toContain("phases:");
+    expect(firstDelamainSnapshot["development-pipeline/agents/planning.md"]).toContain("description:");
+    expect(firstDelamainSnapshot["development-pipeline/sub-agents/developer.md"]).toContain("description:");
+    expect(firstDelamainSnapshot["development-pipeline/dispatcher/src/dispatcher.ts"]).toContain("resolve(");
+    // The merged fixture keeps authored projection files but intentionally drops vendored dispatcher dependencies.
+    expect(Object.keys(firstDelamainSnapshot).some((path) => path.includes("node_modules"))).toBe(false);
 
     const second = Bun.spawnSync({
       cmd: ["bun", "src/deploy.ts", root],
@@ -71,14 +86,17 @@ test("deploy CLI projects active skills into .claude/skills and is idempotent", 
     });
     expect(second.exitCode).toBe(0);
 
-    const secondSnapshot = snapshotTree(join(root, ".claude/skills"));
-    expect(secondSnapshot).toEqual(firstSnapshot);
+    const secondSkillSnapshot = snapshotTree(join(root, ".claude/skills"));
+    const secondDelamainSnapshot = snapshotTree(join(root, ".claude/delamains"));
+    expect(secondSkillSnapshot).toEqual(firstSkillSnapshot);
+    expect(secondDelamainSnapshot).toEqual(firstDelamainSnapshot);
   });
 });
 
 test("deploy CLI dry-run reports planned work without creating .claude/skills", async () => {
   await withFixtureSandbox("deploy-cli-dry-run", async ({ root }) => {
     await rm(join(root, ".claude/skills"), { recursive: true, force: true });
+    await rm(join(root, ".claude/delamains"), { recursive: true, force: true });
 
     const process = Bun.spawnSync({
       cmd: ["bun", "src/deploy.ts", "--dry-run", root],
@@ -96,15 +114,22 @@ test("deploy CLI dry-run reports planned work without creating .claude/skills", 
       planned_skills: Array<Record<string, unknown>>;
       planned_delamain_count: number;
       written_delamain_count: number;
+      planned_delamains: Array<Record<string, unknown>>;
     };
     expect(output.schema).toBe("als-claude-deploy-output@2");
     expect(output.status).toBe("pass");
-    expect(output.planned_skill_count).toBe(19);
+    expect(output.planned_skill_count).toBe(20);
     expect(output.written_skill_count).toBe(0);
-    expect(output.planned_delamain_count).toBe(0);
+    expect(output.planned_delamain_count).toBe(1);
     expect(output.written_delamain_count).toBe(0);
+    expect(output.planned_delamains[0]?.delamain_name).toBe("development-pipeline");
     expect(existsSync(join(root, ".claude/skills"))).toBe(false);
+    expect(existsSync(join(root, ".claude/delamains"))).toBe(false);
     for (const plan of output.planned_skills) {
+      expect(plan).not.toHaveProperty("source_dir_abs");
+      expect(plan).not.toHaveProperty("target_dir_abs");
+    }
+    for (const plan of output.planned_delamains) {
       expect(plan).not.toHaveProperty("source_dir_abs");
       expect(plan).not.toHaveProperty("target_dir_abs");
     }
@@ -206,11 +231,12 @@ test("deploy library projects skills when validation status is warn", async () =
 });
 
 test("deploy CLI projects bound Delamain bundles into .claude/delamains and is idempotent", async () => {
-  await withExampleSystemSandbox("software-factory", "deploy-delamain-idempotent", async ({ root }) => {
+  await withFixtureSandbox("deploy-delamain-idempotent", async ({ root }) => {
+    await rm(join(root, ".claude/skills"), { recursive: true, force: true });
     await rm(join(root, ".claude/delamains"), { recursive: true, force: true });
 
     const first = Bun.spawnSync({
-      cmd: ["bun", "src/deploy.ts", root],
+      cmd: ["bun", "src/deploy.ts", root, "factory"],
       cwd: compilerRoot,
       stdout: "pipe",
       stderr: "pipe",
@@ -252,7 +278,7 @@ test("deploy CLI projects bound Delamain bundles into .claude/delamains and is i
     expect(firstSnapshot["development-pipeline/dispatcher/src/dispatcher.ts"]).toContain("resolve(");
 
     const second = Bun.spawnSync({
-      cmd: ["bun", "src/deploy.ts", root],
+      cmd: ["bun", "src/deploy.ts", root, "factory"],
       cwd: compilerRoot,
       stdout: "pipe",
       stderr: "pipe",
@@ -265,11 +291,12 @@ test("deploy CLI projects bound Delamain bundles into .claude/delamains and is i
 });
 
 test("deploy CLI dry-run reports Delamain work without creating .claude/delamains", async () => {
-  await withExampleSystemSandbox("software-factory", "deploy-delamain-dry-run", async ({ root }) => {
+  await withFixtureSandbox("deploy-delamain-dry-run", async ({ root }) => {
+    await rm(join(root, ".claude/skills"), { recursive: true, force: true });
     await rm(join(root, ".claude/delamains"), { recursive: true, force: true });
 
     const process = Bun.spawnSync({
-      cmd: ["bun", "src/deploy.ts", "--dry-run", root],
+      cmd: ["bun", "src/deploy.ts", "--dry-run", root, "factory"],
       cwd: compilerRoot,
       stdout: "pipe",
       stderr: "pipe",
@@ -299,7 +326,7 @@ test("deploy CLI dry-run reports Delamain work without creating .claude/delamain
 });
 
 test("deploy CLI excludes unused Delamains that are only present in the registry", async () => {
-  await withExampleSystemSandbox("software-factory", "deploy-unused-delamain", async ({ root }) => {
+  await withFixtureSandbox("deploy-unused-delamain", async ({ root }) => {
     await cp(
       join(root, ".als/modules/factory/v1/delamains/development-pipeline"),
       join(root, ".als/modules/factory/v1/delamains/unused-flow"),
@@ -314,7 +341,7 @@ test("deploy CLI excludes unused Delamains that are only present in the registry
     });
 
     const process = Bun.spawnSync({
-      cmd: ["bun", "src/deploy.ts", "--dry-run", root],
+      cmd: ["bun", "src/deploy.ts", "--dry-run", root, "factory"],
       cwd: compilerRoot,
       stdout: "pipe",
       stderr: "pipe",
@@ -333,13 +360,14 @@ test("deploy CLI excludes unused Delamains that are only present in the registry
 });
 
 test("deploy CLI fails preflight when empty targets are required for Delamain projection", async () => {
-  await withExampleSystemSandbox("software-factory", "deploy-delamain-collision", async ({ root }) => {
+  await withFixtureSandbox("deploy-delamain-collision", async ({ root }) => {
     await rm(join(root, ".claude/skills"), { recursive: true, force: true });
+    await rm(join(root, ".claude/delamains"), { recursive: true, force: true });
     await mkdir(join(root, ".claude/delamains/development-pipeline"), { recursive: true });
     await writeFile(join(root, ".claude/delamains/development-pipeline/delamain.yaml"), "collision\n");
 
     const process = Bun.spawnSync({
-      cmd: ["bun", "src/deploy.ts", "--dry-run", "--require-empty-targets", root],
+      cmd: ["bun", "src/deploy.ts", "--dry-run", "--require-empty-targets", root, "factory"],
       cwd: compilerRoot,
       stdout: "pipe",
       stderr: "pipe",
@@ -363,7 +391,8 @@ test("deploy CLI fails preflight when empty targets are required for Delamain pr
 });
 
 test("deploy CLI fails when flat Delamain names collide across modules", async () => {
-  await withExampleSystemSandbox("software-factory", "deploy-delamain-name-conflict", async ({ root }) => {
+  await withFixtureSandbox("deploy-delamain-name-conflict", async ({ root }) => {
+    await rm(join(root, ".claude/delamains"), { recursive: true, force: true });
     await cp(join(root, ".als/modules/factory"), join(root, ".als/modules/release"), { recursive: true });
     await rm(join(root, ".als/modules/release/v1/skills"), { recursive: true, force: true });
     await cp(join(root, "workspace/factory"), join(root, "workspace/release"), { recursive: true });
@@ -474,7 +503,7 @@ test("deploy library reports schema validation details when shape.yaml is struct
 });
 
 test("deploy library fails closed when one entity declares multiple Delamain fields", async () => {
-  await withExampleSystemSandbox("software-factory", "deploy-delamain-multi-binding", async ({ root }) => {
+  await withFixtureSandbox("deploy-delamain-multi-binding", async ({ root }) => {
     await updateShapeYaml(root, "factory", 1, (shape) => {
       const entities = shape.entities as Record<string, { fields: Record<string, unknown> }>;
       entities["work-item"]!.fields["secondary_status"] = {

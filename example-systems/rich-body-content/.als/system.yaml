@@ -37,6 +37,12 @@ modules:
     skills:
       - dotfiles-module
 
+  factory:
+    path: workspace/factory
+    version: 1
+    skills:
+      - factory-operate
+
   incident-response:
     path: workspace/incident-response
     version: 1

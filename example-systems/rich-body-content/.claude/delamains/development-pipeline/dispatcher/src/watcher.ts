@@ -31,7 +31,7 @@ function parseFrontmatter(raw: string): Record<string, string> {
 
 /**
  * Scan an items directory and return all parseable work items.
- * Matches the software-factory shape: entities.work-item with
+ * Matches the factory module shape: entities.work-item with
  * fields id, status (delamain), kind (enum).
  */
 export async function scan(itemsDir: string): Promise<WorkItem[]> {

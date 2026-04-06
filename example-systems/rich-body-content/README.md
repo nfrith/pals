@@ -1,12 +1,13 @@
 # Rich Body Content
 
-This fixture is now the working reference implementation for ALS v1. It also remains the active design sandbox for richer body-contract work.
+This fixture is now the working reference implementation for ALS v1 and the single combined example system. It also remains the active design sandbox for richer body-contract work.
 
 ## Purpose
 
-- The host now carries the former centralized structural modules, the rich-body document modules, and the `observability` module inside one ALS system.
+- The host now carries the former centralized structural modules, the rich-body document modules, the `observability` module, and the `factory` Delamain module inside one ALS system.
 - `backlog`, `experiments`, `client-registry`, `dotfiles`, and the centralized `people` contract keep the default compiler fixture surface grounded in realistic structural data.
 - `incident-response`, `operations`, `research`, `planning`, `evals`, and the governance/infra modules continue to exercise the richer body schema direction based on SDR 006 and SDR 007.
+- `factory` now brings the Delamain reference surface into the same host, including state-agent prompts, resumable session fields, and Claude Delamain projection coverage.
 - The goal is to keep one canonical fixture that is still easy to inspect and revise before further compiler work begins.
 
 ## Draft Body Surface
@@ -41,6 +42,12 @@ The shapes in this fixture use:
 - The richer operational records continue to use their original person ids, but those supporting person records now conform to the shared centralized collaborator contract.
 - The canonical source remains `.als/modules/...`; the checked-in `.claude/skills/` projection is a downstream artifact kept in sync with those module bundles.
 
+## Delamain Coverage
+
+- `factory` adds a Delamain-bound `status` field, state-owned prompt assets, resumable session fields, and Delamain bundles with dispatcher source to the merged host.
+- The checked-in `.claude/delamains/development-pipeline/` tree mirrors the current downstream Claude projection for that bundle, but intentionally omits vendored `dispatcher/node_modules/` while keeping the lightweight checked-in `dispatcher/bun.lock`.
+- The standalone `software-factory` fixture no longer exists. Delamain validation and deploy coverage now run through this merged host.
+
 ## Intentional Choices In This Fixture
 
 - Most existing records in this fixture currently render `h1` as the record `id`, not the human-readable `title`.
@@ -63,7 +70,7 @@ The shapes in this fixture use:
 - Each skill lives in its own directory with `SKILL.md` as the entrypoint.
 - The directory form is intentional: skills may later grow supporting files such as `references/`, `assets/`, `scripts/`, or archived notes without changing the top-level module contract.
 - Harness folders like `.claude/` are treated as downstream projections, not the canonical source of module skills.
-- This fixture now checks in the downstream Claude projection under `.claude/skills/` for both the original host modules and the imported workspace-scoped modules.
+- This fixture now checks in downstream Claude projections under `.claude/skills/` and `.claude/delamains/` for the merged active bundles.
 
 ## Module v2 Paint
 
