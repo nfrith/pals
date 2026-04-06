@@ -5,7 +5,6 @@ import {
   updateShapeYaml,
   updateTextFile,
   validateFixture,
-  withExampleSystemSandbox,
   withFixtureSandbox,
 } from "./helpers/fixture.ts";
 
@@ -329,7 +328,7 @@ test.concurrent("markdown entities must not declare rows", async () => {
 });
 
 test.concurrent("jsonl entities must use .jsonl paths", async () => {
-  await withExampleSystemSandbox("rich-body-content", "shape-jsonl-path-suffix", async ({ root }) => {
+  await withFixtureSandbox("shape-jsonl-path-suffix", async ({ root }) => {
     await updateShapeYaml(root, "observability", 1, (shape) => {
       const entities = shape.entities as Record<string, Record<string, unknown>>;
       entities["metric-stream"].path = "streams/{id}.md";
@@ -342,7 +341,7 @@ test.concurrent("jsonl entities must use .jsonl paths", async () => {
 });
 
 test.concurrent("markdown identity.parent cannot target jsonl entities", async () => {
-  await withExampleSystemSandbox("rich-body-content", "shape-markdown-parent-jsonl", async ({ root }) => {
+  await withFixtureSandbox("shape-markdown-parent-jsonl", async ({ root }) => {
     await updateShapeYaml(root, "observability", 1, (shape) => {
       const entities = shape.entities as Record<string, Record<string, unknown>>;
       const dashboard = entities.dashboard;
@@ -364,7 +363,7 @@ test.concurrent("markdown identity.parent cannot target jsonl entities", async (
 });
 
 test.concurrent("jsonl entities must declare at least one row field", async () => {
-  await withExampleSystemSandbox("rich-body-content", "shape-jsonl-empty-rows", async ({ root }) => {
+  await withFixtureSandbox("shape-jsonl-empty-rows", async ({ root }) => {
     await updateShapeYaml(root, "observability", 1, (shape) => {
       const entities = shape.entities as Record<string, Record<string, unknown>>;
       const metricStream = entities["metric-stream"];
@@ -380,7 +379,7 @@ test.concurrent("jsonl entities must declare at least one row field", async () =
 });
 
 test.concurrent("jsonl entities cannot declare markdown-only surfaces", async () => {
-  await withExampleSystemSandbox("rich-body-content", "shape-jsonl-forbidden-identity", async ({ root }) => {
+  await withFixtureSandbox("shape-jsonl-forbidden-identity", async ({ root }) => {
     await updateShapeYaml(root, "observability", 1, (shape) => {
       const entities = shape.entities as Record<string, Record<string, unknown>>;
       entities["metric-stream"].identity = {
@@ -395,7 +394,7 @@ test.concurrent("jsonl entities cannot declare markdown-only surfaces", async ()
 });
 
 test.concurrent("jsonl row schemas reject unsupported ref fields", async () => {
-  await withExampleSystemSandbox("rich-body-content", "shape-jsonl-row-ref", async ({ root }) => {
+  await withFixtureSandbox("shape-jsonl-row-ref", async ({ root }) => {
     await updateShapeYaml(root, "observability", 1, (shape) => {
       const entities = shape.entities as Record<string, Record<string, unknown>>;
       const metricStream = entities["metric-stream"];
@@ -644,7 +643,7 @@ test.concurrent("variant-local ref fields must also have declared dependencies",
 });
 
 test.concurrent("table blocks must use a supported syntax", async () => {
-  await withExampleSystemSandbox("rich-body-content", "shape-table-syntax", async ({ root }) => {
+  await withFixtureSandbox("shape-table-syntax", async ({ root }) => {
     await updateShapeYaml(root, "research", 1, (shape) => {
       const entities = shape.entities as Record<string, Record<string, unknown>>;
       const synthesis = entities.synthesis;
@@ -663,7 +662,7 @@ test.concurrent("table blocks must use a supported syntax", async () => {
 });
 
 test.concurrent("table blocks must declare syntax explicitly", async () => {
-  await withExampleSystemSandbox("rich-body-content", "shape-table-missing-syntax", async ({ root }) => {
+  await withFixtureSandbox("shape-table-missing-syntax", async ({ root }) => {
     await updateShapeYaml(root, "planning", 1, (shape) => {
       const entities = shape.entities as Record<string, Record<string, unknown>>;
       const dossier = entities.dossier;

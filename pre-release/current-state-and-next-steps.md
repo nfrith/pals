@@ -14,7 +14,7 @@ It replaces the earlier pre-release framing that only covered the first round of
   - compiler enforcement for the current ALS v1 source contract
   - example systems and smoke fixtures that validate clean under the current compiler
   - an explicit module-version change and migrate workflow at the skill and fixture level
-- The center of gravity is still ALS v1, and `example-systems/rich-body-content/` is now the working reference implementation.
+- The center of gravity is still ALS v1, and `reference-system/` is now the working reference implementation.
 - At the same time, the repo now also has compiler-valid rich-body fixtures that exercise the newer body contract rather than leaving it as design-only paint.
 
 ## 2. Done
@@ -50,7 +50,7 @@ It replaces the earlier pre-release framing that only covered the first round of
   - `change` is the successor to v0 `als-mutate`
   - `migrate` is the successor to v0 `als-migrate`
   - manifest and report contracts now exist
-  - the repo includes a completed `evaluations v1 -> v2` cutover example in `example-systems/rich-body-content/`
+  - the repo includes a completed `evaluations v1 -> v2` cutover example in `reference-system/`
 - Rich body semantics are no longer just future discussion:
   - unified `freeform` and `outline` body contracts landed
   - explicit title and preamble regions landed
@@ -58,7 +58,7 @@ It replaces the earlier pre-release framing that only covered the first round of
   - curated markdown rejection semantics landed for raw HTML, reference-style syntax, and thematic breaks
   - the compiler test suite covers these rules
 - The fixture state is stronger than the earlier note reflected:
-  - `rich-body-content` validates clean as the merged working reference implementation, including the imported structural modules, rich-body document modules, and multi-format observability coverage
+  - `reference-system` validates clean as the working reference implementation, including the imported structural modules, rich-body document modules, and multi-format observability coverage
 - Repo cleanup that changes the practical current state has also landed:
   - the deprecated v0 tree is gone
   - the repo was flattened by removing the old `v1/` directory nesting

@@ -7,7 +7,7 @@
    Recommendation B: if future rollout workflows need broader guarantees, add an explicit whole-graph preflight mode rather than stretching `moduleFilter` beyond its declared semantics.
 
 2. Module versioning is a big-bang cutover model with no compatibility window. The language exposes one active `version` per module in `system.yaml`, and the compiler always infers exactly one live shape file from it.
-   Refs: `alsc/compiler/src/schema.ts:530`, `alsc/compiler/src/validate.ts:195`, `alsc/compiler/src/validate.ts:1371`, `alsc/compiler/README.md:7`, `example-systems/rich-body-content/README.md:60`.
+   Refs: `alsc/compiler/src/schema.ts:530`, `alsc/compiler/src/validate.ts:195`, `alsc/compiler/src/validate.ts:1371`, `alsc/compiler/README.md:7`, `reference-system/README.md:60`.
    In production, any breaking shape change becomes an atomic subtree rewrite: old and new record contracts cannot coexist, and the compiler offers no migration-mode semantics.
    Recommendation A: define an explicit compatibility model now, such as current-version-only with required atomic rewrites, or bounded N/N+1 coexistence during rollout.
    Recommendation B: add validator support for migration windows if coexistence is intended, instead of leaving version numbers as storage labels with no operational meaning.

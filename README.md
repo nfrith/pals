@@ -28,7 +28,7 @@ The current public preview is centered on two usable surfaces:
 
 - `alsc validate` validates an ALS system and emits machine-readable JSON
 - `alsc deploy claude` projects active ALS Claude assets into `.claude/skills/` and `.claude/delamains/`
-- `example-systems/` provides reference systems and fixtures for the current ALS v1 contract
+- `reference-system/` provides the canonical reference fixture for the current ALS v1 contract
 
 ## Install
 
@@ -221,7 +221,7 @@ alsc/
   compiler/       # Validator and Claude skill projector
   skills/         # ALS skill definitions and workflow material
 sdr/              # Spec Decision Records
-example-systems/  # Reference implementations and fixtures
+reference-system/ # Canonical reference fixture
 pre-release/      # Internal risk analysis and current-state notes
 ```
 

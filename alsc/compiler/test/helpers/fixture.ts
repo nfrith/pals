@@ -9,11 +9,9 @@ import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import type { CompilerDiagnostic, ModuleValidationReport, SystemValidationOutput } from "../../src/types.ts";
 import { validateSystem } from "../../src/validate.ts";
 
-const exampleSystemsRoot = fileURLToPath(
-  new URL("../../../../example-systems/", import.meta.url),
+const fixtureRoot = fileURLToPath(
+  new URL("../../../../reference-system/", import.meta.url),
 );
-
-const fixtureRoot = join(exampleSystemsRoot, "rich-body-content");
 
 export interface FixtureSandbox {
   root: string;
@@ -36,33 +34,6 @@ export async function withFixtureSandbox(
   run: (sandbox: FixtureSandbox) => Promise<void> | void,
 ): Promise<void> {
   const sandbox = await createFixtureSandbox(label);
-  let runError: unknown = null;
-
-  try {
-    await run(sandbox);
-  } catch (error) {
-    runError = error;
-  }
-
-  try {
-    await cleanupFixtureSandbox(sandbox);
-  } catch (cleanupError) {
-    if (!runError) {
-      throw cleanupError;
-    }
-  }
-
-  if (runError) {
-    throw runError;
-  }
-}
-
-export async function withExampleSystemSandbox(
-  fixtureName: string,
-  label: string,
-  run: (sandbox: FixtureSandbox) => Promise<void> | void,
-): Promise<void> {
-  const sandbox = await createFixtureSandbox(label, join(exampleSystemsRoot, fixtureName));
   let runError: unknown = null;
 
   try {

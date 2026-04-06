@@ -19,15 +19,15 @@ This is an inventory and implementation-planning document, not a spec decision r
 ## What the structural modules in the current v1 system use
 
 - The structural reference modules inherited from the former centralized fixture only declare `paragraph`, `bullet_list`, and `ordered_list`.
-- There are no `allow_subheadings: true` hits under `example-systems/rich-body-content/.als/modules/backlog/` or `example-systems/rich-body-content/.als/modules/experiments/`.
-- There are no `allow_blockquotes: true` hits under `example-systems/rich-body-content/.als/modules/backlog/` or `example-systems/rich-body-content/.als/modules/experiments/`.
-- There are no `allow_code_blocks: true` hits under `example-systems/rich-body-content/.als/modules/backlog/` or `example-systems/rich-body-content/.als/modules/experiments/`.
+- There are no `allow_subheadings: true` hits under `reference-system/.als/modules/backlog/` or `reference-system/.als/modules/experiments/`.
+- There are no `allow_blockquotes: true` hits under `reference-system/.als/modules/backlog/` or `reference-system/.als/modules/experiments/`.
+- There are no `allow_code_blocks: true` hits under `reference-system/.als/modules/backlog/` or `reference-system/.als/modules/experiments/`.
 - In practice, those structural modules are narrower than the compiler's already-small Markdown model.
 
 Representative shape examples:
 
-- `example-systems/rich-body-content/.als/modules/backlog/v1/shape.yaml`
-- `example-systems/rich-body-content/.als/modules/experiments/v2/shape.yaml`
+- `reference-system/.als/modules/backlog/v1/shape.yaml`
+- `reference-system/.als/modules/experiments/v2/shape.yaml`
 
 ## Status legend
 
@@ -224,5 +224,5 @@ That is also a valid outcome, but it should be made explicit.
 - Current shape-language docs:
   - `skills/docs/references/shape-language.md`
 - Current reference system shapes:
-  - `example-systems/rich-body-content/.als/modules/backlog/v1/shape.yaml`
-  - `example-systems/rich-body-content/.als/modules/experiments/v2/shape.yaml`
+  - `reference-system/.als/modules/backlog/v1/shape.yaml`
+  - `reference-system/.als/modules/experiments/v2/shape.yaml`

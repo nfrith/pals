@@ -9,7 +9,7 @@ All notable changes to ALS preview releases should be recorded here.
   - Delamain bundle loading, graph validation, and state-owned agent validation
   - implicit resumable `session-field` synthesis on effective entity schemas
 - Accepted and documented SDR 018 and SDR 020 as the current Delamain contract.
-- Merged the former `software-factory` example fixture into `example-systems/rich-body-content/`, which now carries the Delamain design and compiler reference surface.
+- Merged the former `software-factory` example fixture into `reference-system/`, which now carries the Delamain design and compiler reference surface.
 - Extended `alsc deploy claude` from skill-only projection to full Claude projection:
   - active skills still project to `.claude/skills/`
   - bound Delamain bundles now project to `.claude/delamains/`

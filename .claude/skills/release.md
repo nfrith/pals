@@ -34,7 +34,7 @@ Draft release notes that call out:
 Verify the plugin works end-to-end:
 
 1. Install the plugin fresh into a clean Claude Code session.
-2. Run `/validate` against a reference system in `example-systems/`.
+2. Run `/validate` against the canonical reference fixture in `reference-system/`.
 3. Run a deploy dry-run via the deploy skill.
 4. Edit a file inside an ALS system and confirm the PostToolUse hook fires validation.
 5. Confirm the Stop hook blocks if validation errors exist.

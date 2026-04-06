@@ -5,7 +5,7 @@ import { expectModuleDiagnostic, updateRecord, validateFixture, withFixtureSandb
 test.concurrent("ref fields must be markdown links", async () => {
   await withFixtureSandbox("refs-markdown-link", async ({ root }) => {
     await updateRecord(root, "workspace/backlog/items/ITEM-0001.md", (record) => {
-      record.data.owner_ref = "als://rich-body-content/people/person/PPL-000101";
+      record.data.owner_ref = "als://reference-system/people/person/PPL-000101";
     });
 
     const result = validateFixture(root);
@@ -41,7 +41,7 @@ test.concurrent("ref fields must target the declared system and module", async (
 test.concurrent("ref fields must target the declared entity", async () => {
   await withFixtureSandbox("refs-entity", async ({ root }) => {
     await updateRecord(root, "workspace/backlog/items/ITEM-0001.md", (record) => {
-      record.data.owner_ref = "[item](als://rich-body-content/backlog/item/ITEM-0001)";
+      record.data.owner_ref = "[item](als://reference-system/backlog/item/ITEM-0001)";
     });
 
     const result = validateFixture(root);
@@ -53,7 +53,7 @@ test.concurrent("ref fields must target the declared entity", async () => {
 test.concurrent("ref targets must resolve to existing records", async () => {
   await withFixtureSandbox("refs-unresolved", async ({ root }) => {
     await updateRecord(root, "workspace/backlog/items/ITEM-0001.md", (record) => {
-      record.data.owner_ref = "[ghost](als://rich-body-content/people/person/PPL-9999)";
+      record.data.owner_ref = "[ghost](als://reference-system/people/person/PPL-9999)";
     });
 
     const result = validateFixture(root);
@@ -66,8 +66,8 @@ test.concurrent("ref list items must resolve individually", async () => {
   await withFixtureSandbox("refs-list-item", async ({ root }) => {
     await updateRecord(root, "workspace/backlog/items/ITEM-0002.md", (record) => {
       record.data.collaborator_refs = [
-        "[alex-rivera](als://rich-body-content/people/person/PPL-000101)",
-        "[ghost](als://rich-body-content/people/person/PPL-9999)",
+        "[alex-rivera](als://reference-system/people/person/PPL-000101)",
+        "[ghost](als://reference-system/people/person/PPL-9999)",
       ];
     });
 
@@ -84,7 +84,7 @@ test.concurrent("child records must stay under the parent ref prefix", async () 
       "workspace/experiments/programs/PRG-0001/experiments/EXP-0001/runs/RUN-0001.md",
       (record) => {
         record.data.experiment_ref =
-          "[experiment-0002](als://rich-body-content/experiments/program/PRG-0002/experiment/EXP-0002)";
+          "[experiment-0002](als://reference-system/experiments/program/PRG-0002/experiment/EXP-0002)";
       },
     );
 

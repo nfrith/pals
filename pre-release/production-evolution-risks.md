@@ -153,7 +153,7 @@ The repo says skill/app management was removed from the initial v1 scope, but `s
 - `AGENTS.md`
 - `alsc/compiler/src/schema.ts`
 - `skills/docs/references/shape-language.md`
-- `example-systems/rich-body-content/README.md`
+- `reference-system/README.md`
 
 What hits you in prod:
 
