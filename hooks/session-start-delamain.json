@@ -1,0 +1,16 @@
+{
+  "description": "Detect offline Delamain dispatchers on session start and suggest starting them",
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash $CLAUDE_PLUGIN_ROOT/hooks/delamain-start.sh",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}

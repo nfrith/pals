@@ -26,6 +26,18 @@ If no breadcrumb file exists (session didn't touch ALS files), exits immediately
 
 Written for bash 3.2 compatibility (macOS default). No associative arrays.
 
+### delamain-start.sh (SessionStart)
+
+On session start, scans `.claude/delamains/` for dispatchers. Reports which are running and which are offline. Claude acts on the output to start offline dispatchers as background shells via `Bash(run_in_background: true)`.
+
+Silent when no delamains exist in the system.
+
+### delamain-stop.sh (SessionEnd)
+
+On session end, kills running delamain dispatchers and removes their heartbeat files (`status.json`). Skips cleanup when reason is `clear` or `resume` — dispatchers survive those transitions.
+
+Dispatchers live and die with their Claude session. On next session start, `delamain-start.sh` detects them as offline and suggests restarting.
+
 ## Requirements
 
 - Bun must be installed and on `$PATH`.

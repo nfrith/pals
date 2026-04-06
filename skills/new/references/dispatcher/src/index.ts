@@ -1,4 +1,5 @@
 import { existsSync } from "fs";
+import { writeFileSync, unlinkSync } from "fs";
 import { resolve as resolvePath, dirname, join } from "path";
 import { scan } from "./watcher.js";
 import { resolve, dispatch, type DispatchEntry } from "./dispatcher.js";
@@ -44,6 +45,44 @@ console.log(
 console.log(`[dispatcher] polling every ${POLL_MS}ms`);
 
 // -------------------------------------------------------------------
+// Heartbeat — write status to .claude/delamains/{name}/status.json
+// -------------------------------------------------------------------
+
+const STATUS_FILE = join(
+  SYSTEM_ROOT,
+  ".claude",
+  "delamains",
+  config.delamainName,
+  "status.json",
+);
+
+function writeHeartbeat(itemsScanned: number) {
+  try {
+    writeFileSync(
+      STATUS_FILE,
+      JSON.stringify({
+        name: config.delamainName,
+        pid: process.pid,
+        last_tick: new Date().toISOString(),
+        poll_ms: POLL_MS,
+        active_dispatches: active.size,
+        items_scanned: itemsScanned,
+      }) + "\n",
+    );
+  } catch {
+    // Non-fatal — statusline just won't see us
+  }
+}
+
+function clearHeartbeat() {
+  try {
+    unlinkSync(STATUS_FILE);
+  } catch {
+    // Already gone
+  }
+}
+
+// -------------------------------------------------------------------
 // Poll loop
 // -------------------------------------------------------------------
 
@@ -75,6 +114,8 @@ async function tick() {
       })
       .catch(() => active.delete(item.id));
   }
+
+  writeHeartbeat(items.length);
 }
 
 await tick();
@@ -82,6 +123,7 @@ const interval = setInterval(tick, POLL_MS);
 
 const stop = () => {
   clearInterval(interval);
+  clearHeartbeat();
   process.exit(0);
 };
 process.on("SIGINT", stop);

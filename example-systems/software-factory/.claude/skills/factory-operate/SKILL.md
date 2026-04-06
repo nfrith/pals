@@ -17,19 +17,23 @@ Before entering either mode, ensure the module's delamain dispatchers are runnin
 
 ### Delamain check
 
-1. Read `shape.yaml` for the active module version. Check if `delamains:` is declared.
-2. If no delamains, skip to mode selection.
-3. For each declared delamain, check if its dispatcher process is already running:
+1. Resolve the system root — the directory containing `.als/system.yaml`. Store the **absolute path**.
+2. Read `shape.yaml` for the active module version. Check if `delamains:` is declared.
+3. If no delamains, skip to mode selection.
+4. For each declared delamain, check if a heartbeat file exists and is fresh:
    ```bash
-   pgrep -f "delamains/{delamain-name}/dispatcher/src/index.ts"
+   cat {system-root}/.claude/delamains/{delamain-name}/status.json 2>/dev/null
    ```
-4. If a dispatcher is not running, start it in the background:
-   ```bash
-   cd {system-root}/.claude/delamains/{delamain-name}/dispatcher && bun install --silent 2>/dev/null && nohup bun run src/index.ts > /tmp/als-dispatcher-{delamain-name}.log 2>&1 &
+   If `status.json` exists and `last_tick` is within 2x `poll_ms`, the dispatcher is alive. Skip to the next delamain.
+5. If the dispatcher is not running, start it as a Claude background shell. Use the Bash tool with `run_in_background: true`. **Always use absolute paths**:
    ```
-5. Report to the operator: which dispatchers were already running, which were started.
+   Bash(command: "cd {system-root}/.claude/delamains/{delamain-name}/dispatcher && bun install --silent 2>/dev/null && bun run src/index.ts", run_in_background: true)
+   ```
+   Do NOT use `nohup` or `&`. The dispatcher runs as a Claude-managed background shell — visible as "N shell" in the statusline, inspectable via Shell details, and dies when Claude exits.
+   Wait 3 seconds, then verify `status.json` was written.
+6. Report to the operator: which dispatchers were already running, which were started.
 
-The dispatcher is a long-running poll loop. It auto-discovers the system root and dispatches agents for work items in agent-owned statuses. Starting it is fire-and-forget — the operator skill does not wait for dispatch results.
+The dispatcher is a long-running poll loop owned by the Claude session. It auto-discovers the system root and dispatches agents for work items in agent-owned statuses. It writes a heartbeat to `.claude/delamains/{name}/status.json` on each tick. When Claude exits, the dispatcher dies and the heartbeat goes stale — the next session's startup will restart it automatically.
 
 ## Modes
 

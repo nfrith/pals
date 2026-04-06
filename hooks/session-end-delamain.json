@@ -1,0 +1,16 @@
+{
+  "description": "Kill Delamain dispatchers and clean heartbeat files on real session exit (not clear/resume)",
+  "hooks": {
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash $CLAUDE_PLUGIN_ROOT/hooks/delamain-stop.sh",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}
