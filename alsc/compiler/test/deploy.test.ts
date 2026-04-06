@@ -229,8 +229,8 @@ test.concurrent("deploy CLI projects bound Delamain bundles into .claude/delamai
     };
     expect(firstOutput.schema).toBe("als-claude-deploy-output@2");
     expect(firstOutput.status).toBe("pass");
-    expect(firstOutput.planned_skill_count).toBe(0);
-    expect(firstOutput.written_skill_count).toBe(0);
+    expect(firstOutput.planned_skill_count).toBe(1);
+    expect(firstOutput.written_skill_count).toBe(1);
     expect(firstOutput.planned_delamain_count).toBe(1);
     expect(firstOutput.written_delamain_count).toBe(1);
     expect(firstOutput.existing_delamain_targets).toEqual([]);
@@ -284,7 +284,7 @@ test.concurrent("deploy CLI dry-run reports Delamain work without creating .clau
       planned_delamains: Array<Record<string, unknown>>;
     };
     expect(output.status).toBe("pass");
-    expect(output.planned_skill_count).toBe(0);
+    expect(output.planned_skill_count).toBe(1);
     expect(output.written_skill_count).toBe(0);
     expect(output.planned_delamain_count).toBe(1);
     expect(output.written_delamain_count).toBe(0);
@@ -333,6 +333,7 @@ test.concurrent("deploy CLI excludes unused Delamains that are only present in t
 
 test.concurrent("deploy CLI fails preflight when empty targets are required for Delamain projection", async () => {
   await withExampleSystemSandbox("software-factory", "deploy-delamain-collision", async ({ root }) => {
+    await rm(join(root, ".claude/skills"), { recursive: true, force: true });
     await mkdir(join(root, ".claude/delamains/development-pipeline"), { recursive: true });
     await writeFile(join(root, ".claude/delamains/development-pipeline/delamain.yaml"), "collision\n");
 
@@ -363,6 +364,7 @@ test.concurrent("deploy CLI fails preflight when empty targets are required for 
 test.concurrent("deploy CLI fails when flat Delamain names collide across modules", async () => {
   await withExampleSystemSandbox("software-factory", "deploy-delamain-name-conflict", async ({ root }) => {
     await cp(join(root, ".als/modules/factory"), join(root, ".als/modules/release"), { recursive: true });
+    await rm(join(root, ".als/modules/release/v1/skills"), { recursive: true, force: true });
     await cp(join(root, "workspace/factory"), join(root, "workspace/release"), { recursive: true });
     await updateSystemYaml(root, (system) => {
       const modules = system.modules as Record<string, unknown>;
