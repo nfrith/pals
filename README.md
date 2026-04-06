@@ -129,6 +129,18 @@ my-system/
 
 **Records** are markdown files with YAML frontmatter. The compiler validates them against the shape. Skills provide the interface for creating and modifying them.
 
+## Why ALS
+
+- **Single session.** You only ever need one Claude session open. ALS systems run inside the session you already have.
+- **Online-ready.** This means Claude Code online and cowork will work when they support full Claude primitives. No local-only lock-in.
+- **Future-proof.** ALS builds on Claude's native surface — skills, tools, markdown. Any future Anthropic product will support it. You never have to worry about upgrading.
+- **No third-party services.** You do not need to host, maintain, or pay for external agent infrastructure.
+- **Anthropic-grade security.** Infinitely more secure than any third-party agent provider because you use Anthropic's security boundary, not someone else's.
+- **Event-driven, token-efficient.** Agents run when work exists, not on a polling loop. No heartbeat, no daemon burning tokens in the background. The heartbeat is the operator. Always.
+- **Agents run inside the session.** Dispatched agents are background shell tasks inside your single Claude session. No separate processes, no orphaned daemons.
+- **Agent SDK — same guarantees.** Since agents are Claude Agent SDK sessions, they inherit the same security, updates, and future-proofing that comes with using Claude Code itself.
+- **Operator and agent are first-class citizens.** The language distinguishes operator-owned and agent-owned states. Both are formalized, not bolted on.
+
 ## Philosophy
 
 ALS applies the same two-layer architecture that classical software uses — but built on markdown files and agent skills instead of code and databases.
