@@ -7,6 +7,7 @@ This fixture is the active design sandbox for the forward-looking ALS v1 body co
 - The records here already exercise richer Markdown than the original happy-path fixture.
 - The module shapes here intentionally use a draft body schema based on SDR 006 and SDR 007.
 - The fixture now also carries the `observability` module that exercises mixed markdown and JSONL entities inside one ALS system.
+- The fixture also carries document-style `people`, `incident-response`, `operations`, `research`, `planning`, and `evals` modules so rich-body validation now lives in one host system.
 - The goal is to make the YAML surface easy to inspect and revise before compiler work begins.
 
 ## Draft Body Surface
@@ -27,6 +28,13 @@ The shapes in this fixture use:
 - `observability` keeps a markdown `dashboard` entity alongside a JSONL `metric-stream` entity.
 - The dashboard record links to the JSONL entity through a normal ALS ref, so this fixture now covers the current cross-format ref contract.
 - The rejected mixed-schema JSONL artifact remains checked in at `content/rejected/mixed-schema-stream.jsonl` so it stays outside the validated module tree.
+
+## Rich Document Coverage
+
+- The workspace-scoped modules now cover runbooks, incident reports, research syntheses, planning dossiers, eval specs, and supporting people records in the same merged fixture.
+- Together they pressure-test the current body contract through outline-structured incident reports, mostly freeform operational and research documents, quoted evidence, fenced code, and explicit GFM tables.
+- The `people` module primarily supplies realistic cross-module references while still validating clean inside the merged host.
+- The canonical source remains `.als/modules/...`; the checked-in `.claude/skills/` projection is a downstream artifact kept in sync with those module bundles.
 
 ## Intentional Choices In This Fixture
 
@@ -50,7 +58,7 @@ The shapes in this fixture use:
 - Each skill lives in its own directory with `SKILL.md` as the entrypoint.
 - The directory form is intentional: skills may later grow supporting files such as `references/`, `assets/`, `scripts/`, or archived notes without changing the top-level module contract.
 - Harness folders like `.claude/` are treated as downstream projections, not the canonical source of module skills.
-- This fixture now checks in the downstream Claude projection under `.claude/skills/`.
+- This fixture now checks in the downstream Claude projection under `.claude/skills/` for both the original host modules and the imported workspace-scoped modules.
 
 ## Module v2 Paint
 

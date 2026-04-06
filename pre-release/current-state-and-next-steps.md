@@ -59,8 +59,7 @@ It replaces the earlier pre-release framing that only covered the first round of
   - the compiler test suite covers these rules
 - The fixture state is stronger than the earlier note reflected:
   - `centralized-metadata-happy-path` validates clean
-  - `rich-body-content` validates clean
-  - `rich-body-design-reference` validates clean
+  - `rich-body-content` validates clean, including the imported rich-body document modules
 - Repo cleanup that changes the practical current state has also landed:
   - the deprecated v0 tree is gone
   - the repo was flattened by removing the old `v1/` directory nesting

@@ -644,7 +644,7 @@ test.concurrent("variant-local ref fields must also have declared dependencies",
 });
 
 test.concurrent("table blocks must use a supported syntax", async () => {
-  await withExampleSystemSandbox("rich-body-design-reference", "shape-table-syntax", async ({ root }) => {
+  await withExampleSystemSandbox("rich-body-content", "shape-table-syntax", async ({ root }) => {
     await updateShapeYaml(root, "research", 1, (shape) => {
       const entities = shape.entities as Record<string, Record<string, unknown>>;
       const synthesis = entities.synthesis;
@@ -663,7 +663,7 @@ test.concurrent("table blocks must use a supported syntax", async () => {
 });
 
 test.concurrent("table blocks must declare syntax explicitly", async () => {
-  await withExampleSystemSandbox("rich-body-design-reference", "shape-table-missing-syntax", async ({ root }) => {
+  await withExampleSystemSandbox("rich-body-content", "shape-table-missing-syntax", async ({ root }) => {
     await updateShapeYaml(root, "planning", 1, (shape) => {
       const entities = shape.entities as Record<string, Record<string, unknown>>;
       const dossier = entities.dossier;

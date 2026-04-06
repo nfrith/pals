@@ -7,6 +7,42 @@ modules:
     version: 1
     skills: []
 
+  people:
+    path: workspace/people
+    version: 1
+    skills:
+      - people-module
+
+  incident-response:
+    path: workspace/incident-response
+    version: 1
+    skills:
+      - incident-response-module
+
+  operations:
+    path: workspace/operations
+    version: 1
+    skills:
+      - operations-module
+
+  research:
+    path: workspace/research
+    version: 1
+    skills:
+      - research-module
+
+  planning:
+    path: workspace/planning
+    version: 1
+    skills:
+      - planning-module
+
+  evals:
+    path: workspace/evals
+    version: 1
+    skills:
+      - evals-module
+
   playbooks:
     path: operations/playbooks
     version: 1

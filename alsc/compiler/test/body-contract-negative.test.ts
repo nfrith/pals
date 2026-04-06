@@ -478,7 +478,7 @@ test.concurrent("malformed pipe text is not treated as a table", async () => {
 });
 
 test.concurrent("tables are rejected inside outline nodes that do not declare table support", async () => {
-  await withExampleSystemSandbox("rich-body-design-reference", "body-outline-table-forbidden", async ({ root }) => {
+  await withExampleSystemSandbox("rich-body-content", "body-outline-table-forbidden", async ({ root }) => {
     await updateRecord(root, incidentPath, (record) => {
       record.content = record.content.replace(
         "### Affected Flows\n\n- Incident-recovery agents handling multi-step retries\n- Escalation planners that depend on the latest safety policy manifest\n",
@@ -592,7 +592,7 @@ test.concurrent("list max_items violations are rejected", async () => {
 });
 
 test.concurrent("heading depth violations are rejected", async () => {
-  await withExampleSystemSandbox("rich-body-design-reference", "body-heading-depth", async ({ root }) => {
+  await withExampleSystemSandbox("rich-body-content", "body-heading-depth", async ({ root }) => {
     await updateRecord(root, incidentPath, (record) => {
       record.content = record.content.replace("#### Cache Shard 07", "### Cache Shard 07");
     });
@@ -604,7 +604,7 @@ test.concurrent("heading depth violations are rejected", async () => {
 });
 
 test.concurrent("code blocks that omit languages are rejected when require_language is true", async () => {
-  await withExampleSystemSandbox("rich-body-design-reference", "body-require-language", async ({ root }) => {
+  await withExampleSystemSandbox("rich-body-content", "body-require-language", async ({ root }) => {
     await updateRecord(root, incidentPath, (record) => {
       record.content = record.content.replace("```yaml", "```");
     });
@@ -616,7 +616,7 @@ test.concurrent("code blocks that omit languages are rejected when require_langu
 });
 
 test.concurrent("missing required outline nodes are rejected", async () => {
-  await withExampleSystemSandbox("rich-body-design-reference", "body-outline-missing-node", async ({ root }) => {
+  await withExampleSystemSandbox("rich-body-content", "body-outline-missing-node", async ({ root }) => {
     await updateRecord(root, incidentPath, (record) => {
       record.content = record.content.replace(
         /\n### Recovery Lead Notes\n\n> If the cached policy version and the prompt contract disagree, treat the cache as advisory, not authoritative\.\n/s,
@@ -631,7 +631,7 @@ test.concurrent("missing required outline nodes are rejected", async () => {
 });
 
 test.concurrent("undeclared outline preamble content is rejected", async () => {
-  await withExampleSystemSandbox("rich-body-design-reference", "body-outline-undeclared-preamble", async ({ root }) => {
+  await withExampleSystemSandbox("rich-body-content", "body-outline-undeclared-preamble", async ({ root }) => {
     await updateRecord(root, incidentPath, (record) => {
       record.content = record.content.replace(
         "## IMPACT\n\n",
