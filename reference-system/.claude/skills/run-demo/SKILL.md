@@ -55,6 +55,6 @@ Tell the operator:
 ## Notes
 
 - Demo items are real ALS records — they flow through the full state machine identically to production items.
-- The traffic generator uses haiku model with a $0.05 budget cap per seed to keep costs minimal.
+- The traffic generator uses sonnet model with a $1.00 budget cap per seed (assumes subscription usage).
 - To watch the demo in action, open the module operator console in another pane.
 - The generator logs each seed to stdout: `[run-demo] #N seeding module/delamain: "title"`

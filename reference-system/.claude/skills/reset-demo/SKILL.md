@@ -11,15 +11,18 @@ Reset the reference-system back to its natural resting state — as if `/run-dem
 
 ## What it undoes
 
-- **Fabricated items** created by the run-demo traffic generator are deleted
-- **Modified records** that dispatchers acted on are restored to their committed state
-- **Dispatcher status files** are cleaned up
+- **All demo processes** — dispatchers, traffic generator, and their Agent SDK child processes
+- **Fabricated items** created by the traffic generator
+- **Modified records** that dispatchers advanced through state machines
+- **Dispatcher status files**
 
 ## Procedure
 
-### 1. Stop dispatchers
+### 1. Kill all demo processes
 
-Kill any running delamain dispatchers so they don't interfere with the reset:
+Demo processes form a tree: the traffic generator spawns Agent SDK subprocesses, and dispatchers do the same. Killing the parent PID alone does NOT cascade to these children — they become orphans and keep writing items. Kill the full tree.
+
+**a) Kill dispatcher parents via status files:**
 
 ```bash
 for sf in {system-root}/.claude/delamains/*/status.json; do
@@ -27,11 +30,31 @@ for sf in {system-root}/.claude/delamains/*/status.json; do
 done
 ```
 
-If no status.json files exist, dispatchers are already stopped.
+**b) Kill the traffic generator and all Agent SDK orphans:**
+
+```bash
+pkill -f "run-demo/dispatcher.*index\.ts" 2>/dev/null
+pkill -f "claude-agent-sdk/cli\.js.*run-demo" 2>/dev/null
+```
+
+**c) Kill any delamain dispatcher processes that outlived their status files:**
+
+```bash
+pkill -f "delamains/.*/dispatcher.*index\.ts" 2>/dev/null
+pkill -f "claude-agent-sdk/cli\.js.*delamains" 2>/dev/null
+```
+
+**d) Wait and verify nothing survives:**
+
+```bash
+sleep 2 && ps aux | grep -E "(run-demo|delamains.*dispatcher)" | grep -v grep
+```
+
+If any processes remain, kill them by PID directly.
 
 ### 2. Remove fabricated items
 
-The run-demo traffic generator creates new `.md` files in module data directories. These are untracked by git. Remove them:
+The traffic generator creates new `.md` files in module data directories. These are untracked by git. Remove them:
 
 ```bash
 cd {system-root} && git clean -f \
@@ -57,25 +80,17 @@ cd {system-root} && git checkout -- \
   infra/
 ```
 
-### 4. Clean up dispatcher artifacts
-
-Remove any leftover status files and runtime manifests that aren't gitignored:
-
-```bash
-rm -f {system-root}/.claude/delamains/*/status.json
-```
-
-### 5. Report
+### 4. Report
 
 Tell the operator:
+- How many processes were killed
 - How many fabricated items were removed (count from `git clean` output)
-- How many records were restored (count from `git checkout` output)
-- That dispatchers were stopped
-- The reference-system is ready for a fresh `/run-demo`
+- That the reference-system is ready for a fresh `/run-demo`
 
 ## Notes
 
 - This skill is safe to run multiple times — it is idempotent.
 - It does NOT modify `.als/` module definitions, shapes, or delamain bundles.
+- It does NOT modify anything under `.claude/` (skills, dispatcher code, config).
 - It does NOT uninstall `node_modules/` in dispatcher directories.
 - After reset, run `/run-demo` to start a fresh demo cycle.

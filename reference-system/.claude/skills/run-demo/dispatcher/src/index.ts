@@ -181,7 +181,7 @@ Date: ${today()}
         env: sdkEnv,
         permissionMode: "acceptEdits",
         maxTurns: 10,
-        maxBudgetUsd: 0.10,
+        maxBudgetUsd: 1.00,
       },
     })) {
       if (message.type === "result") {
