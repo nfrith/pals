@@ -18,7 +18,6 @@ function findSystemRoot(start: string): string {
 }
 
 const SYSTEM_ROOT = findSystemRoot(import.meta.dir);
-const INTERVAL_MS = 5_000;
 
 // -------------------------------------------------------------------
 // Delamain discovery — crawl system.yaml → shape.yaml → delamain.yaml
@@ -114,6 +113,10 @@ async function discoverDelamains(): Promise<DelamainTarget[]> {
 // Demo item variety — random titles and field values for realism
 // -------------------------------------------------------------------
 
+function pickRandom<T>(arr: T[]): T {
+  return arr[Math.floor(Math.random() * arr.length)]!;
+}
+
 const DEMO_TITLES = [
   "Add retry logic to webhook delivery",
   "Fix race condition in batch processor",
@@ -131,10 +134,6 @@ const DEMO_TITLES = [
   "Migrate database queries to prepared statements",
   "Fix pagination cursor drift on concurrent writes",
 ];
-
-function pickRandom<T>(arr: T[]): T {
-  return arr[Math.floor(Math.random() * arr.length)]!;
-}
 
 // -------------------------------------------------------------------
 // Seed one item via Agent SDK
@@ -201,7 +200,7 @@ Date: ${today()}
 }
 
 // -------------------------------------------------------------------
-// Main loop — seed a random delamain every 5 seconds
+// Main loop — one parallel seeder per delamain, all running concurrently
 // -------------------------------------------------------------------
 
 const targets = await discoverDelamains();
@@ -211,21 +210,23 @@ if (targets.length === 0) {
   process.exit(1);
 }
 
-console.log(`[run-demo] discovered ${targets.length} delamain(s): ${targets.map(t => `${t.moduleId}/${t.delamainName}`).join(", ")}`);
-console.log(`[run-demo] seeding a random item every ${INTERVAL_MS / 1000}s — Ctrl+C to stop`);
-
-// Fire one immediately
-await seedItem(pickRandom(targets));
-
-// Then loop
-const interval = setInterval(async () => {
-  await seedItem(pickRandom(targets));
-}, INTERVAL_MS);
-
+let running = true;
 const stop = () => {
-  clearInterval(interval);
+  running = false;
   console.log(`[run-demo] stopped after ${seedCount} items`);
   process.exit(0);
 };
 process.on("SIGINT", stop);
 process.on("SIGTERM", stop);
+
+console.log(`[run-demo] discovered ${targets.length} delamain(s): ${targets.map(t => `${t.moduleId}/${t.delamainName}`).join(", ")}`);
+console.log(`[run-demo] starting ${targets.length} parallel seeders — Ctrl+C to stop`);
+
+// One seeder per delamain, all running concurrently
+async function seederLoop(target: DelamainTarget) {
+  while (running) {
+    await seedItem(target);
+  }
+}
+
+await Promise.all(targets.map(t => seederLoop(t)));

@@ -12,6 +12,7 @@ Reset the reference-system back to its natural resting state — as if `/run-dem
 ## What it undoes
 
 - **All demo processes** — dispatchers, traffic generator, and their Agent SDK child processes
+- **Demo-mode agent overrides** injected by `/run-demo`
 - **Fabricated items** created by the traffic generator
 - **Modified records** that dispatchers advanced through state machines
 - **Dispatcher status files**
@@ -20,37 +21,29 @@ Reset the reference-system back to its natural resting state — as if `/run-dem
 
 ### 1. Kill all demo processes
 
-Demo processes form a tree: the traffic generator spawns Agent SDK subprocesses, and dispatchers do the same. Killing the parent PID alone does NOT cascade to these children — they become orphans and keep writing items. Kill the full tree.
+Demo processes form a tree: parent processes (`bun run src/index.ts`) spawn Agent SDK child processes (`claude-agent-sdk/cli.js`). Killing a parent does NOT kill its children — they become orphans that keep running and writing items. You must kill both layers.
 
-**a) Kill dispatcher parents via status files:**
+Run this single command to kill everything:
 
 ```bash
+# Kill Agent SDK children first (they're doing the actual writes)
+ps aux | grep "claude-agent-sdk/cli.js" | grep -v grep | awk '{print $2}' | xargs kill -9 2>/dev/null
+# Kill dispatcher and traffic generator parents
 for sf in {system-root}/.claude/delamains/*/status.json; do
-  [ -f "$sf" ] && pid=$(jq -r .pid "$sf") && kill "$pid" 2>/dev/null && rm -f "$sf"
+  [ -f "$sf" ] && pid=$(jq -r .pid "$sf") && kill -9 "$pid" 2>/dev/null && rm -f "$sf"
 done
+ps aux | grep "bun run src/index.ts" | grep -v grep | awk '{print $2}' | xargs kill -9 2>/dev/null
+# Wait and verify
+sleep 2
 ```
 
-**b) Kill the traffic generator and all Agent SDK orphans:**
+After the wait, verify nothing survives:
 
 ```bash
-pkill -f "run-demo/dispatcher.*index\.ts" 2>/dev/null
-pkill -f "claude-agent-sdk/cli\.js.*run-demo" 2>/dev/null
+ps aux | grep -E "(claude-agent-sdk/cli.js|bun run src/index.ts)" | grep -v grep
 ```
 
-**c) Kill any delamain dispatcher processes that outlived their status files:**
-
-```bash
-pkill -f "delamains/.*/dispatcher.*index\.ts" 2>/dev/null
-pkill -f "claude-agent-sdk/cli\.js.*delamains" 2>/dev/null
-```
-
-**d) Wait and verify nothing survives:**
-
-```bash
-sleep 2 && ps aux | grep -E "(run-demo|delamains.*dispatcher)" | grep -v grep
-```
-
-If any processes remain, kill them by PID directly.
+If any processes remain, kill them by PID with `kill -9`.
 
 ### 2. Remove fabricated items
 
@@ -67,12 +60,14 @@ cd {system-root} && git clean -f \
 
 This only deletes untracked files (fabricated items). Committed files are untouched.
 
-### 3. Restore modified records
+### 3. Restore modified records and agent files
 
-Dispatchers may have advanced existing records to different states. Restore them to their committed versions:
+Dispatchers may have advanced existing records to different states, and `/run-demo` injects demo-mode overrides into agent files. Restore everything to committed versions:
 
 ```bash
 cd {system-root} && git checkout -- \
+  .claude/delamains/*/agents/ \
+  .claude/delamains/*/sub-agents/ \
   workspace/factory/items/ \
   workspace/incident-response/reports/ \
   workspace/experiments/ \
@@ -91,6 +86,7 @@ Tell the operator:
 
 - This skill is safe to run multiple times — it is idempotent.
 - It does NOT modify `.als/` module definitions, shapes, or delamain bundles.
-- It does NOT modify anything under `.claude/` (skills, dispatcher code, config).
+- It DOES restore `.claude/delamains/*/agents/` and `sub-agents/` to undo demo-mode injection.
+- It does NOT modify `.claude/` skills, dispatcher code, or config.
 - It does NOT uninstall `node_modules/` in dispatcher directories.
 - After reset, run `/run-demo` to start a fresh demo cycle.
