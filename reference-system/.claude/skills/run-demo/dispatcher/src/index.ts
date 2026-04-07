@@ -27,6 +27,7 @@ interface DelamainTarget {
   moduleId: string;
   delamainName: string;
   shapeFile: string;
+  shapeContent: string;
   itemsDir: string;
   idPrefix: string;
   initialAgentState: string;
@@ -43,8 +44,10 @@ async function discoverDelamains(): Promise<DelamainTarget[]> {
     const mDir = join(SYSTEM_ROOT, ".als", "modules", moduleId, `v${mod.version}`);
 
     let shape: any;
+    let shapeRaw: string;
     try {
-      shape = parseYaml(await readFile(join(mDir, "shape.yaml"), "utf-8"));
+      shapeRaw = await readFile(join(mDir, "shape.yaml"), "utf-8");
+      shape = parseYaml(shapeRaw);
     } catch {
       continue;
     }
@@ -99,6 +102,7 @@ async function discoverDelamains(): Promise<DelamainTarget[]> {
         moduleId,
         delamainName,
         shapeFile: join(mDir, "shape.yaml"),
+        shapeContent: shapeRaw,
         itemsDir,
         idPrefix,
         initialAgentState,
@@ -151,7 +155,13 @@ async function seedItem(target: DelamainTarget): Promise<void> {
 
   const prompt = `Create a demo work item for the ${target.moduleId} module.
 
-Read the shape file at ${target.shapeFile} to understand the entity schema — fields, types, allowed values, sections, everything. Then create a valid record.
+## Shape schema
+
+\`\`\`yaml
+${target.shapeContent}
+\`\`\`
+
+## Instructions
 
 Items directory: ${target.itemsDir}
 ID prefix: ${target.idPrefix}
@@ -159,14 +169,13 @@ Title: "${title}"
 Status: ${target.initialAgentState}
 Date: ${today()}
 
-1. Read shape.yaml to learn all required fields, enum values, and sections.
-2. Scan ${target.itemsDir} for existing items, find the highest ID number, increment by 1.
-3. Write a complete valid record to ${target.itemsDir}/${target.idPrefix}-{NNN}.md.
-4. Use realistic demo values for required fields. Set nullable fields to null.
-5. DESCRIPTION: "Demo item seeded by /run-demo: ${title}"
-6. ACTIVITY_LOG: "- ${today()}: Created by run-demo."
-7. After writing the file, run the ALS compiler to validate it: find the compiler at alsc/compiler/src/index.ts (search parent directories of ${SYSTEM_ROOT} for the alsc/ directory), then run \`bun <compiler-path> ${SYSTEM_ROOT} ${target.moduleId}\`. If validation fails, fix the errors and re-validate.
-8. Print the file path when done.`;
+1. Scan ${target.itemsDir} for existing items, find the highest ID number, increment by 1.
+2. Write a complete valid record to ${target.itemsDir}/${target.idPrefix}-{NNN}.md.
+3. Use realistic demo values for required fields. Set nullable fields to null.
+4. DESCRIPTION: "Demo item seeded by /run-demo: ${title}"
+5. ACTIVITY_LOG: "- ${today()}: Created by run-demo."
+6. After writing the file, run the ALS compiler to validate it: find the compiler at alsc/compiler/src/index.ts (search parent directories of ${SYSTEM_ROOT} for the alsc/ directory), then run \`bun <compiler-path> ${SYSTEM_ROOT} ${target.moduleId}\`. If validation fails, fix the errors and re-validate.
+7. Print the file path when done.`;
 
   console.log(`[run-demo] #${seedCount} seeding ${target.moduleId}/${target.delamainName}: "${title}"`);
 
