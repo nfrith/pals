@@ -9,7 +9,7 @@
 
 set -euo pipefail
 
-SYSTEM_ROOT="$(cd "$(dirname "$0")/../../.." && pwd)"
+SYSTEM_ROOT="${ALS_SYSTEM_ROOT:-$(cd "$(dirname "$0")/../../reference-system" && pwd)}"
 DELAMAINS_DIR="$SYSTEM_ROOT/.claude/delamains"
 
 DEMO_BODY='Run `sleep 5` via Bash, then read the item file. Pick the `advance` transition from legal_transitions in your Runtime Context. Update the status field to its target, set `updated` to today'\''s date, and append an ACTIVITY_LOG entry. That is all.'

@@ -9,12 +9,13 @@ import { query } from "@anthropic-ai/claude-agent-sdk";
 // -------------------------------------------------------------------
 
 function findSystemRoot(start: string): string {
+  if (process.env.ALS_SYSTEM_ROOT) return process.env.ALS_SYSTEM_ROOT;
   let dir = start;
   while (dir !== dirname(dir)) {
     if (existsSync(join(dir, ".als", "system.yaml"))) return dir;
     dir = dirname(dir);
   }
-  throw new Error("No .als/system.yaml found in parent directories");
+  throw new Error("No .als/system.yaml found in parent directories — set ALS_SYSTEM_ROOT");
 }
 
 const SYSTEM_ROOT = findSystemRoot(import.meta.dir);

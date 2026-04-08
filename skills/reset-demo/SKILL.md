@@ -29,7 +29,7 @@ Run this single command to kill everything:
 # Kill Agent SDK children first (they're doing the actual writes)
 ps aux | grep "claude-agent-sdk/cli.js" | grep -v grep | awk '{print $2}' | xargs kill -9 2>/dev/null
 # Kill dispatcher and traffic generator parents
-for sf in {system-root}/.claude/delamains/*/status.json; do
+for sf in {skill-dir}/../../reference-system/.claude/delamains/*/status.json; do
   [ -f "$sf" ] && pid=$(jq -r .pid "$sf") && kill -9 "$pid" 2>/dev/null && rm -f "$sf"
 done
 ps aux | grep "bun run src/index.ts" | grep -v grep | awk '{print $2}' | xargs kill -9 2>/dev/null
@@ -50,7 +50,7 @@ If any processes remain, kill them by PID with `kill -9`.
 The traffic generator creates new `.md` files in module data directories. These are untracked by git. Remove them:
 
 ```bash
-cd {system-root} && git clean -f \
+cd {skill-dir}/../../reference-system && git clean -f \
   workspace/factory/items/ \
   workspace/incident-response/reports/ \
   workspace/experiments/ \
@@ -65,7 +65,7 @@ This only deletes untracked files (fabricated items). Committed files are untouc
 Dispatchers may have advanced existing records to different states, and `/run-demo` injects demo-mode overrides into agent files. Restore everything to committed versions:
 
 ```bash
-cd {system-root} && git checkout -- \
+cd {skill-dir}/../../reference-system && git checkout -- \
   .claude/delamains/*/agents/ \
   .claude/delamains/*/sub-agents/ \
   workspace/factory/items/ \
