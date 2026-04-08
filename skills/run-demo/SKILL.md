@@ -57,6 +57,14 @@ Run the injection script to add demo-mode instructions to all delamain agent fil
 Bash(command: "ALS_SYSTEM_ROOT={skill-dir}/../../reference-system bash {skill-dir}/inject-demo-mode.sh")
 ```
 
+### 3.5. Pre-warm statusline cache (Option A — tech debt)
+
+The statusline's first render after delamain-roots registration requires a cold-cache delamain scan. If background shells launch before this completes, Claude Code's 300ms debounce cancels the script and disables the statusline for the session. Pre-warming populates all caches so the hot path is instant during the shell launch burst.
+
+```
+Bash(command: "echo '{\"workspace\":{\"current_dir\":\"'$(pwd)'\"},\"model\":{\"display_name\":\"warm\"},\"context_window\":{\"used_percentage\":0}}' | bash .claude/scripts/statusline.sh > /dev/null 2>&1 && echo 'statusline cache warmed'")
+```
+
 ### 4. Start the traffic generators
 
 Start one background shell per delamain — true process-level parallelism. The traffic generator accepts a `module/delamain` argument to filter to a single delamain.
