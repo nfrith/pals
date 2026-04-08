@@ -49,7 +49,7 @@ Run the injection script to add demo-mode instructions to all delamain agent fil
 Bash(command: "ALS_SYSTEM_ROOT={skill-dir}/../../reference-system bash {skill-dir}/inject-demo-mode.sh")
 ```
 
-### 2. Start the traffic generators
+### 3. Start the traffic generators
 
 Start one background shell per delamain — true process-level parallelism. The traffic generator accepts a `module/delamain` argument to filter to a single delamain.
 
@@ -71,9 +71,9 @@ Bash(command: "cd {skill-dir}/dispatcher && ALS_SYSTEM_ROOT={skill-dir}/../../re
 
 Wait ~5 seconds for the generators to start, then proceed.
 
-### 3. Start dispatchers
+### 4. Start dispatchers
 
-Invoke the `als:run-delamains` skill to start all dispatchers:
+Invoke the `als:run-delamains` skill to start all dispatchers. **Important:** after the skill loads, ensure it ONLY starts dispatchers from the reference-system (`{skill-dir}/../../reference-system`). The operator may have their own ALS system in the current directory — the demo must not touch it. Only reference-system delamains should be started.
 
 ```
 Skill(skill: "als:run-delamains")
@@ -81,7 +81,7 @@ Skill(skill: "als:run-delamains")
 
 Every dispatcher will find items waiting on its first scan.
 
-### 4. Report
+### 5. Report
 
 Tell the operator:
 - How many delamains were discovered
