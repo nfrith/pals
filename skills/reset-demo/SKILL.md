@@ -76,7 +76,15 @@ cd {skill-dir}/../../reference-system && git checkout -- \
   infra/
 ```
 
-### 4. Restore statusline
+### 4. Remove delamain roots
+
+Remove the reference-system entry from `.claude/delamain-roots`:
+
+```bash
+rm -f .claude/delamain-roots
+```
+
+### 5. Restore statusline
 
 If `/run-demo` installed the ALS statusline, restore the operator's original. Look for the backup file:
 
@@ -97,7 +105,7 @@ fi
 
 Also remove the `statusLine` key from `.claude/settings.json` if the operator had no statusline before (no backup found). Read the file, remove the key, write it back.
 
-### 5. Report
+### 6. Report
 
 Tell the operator:
 - How many processes were killed

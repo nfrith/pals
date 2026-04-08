@@ -46,19 +46,31 @@ fi
 # Delamain health badges — discover all, wrap across lines to fit terminal
 # ---------------------------------------------------------------------------
 
+# Collect delamain directories to scan:
+# 1. Walk up from cwd to find .claude/delamains (project-level)
+# 2. Read .claude/delamain-roots for additional paths (e.g., run-demo)
+delamain_dirs=()
+
 sys_root="$cwd"
 while [[ "$sys_root" != "/" ]]; do
-    [[ -d "$sys_root/.claude/delamains" ]] && break
+    [[ -d "$sys_root/.claude/delamains" ]] && delamain_dirs+=("$sys_root/.claude/delamains") && break
     sys_root=$(dirname "$sys_root")
 done
+
+roots_file="$cwd/.claude/delamain-roots"
+if [[ -f "$roots_file" ]]; then
+    while IFS= read -r extra_root; do
+        [[ -n "$extra_root" && -d "$extra_root/.claude/delamains" ]] && delamain_dirs+=("$extra_root/.claude/delamains")
+    done < "$roots_file"
+fi
 
 # Collect badge data: parallel arrays for rendered badge and visible width
 badge_rendered=()
 badge_width=()
 delamain_count=0
 
-if [[ -d "$sys_root/.claude/delamains" ]]; then
-    for dy in "$sys_root"/.claude/delamains/*/delamain.yaml; do
+for delamains_path in "${delamain_dirs[@]}"; do
+    for dy in "$delamains_path"/*/delamain.yaml; do
         [[ -f "$dy" ]] || continue
         d_dir=$(dirname "$dy")
         d_name=$(basename "$d_dir")
@@ -91,7 +103,7 @@ if [[ -d "$sys_root/.claude/delamains" ]]; then
         badge_rendered+=("$rendered")
         badge_width+=("$visible_w")
     done
-fi
+done
 
 # ---------------------------------------------------------------------------
 # Build output — each echo = separate row in Claude Code statusline
