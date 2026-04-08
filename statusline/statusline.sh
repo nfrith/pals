@@ -14,6 +14,17 @@
 # See CLAUDE.md in this directory for full documentation of the
 # statusline system, known issues, and sources.
 
+# ---------------------------------------------------------------------------
+# TECH DEBT: Signal traps — always exit 0
+#
+# When Claude Code's debounce cancels this script (SIGTERM), bash exits with
+# code 143 (128 + 15). Claude Code treats non-zero exit as a failure and
+# DISABLES the statusline for the entire session. By trapping TERM/INT/PIPE
+# and exiting 0, we prevent Claude Code from ever seeing a failure.
+# ---------------------------------------------------------------------------
+trap 'exit 0' TERM INT PIPE
+set +e
+
 input=$(cat)
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 CACHE_DIR="$SCRIPT_DIR/.cache"
