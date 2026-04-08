@@ -61,6 +61,15 @@ First, install dependencies:
 Bash(command: "cd {skill-dir}/dispatcher && bun install --silent 2>/dev/null")
 ```
 
+**Pre-warm the statusline cache before generator burst (TECH DEBT — see statusline CLAUDE.md):**
+The statusline render cache may be stale (>30s since session start). Pre-warm it RIGHT before
+launching shells so rapid-fire invocations during the burst hit the cached path (~12ms) instead
+of the cold scan (~73ms). This must run immediately before the background shell launches.
+
+```
+Bash(command: "echo '{\"workspace\":{\"current_dir\":\"'$(pwd)'\"},\"model\":{\"display_name\":\"warm\"},\"context_window\":{\"used_percentage\":0}}' | bash .claude/scripts/statusline.sh > /dev/null 2>&1 && echo 'cache warmed (pre-generators)'")
+```
+
 Then start all 5 generators in parallel (one `Bash(run_in_background: true)` call per delamain, all in a single message):
 
 ```
@@ -71,7 +80,16 @@ Bash(command: "cd {skill-dir}/dispatcher && ALS_SYSTEM_ROOT={skill-dir}/../../re
 Bash(command: "cd {skill-dir}/dispatcher && ALS_SYSTEM_ROOT={skill-dir}/../../reference-system bun run src/index.ts infra/release-lifecycle", run_in_background: true)
 ```
 
-Wait ~5 seconds for the generators to seed initial items. Then start all 5 dispatchers in parallel from the reference-system ONLY (not Ghost's own delamains):
+Wait ~5 seconds for the generators to seed initial items.
+
+**Pre-warm again before dispatcher burst:**
+The 5 generator launches took ~5-10s. Pre-warm again to reset the 30s cache window before the next burst.
+
+```
+Bash(command: "echo '{\"workspace\":{\"current_dir\":\"'$(pwd)'\"},\"model\":{\"display_name\":\"warm\"},\"context_window\":{\"used_percentage\":0}}' | bash .claude/scripts/statusline.sh > /dev/null 2>&1 && echo 'cache warmed (pre-dispatchers)'")
+```
+
+Then start all 5 dispatchers in parallel from the reference-system ONLY (not Ghost's own delamains):
 
 ```
 Bash(command: "cd {skill-dir}/../../reference-system/.claude/delamains/development-pipeline/dispatcher && bun install --silent 2>/dev/null && bun run src/index.ts", run_in_background: true)

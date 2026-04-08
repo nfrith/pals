@@ -14,21 +14,31 @@
 # See CLAUDE.md in this directory for full documentation of the
 # statusline system, known issues, and sources.
 
-# ---------------------------------------------------------------------------
-# TECH DEBT: Signal traps — always exit 0
-#
-# When Claude Code's debounce cancels this script (SIGTERM), bash exits with
-# code 143 (128 + 15). Claude Code treats non-zero exit as a failure and
-# DISABLES the statusline for the entire session. By trapping TERM/INT/PIPE
-# and exiting 0, we prevent Claude Code from ever seeing a failure.
-# ---------------------------------------------------------------------------
-trap 'exit 0' TERM INT PIPE
 set +e
-
-input=$(cat)
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 CACHE_DIR="$SCRIPT_DIR/.cache"
 [[ -d "$CACHE_DIR" ]] || mkdir -p "$CACHE_DIR"
+
+# ---------------------------------------------------------------------------
+# TECH DEBT: Signal traps — always exit 0 with cached output
+#
+# When Claude Code debounces, it cancels the in-flight script (SIGTERM).
+# Bash exits 143 and Claude Code DISABLES the statusline for the session.
+#
+# Fix: trap signals, replay the last cached render (so Claude Code sees
+# real output not empty stdout), then exit 0.
+#
+# If SIGKILL is used (untraceable), this won't help — the render cache
+# + pre-warm approach in run-demo is the fallback defense for that case.
+# ---------------------------------------------------------------------------
+_on_signal() {
+  local rc="$CACHE_DIR/last-render"
+  [[ -f "$rc" ]] && cat "$rc"
+  exit 0
+}
+trap '_on_signal' TERM INT PIPE
+
+input=$(cat)
 
 # ---------------------------------------------------------------------------
 # TECH DEBT: Rapid-fire render guard (Option B)
