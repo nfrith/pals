@@ -16,7 +16,7 @@ branch=$(cd "$cwd" 2>/dev/null && git --git-dir="$(git rev-parse --git-dir 2>/de
 
 # Detect terminal width — stty hack reads from /dev/tty since Claude pipes stdin
 term_width=80
-if tw=$(stty size < /dev/tty 2>/dev/null | awk '{print $2}') && [[ -n "$tw" ]] && (( tw > 0 )); then
+if tw=$( (stty size < /dev/tty) 2>/dev/null | awk '{print $2}') && [[ -n "$tw" ]] && (( tw > 0 )); then
     term_width=$tw
 fi
 # Reserve space for right-side notifications (MCP errors, "Approaching limit", etc.)
