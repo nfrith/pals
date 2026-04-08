@@ -84,7 +84,11 @@ fi
 # Clean remaining backups
 rm -f "$PROJECT/.claude/scripts/statusline.sh.backup-"* 2>/dev/null
 
-# --- 6. Clean demo logs ---
+# --- 6. Clear statusline badge cache ---
+rm -f "$PROJECT/.claude/scripts/.cache/badges" "$PROJECT/.claude/scripts/.cache/badges-w" "$PROJECT/.claude/scripts/.cache/obs-state" 2>/dev/null
+echo "[reset-demo] cleared badge cache"
+
+# --- 7. Clean demo logs ---
 rm -f /tmp/als-demo-logs/*.log 2>/dev/null
 
 echo "[reset-demo] done — ready for fresh /run-demo"
