@@ -40,10 +40,13 @@ protocols|error
 planning|active
 MOCK
 
+# 3. Write mock OBS status (streaming live)
+echo '{"streaming":true,"recording":false,"connected":true}' > "$TARGET/scripts/.cache/obs"
+
 # Clear badge cache so mock takes effect immediately
 rm -f $TARGET/scripts/.cache/badges $TARGET/scripts/.cache/badges-w 2>/dev/null
 
-echo "[test] test mode activated with 8 mock delamains"
+echo "[test] test mode activated with 8 mock delamains + LIVE indicator"
 echo "[test] restart or interact with Claude Code to see the statusline"
 echo ""
 echo "  Mock delamains:"
@@ -59,6 +62,6 @@ echo ""
 echo "[test] press Enter to clean up test mode, or Ctrl+C to leave it active"
 read -r
 
-# 3. Cleanup
-rm -f $TARGET/scripts/.cache/test-mode $TARGET/scripts/.cache/badges $TARGET/scripts/.cache/badges-w 2>/dev/null
+# 4. Cleanup
+rm -f $TARGET/scripts/.cache/test-mode $TARGET/scripts/.cache/badges $TARGET/scripts/.cache/badges-w $TARGET/scripts/.cache/obs 2>/dev/null
 echo "[test] test mode deactivated"
