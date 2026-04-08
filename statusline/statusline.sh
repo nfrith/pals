@@ -15,7 +15,9 @@
 # statusline system, known issues, and sources.
 
 input=$(cat)
-SCRIPT_DIR="$(dirname "$0")"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+CACHE_DIR="$SCRIPT_DIR/.cache"
+[[ -d "$CACHE_DIR" ]] || mkdir -p "$CACHE_DIR"
 
 # ---------------------------------------------------------------------------
 # Extract fields — three jq calls (fast, no subshells beyond jq itself)
@@ -29,7 +31,7 @@ dir=$(basename "$cwd")
 # ---------------------------------------------------------------------------
 # Terminal width (cached per-session, stty is slow)
 # ---------------------------------------------------------------------------
-tw_cache="/tmp/statusline-tw-$$"
+tw_cache="$CACHE_DIR/tw"
 term_width=80
 if [[ -f "$tw_cache" ]]; then
     term_width=$(<"$tw_cache")
@@ -57,7 +59,7 @@ fi
 # ---------------------------------------------------------------------------
 # Git branch (cached 10s)
 # ---------------------------------------------------------------------------
-git_cache="/tmp/statusline-git-cache"
+git_cache="$CACHE_DIR/git-branch"
 branch=""
 if [[ ! -f "$git_cache" ]] || (( $(date +%s) - $(stat -f %m "$git_cache" 2>/dev/null || stat -c %Y "$git_cache" 2>/dev/null || echo 0) > 10 )); then
     branch=$(cd "$cwd" 2>/dev/null && git branch --show-current 2>/dev/null)
@@ -69,10 +71,27 @@ fi
 # ---------------------------------------------------------------------------
 # Delamain badges (cached 5s — the expensive part)
 # ---------------------------------------------------------------------------
-badge_cache="/tmp/statusline-badges"
-badge_width_cache="/tmp/statusline-badges-w"
+badge_cache="$CACHE_DIR/badges"
+badge_width_cache="$CACHE_DIR/badges-w"
 
-if [[ ! -f "$badge_cache" ]] || (( $(date +%s) - $(stat -f %m "$badge_cache" 2>/dev/null || stat -c %Y "$badge_cache" 2>/dev/null || echo 0) > 5 )); then
+if [[ -f $CACHE_DIR/test-mode ]]; then
+    # TEST MODE: generate mock badges without real delamain scan
+    badges=""
+    widths=""
+    while IFS='|' read -r name state; do
+        [[ -z "$name" ]] && continue
+        case "$state" in
+            active)  symbol="⚡"; color="1;32" ;;
+            idle)    symbol="✓"; color="32" ;;
+            error)   symbol="✗"; color="1;31" ;;
+            *)       symbol="○"; color="2;37" ;;
+        esac
+        badges+="$(printf '\033[%sm[%s %s]\033[0m' "$color" "$name" "$symbol")|"
+        widths+="$(( ${#name} + 4 ))|"
+    done < $CACHE_DIR/test-mode
+    echo -n "$badges" > "$badge_cache"
+    echo -n "$widths" > "$badge_width_cache"
+elif [[ ! -f "$badge_cache" ]] || (( $(date +%s) - $(stat -f %m "$badge_cache" 2>/dev/null || stat -c %Y "$badge_cache" 2>/dev/null || echo 0) > 5 )); then
     # Discover delamain directories
     delamain_dirs=()
     sr="$cwd"
@@ -126,7 +145,7 @@ fi
 # OBS indicator (cached 5s — calls python + websocket)
 # ---------------------------------------------------------------------------
 obs_indicator=""
-obs_cache="/tmp/statusline-obs"
+obs_cache="$CACHE_DIR/obs"
 obs_script="$SCRIPT_DIR/obs-status.py"
 if [[ -f "$obs_script" ]]; then
     if [[ ! -f "$obs_cache" ]] || (( $(date +%s) - $(stat -f %m "$obs_cache" 2>/dev/null || stat -c %Y "$obs_cache" 2>/dev/null || echo 0) > 5 )); then
@@ -163,8 +182,8 @@ echo "$line1"
 # ---------------------------------------------------------------------------
 # Render delamain badge lines from cache
 # ---------------------------------------------------------------------------
-badges_raw=$(<"$badge_cache" 2>/dev/null)
-widths_raw=$(<"$badge_width_cache" 2>/dev/null)
+badges_raw=$(cat "$badge_cache" 2>/dev/null)
+widths_raw=$(cat "$badge_width_cache" 2>/dev/null)
 
 if [[ -n "$badges_raw" ]]; then
     IFS='|' read -ra badge_arr <<< "$badges_raw"
