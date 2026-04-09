@@ -12,11 +12,12 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SR="${1:-$SCRIPT_DIR/../../reference-system}"
 
-# Find project root by walking up from system root to find .claude/
+# Find project root by walking up from system root to find .git/
+# Use .git (not .claude/) because subsystems also have .claude/ directories
 PROJECT=""
 _d="$SR"
 while [[ "$_d" != "/" ]]; do
-  [[ -d "$_d/.claude" ]] && PROJECT="$_d" && break
+  [[ -d "$_d/.git" || -f "$_d/.git" ]] && PROJECT="$_d" && break
   _d=$(dirname "$_d")
 done
 [[ -z "$PROJECT" ]] && echo "[reset-demo] ERROR: could not find project root" && exit 1
