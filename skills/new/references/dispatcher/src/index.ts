@@ -3,6 +3,7 @@ import { writeFileSync, unlinkSync } from "fs";
 import { resolve as resolvePath, dirname, join } from "path";
 import { scan } from "./watcher.js";
 import { resolve, dispatch, type DispatchEntry } from "./dispatcher.js";
+import { formatDispatcherVersionLine, loadDispatcherVersionInfo } from "./dispatcher-version.js";
 
 // -------------------------------------------------------------------
 // The only input: system root. Bundle-local runtime identity comes
@@ -32,6 +33,13 @@ const POLL_MS = parseInt(process.env["POLL_MS"] ?? "30000", 10);
 // -------------------------------------------------------------------
 // Startup — crawl the ALS declaration surface once
 // -------------------------------------------------------------------
+
+try {
+  console.log(formatDispatcherVersionLine(await loadDispatcherVersionInfo(BUNDLE_ROOT)));
+} catch (error) {
+  console.error(`[dispatcher] fatal: ${error instanceof Error ? error.message : String(error)}`);
+  process.exit(1);
+}
 
 const config = await resolve(BUNDLE_ROOT, SYSTEM_ROOT);
 

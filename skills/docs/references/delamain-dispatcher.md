@@ -10,6 +10,8 @@ ALS Developer, ALS Architect, Claude.
 
 The dispatcher template lives at `${CLAUDE_PLUGIN_ROOT}/skills/new/references/dispatcher/` and is copied into new Delamain bundles during module creation. Once copied, it runs without modification for any deployed Delamain bundle in any module.
 
+The canonical template exposes its latest template version in `${CLAUDE_PLUGIN_ROOT}/skills/new/references/dispatcher/VERSION`. Every copied dispatcher bundle carries a local `dispatcher/VERSION` file. Startup reads both files, logs `[dispatcher] version: X (latest: Y)`, and appends `run /upgrade-dispatchers to update` when the local version is stale. Missing or malformed local or canonical `VERSION` files are hard startup errors.
+
 When a Delamain bundle is deployed to `.claude/delamains/<name>/`, later `alsc deploy claude` runs preserve an existing `dispatcher/node_modules/` directory. Deploy itself does not install packages. If dependencies have never been installed in the deployed target, deploy warns and leaves installation as an explicit `bun install` step.
 
 The deployed bundle root also receives `runtime-manifest.json`. That manifest is the authoritative binding contract for the runtime:
@@ -28,6 +30,7 @@ The dispatcher is supported from deployed `.claude/delamains/<name>/` bundles. R
 Entry point. Handles:
 
 - **System root discovery**: walks up directories from its own location looking for `.als/system.yaml`. Also respects the `SYSTEM_ROOT` environment variable.
+- **Template version check**: reads local `dispatcher/VERSION` and canonical `${CLAUDE_PLUGIN_ROOT}/skills/new/references/dispatcher/VERSION`, logs the current/latest versions, and fails before polling when either source is missing or malformed.
 - **Startup**: calls `resolve()` once to load `runtime-manifest.json`, local `delamain.yaml`, and state-agent files, then enters the poll loop.
 - **Poll loop**: scans items at a configurable interval (`POLL_MS`, default 30s). Tracks active dispatches and releases items when their status changes.
 
@@ -62,6 +65,15 @@ Runtime manifest loader and validator.
 - Validates the manifest schema and required binding fields
 - Fails closed with a redeploy message when the manifest is missing or malformed
 
+### `src/dispatcher-version.ts`
+
+Dispatcher template version loader and formatter.
+
+- Reads local `dispatcher/VERSION` from the deployed bundle root
+- Reads canonical latest version from `${CLAUDE_PLUGIN_ROOT}/skills/new/references/dispatcher/VERSION`
+- Accepts positive integers only
+- Formats the startup version line and stale-version upgrade instruction
+
 ### `src/session-runtime.ts`
 
 Pure helper logic for session handling:
@@ -86,6 +98,8 @@ The dispatcher reads one generated runtime manifest plus the local Delamain bund
 | Legal transitions | Delamain primary definition → `transitions` filtered by source state |
 | Session handling | State `resumable` + `delegated` + `session-field` |
 | Sub-agents | State `sub-agent` path |
+| Local dispatcher template version | `dispatcher/VERSION` |
+| Latest dispatcher template version | `${CLAUDE_PLUGIN_ROOT}/skills/new/references/dispatcher/VERSION` |
 
 Hosts generate `runtime-manifest.json` during Claude projection. One deployed Delamain bundle owns exactly one effective binding. Reusing the same Delamain name across multiple effective bindings is a deploy-planning error.
 
@@ -143,8 +157,9 @@ Environment variables:
 
 - `SYSTEM_ROOT` — override the system root (optional; auto-detected by default)
 - `POLL_MS` — polling interval in milliseconds (default: 30000)
+- `CLAUDE_PLUGIN_ROOT` — installed ALS plugin root used to read the canonical dispatcher `VERSION` file (required)
 
-If `runtime-manifest.json` is missing or invalid, the dispatcher fails closed and instructs the operator to redeploy the Delamain bundle.
+If `dispatcher/VERSION`, `CLAUDE_PLUGIN_ROOT`, the canonical dispatcher `VERSION`, or `runtime-manifest.json` is missing or invalid, the dispatcher fails closed before polling. Stale but readable dispatcher versions continue running and instruct the operator to run `/upgrade-dispatchers`.
 
 ## Dependencies
 

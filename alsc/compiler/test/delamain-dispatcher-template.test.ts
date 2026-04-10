@@ -1,10 +1,173 @@
 import { expect, test } from "bun:test";
-import { join } from "node:path";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
 import { deployClaudeSkillsFromConfig } from "../src/claude-skills.ts";
 import { loadSystemValidationContext } from "../src/validate.ts";
+import {
+  formatDispatcherVersionLine,
+  loadDispatcherVersionInfo,
+  parseDispatcherVersion,
+} from "../../../skills/new/references/dispatcher/src/dispatcher-version.ts";
 import { loadRuntimeManifest } from "../../../skills/new/references/dispatcher/src/runtime-manifest.ts";
 import { scan } from "../../../skills/new/references/dispatcher/src/watcher.ts";
 import { withFixtureSandbox, writePath } from "./helpers/fixture.ts";
+
+test("dispatcher version parser accepts positive integers", () => {
+  expect(parseDispatcherVersion("1\n", "local")).toBe(1);
+  expect(parseDispatcherVersion("42", "canonical")).toBe(42);
+});
+
+test("dispatcher version parser rejects malformed values", () => {
+  expect(() => parseDispatcherVersion("0\n", "local")).toThrow(
+    "local dispatcher VERSION must be a positive integer",
+  );
+  expect(() => parseDispatcherVersion("1.0.0\n", "canonical")).toThrow(
+    "canonical dispatcher VERSION must be a positive integer",
+  );
+});
+
+test("dispatcher version check reads local and canonical VERSION files", async () => {
+  await withVersionSandbox("current", async ({ root }) => {
+    const bundleRoot = join(root, ".claude/delamains/version-check");
+    const pluginRoot = join(root, "plugin");
+
+    await writeVersionPath(root, ".claude/delamains/version-check/dispatcher/VERSION", "1\n");
+    await writeVersionPath(root, "plugin/skills/new/references/dispatcher/VERSION", "1\n");
+
+    const info = await loadDispatcherVersionInfo(bundleRoot, {
+      CLAUDE_PLUGIN_ROOT: pluginRoot,
+    });
+
+    expect(info.localVersion).toBe(1);
+    expect(info.latestVersion).toBe(1);
+    expect(formatDispatcherVersionLine(info)).toBe("[dispatcher] version: 1 (latest: 1)");
+  });
+});
+
+test("dispatcher version check rejects missing local VERSION", async () => {
+  await withVersionSandbox("missing-local", async ({ root }) => {
+    const bundleRoot = join(root, ".claude/delamains/version-check");
+    const pluginRoot = join(root, "plugin");
+
+    await writeVersionPath(root, "plugin/skills/new/references/dispatcher/VERSION", "1\n");
+
+    await expect(loadDispatcherVersionInfo(bundleRoot, {
+      CLAUDE_PLUGIN_ROOT: pluginRoot,
+    })).rejects.toThrow("local dispatcher VERSION missing or unreadable");
+  });
+});
+
+test("dispatcher version check rejects malformed local VERSION", async () => {
+  await withVersionSandbox("malformed-local", async ({ root }) => {
+    const bundleRoot = join(root, ".claude/delamains/version-check");
+    const pluginRoot = join(root, "plugin");
+
+    await writeVersionPath(root, ".claude/delamains/version-check/dispatcher/VERSION", "latest\n");
+    await writeVersionPath(root, "plugin/skills/new/references/dispatcher/VERSION", "1\n");
+
+    await expect(loadDispatcherVersionInfo(bundleRoot, {
+      CLAUDE_PLUGIN_ROOT: pluginRoot,
+    })).rejects.toThrow("local dispatcher VERSION must be a positive integer");
+  });
+});
+
+test("dispatcher version check rejects missing CLAUDE_PLUGIN_ROOT", async () => {
+  await withVersionSandbox("missing-plugin-root", async ({ root }) => {
+    const bundleRoot = join(root, ".claude/delamains/version-check");
+
+    await writeVersionPath(root, ".claude/delamains/version-check/dispatcher/VERSION", "1\n");
+
+    await expect(loadDispatcherVersionInfo(bundleRoot, {})).rejects.toThrow(
+      "CLAUDE_PLUGIN_ROOT is not set; cannot read canonical dispatcher VERSION",
+    );
+  });
+});
+
+test("dispatcher version check rejects missing canonical VERSION", async () => {
+  await withVersionSandbox("missing-canonical", async ({ root }) => {
+    const bundleRoot = join(root, ".claude/delamains/version-check");
+    const pluginRoot = join(root, "plugin");
+
+    await writeVersionPath(root, ".claude/delamains/version-check/dispatcher/VERSION", "1\n");
+
+    await expect(loadDispatcherVersionInfo(bundleRoot, {
+      CLAUDE_PLUGIN_ROOT: pluginRoot,
+    })).rejects.toThrow("canonical dispatcher VERSION missing or unreadable");
+  });
+});
+
+test("dispatcher version check rejects malformed canonical VERSION", async () => {
+  await withVersionSandbox("malformed-canonical", async ({ root }) => {
+    const bundleRoot = join(root, ".claude/delamains/version-check");
+    const pluginRoot = join(root, "plugin");
+
+    await writeVersionPath(root, ".claude/delamains/version-check/dispatcher/VERSION", "1\n");
+    await writeVersionPath(root, "plugin/skills/new/references/dispatcher/VERSION", "v2\n");
+
+    await expect(loadDispatcherVersionInfo(bundleRoot, {
+      CLAUDE_PLUGIN_ROOT: pluginRoot,
+    })).rejects.toThrow("canonical dispatcher VERSION must be a positive integer");
+  });
+});
+
+test("dispatcher version check logs stale upgrade instruction without failing", async () => {
+  await withVersionSandbox("stale", async ({ root }) => {
+    const bundleRoot = join(root, ".claude/delamains/version-check");
+    const pluginRoot = join(root, "plugin");
+
+    await writeVersionPath(root, ".claude/delamains/version-check/dispatcher/VERSION", "1\n");
+    await writeVersionPath(root, "plugin/skills/new/references/dispatcher/VERSION", "2\n");
+
+    const info = await loadDispatcherVersionInfo(bundleRoot, {
+      CLAUDE_PLUGIN_ROOT: pluginRoot,
+    });
+
+    expect(formatDispatcherVersionLine(info)).toBe(
+      "[dispatcher] version: 1 (latest: 2 — run /upgrade-dispatchers to update)",
+    );
+  });
+});
+
+test("dispatcher version check ignores dispatcher package.json version", async () => {
+  await withVersionSandbox("ignores-package-json", async ({ root }) => {
+    const bundleRoot = join(root, ".claude/delamains/version-check");
+    const pluginRoot = join(root, "plugin");
+
+    await writeVersionPath(root, ".claude/delamains/version-check/dispatcher/VERSION", "1\n");
+    await writeVersionPath(
+      root,
+      ".claude/delamains/version-check/dispatcher/package.json",
+      JSON.stringify({ name: "delamain-dispatcher", version: "999.0.0" }) + "\n",
+    );
+    await writeVersionPath(root, "plugin/skills/new/references/dispatcher/VERSION", "1\n");
+
+    const info = await loadDispatcherVersionInfo(bundleRoot, {
+      CLAUDE_PLUGIN_ROOT: pluginRoot,
+    });
+
+    expect(info.localVersion).toBe(1);
+    expect(info.latestVersion).toBe(1);
+  });
+});
+
+async function withVersionSandbox(
+  label: string,
+  run: (sandbox: { root: string }) => Promise<void>,
+): Promise<void> {
+  const root = await mkdtemp(join(tmpdir(), `als-dispatcher-version-${label}-`));
+  try {
+    await run({ root });
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+}
+
+async function writeVersionPath(root: string, relativePath: string, contents: string): Promise<void> {
+  const filePath = join(root, relativePath);
+  await mkdir(dirname(filePath), { recursive: true });
+  await writeFile(filePath, contents);
+}
 
 test("dispatcher resolve fails closed when runtime manifest is missing", async () => {
   await withFixtureSandbox("delamain-dispatcher-manifest-missing", async ({ root }) => {

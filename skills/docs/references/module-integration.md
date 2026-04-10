@@ -70,6 +70,7 @@ The SKILL.md procedure says "Follow the procedure in references/plan-input.md" f
 **Important**:
 - Skill deploy under `.claude/skills/` still overwrites the target directory completely.
 - Delamain deploy under `.claude/delamains/<name>/` refreshes authored files via merge projection so an existing `dispatcher/node_modules/` survives.
+- Delamain deploy projects `dispatcher/VERSION` with the rest of the authored dispatcher bundle.
 - Delamain deploy does not run `bun install` or any other package-manager command.
 - If the deployed dispatcher has no installed dependencies yet, deploy warns and continues.
 - Merge projection may leave stale authored files or incidental runtime files in the deployed Delamain target.
@@ -83,13 +84,18 @@ cp -R ${CLAUDE_PLUGIN_ROOT}/skills/new/references/dispatcher/ \
   .als/modules/{module}/v{N}/delamains/{delamain}/dispatcher/
 ```
 
+The copied dispatcher includes `dispatcher/VERSION`, which is separate from `dispatcher/package.json` `version`.
+
 When the template improves, all consumers update by re-copying:
 
 ```bash
 cp -R template/src/ target/dispatcher/src/
+cp template/VERSION target/dispatcher/VERSION
 ```
 
-This ensures all dispatchers stay consistent with the latest features (multi-module support, variant scanning, OAuth, UUID validation, session context injection).
+This ensures all dispatchers stay consistent with the latest features (multi-module support, variant scanning, OAuth, UUID validation, session context injection, version checks).
+
+At startup, dispatchers compare their local `dispatcher/VERSION` with `${CLAUDE_PLUGIN_ROOT}/skills/new/references/dispatcher/VERSION`. Stale but readable versions log `run /upgrade-dispatchers to update` and keep polling. Missing or malformed local or canonical version files fail startup before polling.
 
 <!-- UPDATE THIS MAP when drift is discovered between the template and its targets. -->
 
@@ -97,17 +103,17 @@ This ensures all dispatchers stay consistent with the latest features (multi-mod
 
 | Target | Path |
 |--------|------|
-| Template (canonical) | `skills/new/references/dispatcher/src/` |
-| incident-lifecycle (deployed) | `reference-system/.claude/delamains/incident-lifecycle/dispatcher/src/` |
-| release-lifecycle (deployed) | `reference-system/.claude/delamains/release-lifecycle/dispatcher/src/` |
-| postmortem-lifecycle (deployed) | `reference-system/.claude/delamains/postmortem-lifecycle/dispatcher/src/` |
-| run-lifecycle (deployed) | `reference-system/.claude/delamains/run-lifecycle/dispatcher/src/` |
-| development-pipeline (deployed) | `reference-system/.claude/delamains/development-pipeline/dispatcher/src/` |
-| incident-lifecycle (module source) | `reference-system/.als/modules/incident-response/v1/delamains/incident-lifecycle/dispatcher/src/` |
-| release-lifecycle (module source) | `reference-system/.als/modules/infra/v1/delamains/release-lifecycle/dispatcher/src/` |
-| postmortem-lifecycle (module source) | `reference-system/.als/modules/postmortems/v1/delamains/postmortem-lifecycle/dispatcher/src/` |
-| run-lifecycle (module source) | `reference-system/.als/modules/experiments/v2/delamains/run-lifecycle/dispatcher/src/` |
-| development-pipeline (module source) | `reference-system/.als/modules/factory/v1/delamains/development-pipeline/dispatcher/src/` |
+| Template (canonical) | `skills/new/references/dispatcher/` |
+| incident-lifecycle (deployed) | `reference-system/.claude/delamains/incident-lifecycle/dispatcher/` |
+| release-lifecycle (deployed) | `reference-system/.claude/delamains/release-lifecycle/dispatcher/` |
+| postmortem-lifecycle (deployed) | `reference-system/.claude/delamains/postmortem-lifecycle/dispatcher/` |
+| run-lifecycle (deployed) | `reference-system/.claude/delamains/run-lifecycle/dispatcher/` |
+| development-pipeline (deployed) | `reference-system/.claude/delamains/development-pipeline/dispatcher/` |
+| incident-lifecycle (module source) | `reference-system/.als/modules/incident-response/v1/delamains/incident-lifecycle/dispatcher/` |
+| release-lifecycle (module source) | `reference-system/.als/modules/infra/v1/delamains/release-lifecycle/dispatcher/` |
+| postmortem-lifecycle (module source) | `reference-system/.als/modules/postmortems/v1/delamains/postmortem-lifecycle/dispatcher/` |
+| run-lifecycle (module source) | `reference-system/.als/modules/experiments/v2/delamains/run-lifecycle/dispatcher/` |
+| development-pipeline (module source) | `reference-system/.als/modules/factory/v1/delamains/development-pipeline/dispatcher/` |
 
 ## system.yaml Registration
 

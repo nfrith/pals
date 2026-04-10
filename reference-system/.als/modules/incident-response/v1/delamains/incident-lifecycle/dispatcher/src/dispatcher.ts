@@ -3,19 +3,7 @@ import { basename, join } from "path";
 import { parse as parseYaml } from "yaml";
 import { query } from "@anthropic-ai/claude-agent-sdk";
 import { buildSessionRuntimeState, shouldPersistDispatcherSession } from "./session-runtime.js";
-
-interface RuntimeManifest {
-  schema: string;
-  delamain_name: string;
-  module_id: string;
-  module_version: number;
-  module_mount_path: string;
-  entity_name: string;
-  entity_path: string;
-  status_field: string;
-  discriminator_field: string | null;
-  discriminator_value: string | null;
-}
+import { loadRuntimeManifest } from "./runtime-manifest.js";
 
 interface Transition {
   class: string;
@@ -72,8 +60,6 @@ export interface ResolvedConfig {
   allStates: string[];
   dispatchTable: DispatchEntry[];
 }
-
-const DELAMAIN_RUNTIME_MANIFEST_SCHEMA = "als-delamain-runtime-manifest@1";
 
 function parseMd(raw: string): { meta: Record<string, string>; body: string } {
   const lines = raw.split("\n");
@@ -161,92 +147,6 @@ async function setFrontmatterField(
 
   await writeFile(filePath, lines.join("\n"), "utf-8");
   return true;
-}
-
-async function loadRuntimeManifest(bundleRoot: string): Promise<RuntimeManifest> {
-  const manifestPath = join(bundleRoot, "runtime-manifest.json");
-  let raw: string;
-  try {
-    raw = await readFile(manifestPath, "utf-8");
-  } catch (error) {
-    throw new Error(
-      `Missing runtime-manifest.json in '${bundleRoot}'. Redeploy this Delamain bundle with 'alsc deploy claude'.`,
-    );
-  }
-
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw);
-  } catch (error) {
-    throw new Error(
-      `Invalid runtime-manifest.json in '${bundleRoot}': ${error instanceof Error ? error.message : String(error)}`,
-    );
-  }
-
-  if (!parsed || typeof parsed !== "object") {
-    throw new Error(`Invalid runtime-manifest.json in '${bundleRoot}': expected an object`);
-  }
-
-  const manifest = parsed as Partial<RuntimeManifest>;
-  const requiredStringFields: Array<keyof Pick<
-    RuntimeManifest,
-    "schema"
-      | "delamain_name"
-      | "module_id"
-      | "module_mount_path"
-      | "entity_name"
-      | "entity_path"
-      | "status_field"
-  >> = [
-    "schema",
-    "delamain_name",
-    "module_id",
-    "module_mount_path",
-    "entity_name",
-    "entity_path",
-    "status_field",
-  ];
-
-  for (const field of requiredStringFields) {
-    if (typeof manifest[field] !== "string" || manifest[field]!.length === 0) {
-      throw new Error(
-        `Invalid runtime-manifest.json in '${bundleRoot}': '${field}' must be a non-empty string`,
-      );
-    }
-  }
-
-  if (manifest.schema !== DELAMAIN_RUNTIME_MANIFEST_SCHEMA) {
-    throw new Error(
-      `Invalid runtime-manifest.json in '${bundleRoot}': unsupported schema '${manifest.schema}'`,
-    );
-  }
-
-  if (typeof manifest.module_version !== "number" || !Number.isInteger(manifest.module_version)) {
-    throw new Error(
-      `Invalid runtime-manifest.json in '${bundleRoot}': 'module_version' must be an integer`,
-    );
-  }
-
-  for (const field of ["discriminator_field", "discriminator_value"] as const) {
-    if (manifest[field] !== null && manifest[field] !== undefined && typeof manifest[field] !== "string") {
-      throw new Error(
-        `Invalid runtime-manifest.json in '${bundleRoot}': '${field}' must be string or null`,
-      );
-    }
-  }
-
-  return {
-    schema: manifest.schema,
-    delamain_name: manifest.delamain_name,
-    module_id: manifest.module_id,
-    module_version: manifest.module_version,
-    module_mount_path: manifest.module_mount_path,
-    entity_name: manifest.entity_name,
-    entity_path: manifest.entity_path,
-    status_field: manifest.status_field,
-    discriminator_field: manifest.discriminator_field ?? null,
-    discriminator_value: manifest.discriminator_value ?? null,
-  };
 }
 
 export async function resolve(

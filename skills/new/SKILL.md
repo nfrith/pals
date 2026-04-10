@@ -98,7 +98,7 @@ Not every module needs a Delamain. Many modules are pure storage with operator-d
 
 ### Delamain Design
 
-This sub-interview designs the transition graph, actor assignments, and session behavior. Read `../docs/references/shape-language.md` (the Delamain bundles and Delamain agent files sections) and `../docs/references/dispatcher.md` before proceeding.
+This sub-interview designs the transition graph, actor assignments, session behavior, and dispatcher bundle. Read `../docs/references/shape-language.md` (the Delamain bundles and Delamain agent files sections) and `../docs/references/delamain-dispatcher.md` before proceeding.
 
 #### Step 1: Phases
 
@@ -430,10 +430,14 @@ Remove `allowed_values` from the status field — the Delamain states are the le
 ├── agents/
 │   └── {state-name}.md        # one per actor: agent state
 └── dispatcher/
+    ├── VERSION
     ├── package.json
     ├── tsconfig.json
     └── src/
+        ├── dispatcher-version.ts
         ├── index.ts
+        ├── runtime-manifest.ts
+        ├── session-runtime.ts
         ├── watcher.ts
         └── dispatcher.ts
 ```
@@ -486,6 +490,7 @@ cd .als/modules/{module_id}/v1/delamains/{delamain-name}/dispatcher && bun insta
 ```
 
 The dispatcher requires zero modification — it derives everything from the ALS declaration surface at runtime.
+The copied `dispatcher/VERSION` file is the local dispatcher template version. It is separate from `dispatcher/package.json` `version` and must stay in the bundle.
 
 ### After creation
 
@@ -494,4 +499,5 @@ Tell the operator what was created and where. Suggest they can now create their 
 If a Delamain was created, also tell the operator:
 - Agent files are TODO scaffolds that need prompts written before the dispatcher can run.
 - The dispatcher is ready to run once agent prompts are authored: `cd <delamain-bundle>/dispatcher && bun run src/index.ts`
+- The dispatcher reads `${CLAUDE_PLUGIN_ROOT}/skills/new/references/dispatcher/VERSION` at startup and will fail if the plugin root or either `VERSION` file is missing or malformed.
 - Session fields are implicit — they do not need to be added to shape.yaml or entity frontmatter manually. The dispatcher handles persistence.

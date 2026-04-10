@@ -630,6 +630,15 @@ Rules:
 - Claude projection also writes `runtime-manifest.json` into each deployed `.claude/delamains/{name}/` bundle.
 - The deployed runtime manifest records one effective binding: module mount path, entity path template, Delamain-bound status field, and optional discriminator field/value.
 - One Delamain bundle owns exactly one effective binding. Reusing the same Delamain name across multiple effective bindings is rejected during Claude deploy planning.
+- The canonical dispatcher template exposes its latest template version at `${CLAUDE_PLUGIN_ROOT}/skills/new/references/dispatcher/VERSION`.
+- Every copied Delamain dispatcher bundle must contain `dispatcher/VERSION` with a positive integer copied from the canonical template.
+- `dispatcher/package.json` `version` is package metadata and is not the dispatcher template version.
+- Dispatcher template version is runtime asset metadata. It is not declared in `shape.yaml`, `delamain.yaml`, `runtime-manifest.json`, or record frontmatter.
+- Dispatcher startup compares the local `dispatcher/VERSION` with the canonical plugin `VERSION`.
+- If the local dispatcher version is numerically older than the canonical version, startup logs the version mismatch with `run /upgrade-dispatchers to update` and continues polling.
+- Missing, unreadable, or malformed local dispatcher `VERSION` is a hard startup error.
+- Missing, unreadable, or malformed canonical plugin dispatcher `VERSION` is a hard startup error.
+- System-level dispatcher versioning is out of scope for this first pass; dispatcher template version is per copied bundle.
 - Claude projection preserves an existing `dispatcher/node_modules/` directory when one is already present in the target.
 - Claude projection does not run `bun install` or any other package-manager command.
 - Claude projection may leave stale authored files or incidental runtime files in the target when the host uses merge-based projection to preserve installed dependencies.
