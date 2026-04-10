@@ -97,11 +97,9 @@ The key: you are reading the operator's environment and making an intelligent su
 
 **If no multiplexer detected:** fall back to the "Other terminal windows" flow above.
 
-#### If "Claude Code statusline (buggy)"
+#### If "Use /bootup for dispatchers"
 
-Warn: "The statusline is currently unreliable — it may stop updating mid-demo. Proceed anyway?"
-
-If they confirm, the statusline will be installed in step 5 using the existing configure-statusline skill.
+Run `/als:bootup` to start dispatchers using the operator's boot configuration (`.als/config.md`). If no config exists, bootup will walk them through creating one.
 
 ### 2. Register delamain roots (statusline only)
 
