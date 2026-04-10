@@ -69,6 +69,7 @@ export interface ResolvedConfig {
   discriminatorField?: string;
   discriminatorValue?: string;
   agents: Record<string, AgentDef>;
+  allStates: string[];
   dispatchTable: DispatchEntry[];
 }
 
@@ -337,6 +338,7 @@ export async function resolve(
     discriminatorField: manifest.discriminator_field ?? undefined,
     discriminatorValue: manifest.discriminator_value ?? undefined,
     agents,
+    allStates: Object.keys(delamain.states),
     dispatchTable,
   };
 }
@@ -345,6 +347,18 @@ const sdkEnv: Record<string, string | undefined> = { ...process.env };
 delete sdkEnv["ANTHROPIC_API_KEY"];
 
 const today = () => new Date().toISOString().slice(0, 10);
+
+function formatToolUse(name: string, input: Record<string, unknown>): string {
+  const path = input["file_path"] as string | undefined;
+  if (path) return `${name} ${path}`;
+  const cmd = input["command"] as string | undefined;
+  if (cmd) return `${name} ${cmd.length > 60 ? cmd.slice(0, 57) + "..." : cmd}`;
+  const pattern = input["pattern"] as string | undefined;
+  if (pattern) return `${name} ${pattern}`;
+  const desc = input["description"] as string | undefined;
+  if (desc) return `${name}: ${desc}`;
+  return name;
+}
 
 export async function dispatch(
   itemId: string,
@@ -410,7 +424,7 @@ export async function dispatch(
   }
 
   console.log(
-    `[dispatcher] ${itemId} @ ${entry.state} → ${entry.agentName}`
+    `[dispatcher] ${itemId} @ current state: ${entry.state}`
       + (entry.delegated ? " (delegated)" : "")
       + (sessionState.resumeSessionId
         ? ` (resume: ${sessionState.resumeSessionId.slice(0, 8)}...)`
@@ -438,12 +452,21 @@ export async function dispatch(
       if (message.type === "system" && message.subtype === "init") {
         sessionId = message.session_id;
       }
+      if (message.type === "assistant") {
+        for (const block of message.message.content) {
+          if (block.type === "tool_use") {
+            const detail = formatToolUse(block.name, block.input as Record<string, unknown>);
+            console.log(`[dispatcher]   ${itemId} | ${detail}`);
+          }
+        }
+      }
       if (message.type === "result") {
-        const tag =
+        const cost =
           message.subtype === "success"
             ? `$${message.total_cost_usd.toFixed(4)}`
             : message.subtype;
-        console.log(`[dispatcher] ${itemId} done (${tag})`);
+        const secs = Math.round(message.duration_ms / 1000);
+        console.log(`[dispatcher] ${itemId} done (${cost}, ${secs}s, ${message.num_turns} turns)`);
       }
     }
 

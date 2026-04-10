@@ -46,10 +46,8 @@ console.log(`[dispatcher] module root: ${config.moduleRoot}`);
 if (config.discriminatorField) {
   console.log(`[dispatcher] discriminator: ${config.discriminatorField}=${config.discriminatorValue}`);
 }
-console.log(`[dispatcher] agents loaded: ${Object.keys(config.agents).length}`);
-console.log(
-  `[dispatcher] dispatch table: ${config.dispatchTable.map((e) => `${e.state}→${e.agentName}`).join(", ")}`,
-);
+console.log(`[dispatcher] states: ${config.allStates.join(", ")}`);
+console.log(`[dispatcher] watching: ${config.dispatchTable.map((e) => e.state).join(", ")}`);
 console.log(`[dispatcher] polling every ${POLL_MS}ms`);
 
 // -------------------------------------------------------------------
