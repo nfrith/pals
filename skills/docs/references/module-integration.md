@@ -91,6 +91,24 @@ cp -R template/src/ target/dispatcher/src/
 
 This ensures all dispatchers stay consistent with the latest features (multi-module support, variant scanning, OAuth, UUID validation, session context injection).
 
+<!-- UPDATE THIS MAP when drift is discovered between the template and its targets. -->
+
+### Dispatcher Targets
+
+| Target | Path |
+|--------|------|
+| Template (canonical) | `skills/new/references/dispatcher/src/` |
+| incident-lifecycle (deployed) | `reference-system/.claude/delamains/incident-lifecycle/dispatcher/src/` |
+| release-lifecycle (deployed) | `reference-system/.claude/delamains/release-lifecycle/dispatcher/src/` |
+| postmortem-lifecycle (deployed) | `reference-system/.claude/delamains/postmortem-lifecycle/dispatcher/src/` |
+| run-lifecycle (deployed) | `reference-system/.claude/delamains/run-lifecycle/dispatcher/src/` |
+| development-pipeline (deployed) | `reference-system/.claude/delamains/development-pipeline/dispatcher/src/` |
+| incident-lifecycle (module source) | `reference-system/.als/modules/incident-response/v1/delamains/incident-lifecycle/dispatcher/src/` |
+| release-lifecycle (module source) | `reference-system/.als/modules/infra/v1/delamains/release-lifecycle/dispatcher/src/` |
+| postmortem-lifecycle (module source) | `reference-system/.als/modules/postmortems/v1/delamains/postmortem-lifecycle/dispatcher/src/` |
+| run-lifecycle (module source) | `reference-system/.als/modules/experiments/v2/delamains/run-lifecycle/dispatcher/src/` |
+| development-pipeline (module source) | `reference-system/.als/modules/factory/v1/delamains/development-pipeline/dispatcher/src/` |
+
 ## system.yaml Registration
 
 Skills are registered in `system.yaml` under the module:
