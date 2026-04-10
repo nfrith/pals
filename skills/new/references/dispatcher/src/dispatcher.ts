@@ -332,7 +332,7 @@ export async function dispatch(
         env: sdkEnv,
         permissionMode: "acceptEdits",
         maxTurns: 50,
-        maxBudgetUsd: 1.0,
+        maxBudgetUsd: 10.0,
       },
     })) {
       if (message.type === "system" && message.subtype === "init") {
