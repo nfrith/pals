@@ -4,21 +4,23 @@ ALS is a strict specification language for defining personal agent systems.
 
 ## Profiles
 
+All profiles are end users of ALS. The distinction is in what they do with the system, not in their status. Every profile — including Claude — is a user whose experience matters.
+
 ### Operator
 
-The end user. Uses a Claude harness (Claude Code, Cowork) on a project that happens to be an ALS system. May not be technical. May never invoke ALS skills directly — they interact with the system through skills that were built for them. Their most common ALS touchpoint is `/run-delamains` to start their pipelines.
+End user. Uses a Claude harness (Claude Code, Cowork) on a project that happens to be an ALS system. May not be technical. May never invoke ALS skills directly — they interact with the system through skills that were built for them. Their most common ALS touchpoint is `/run-delamains` to start their pipelines.
 
 ### ALS Developer
 
-Builds ALS systems for operators. Knows the spec. Uses `/new`, `/change`, `/migrate` to create and evolve modules. May package and distribute modules for operators to install.
+End user. Builds ALS systems for operators. Knows the spec. Uses `/new`, `/change`, `/migrate` to create and evolve modules. May package and distribute modules for operators to install.
 
 ### ALS Architect
 
-Alters the language itself. Architects the spec, writes SDRs, evolves the compiler, defines new language constructs. Currently: Nicholas Frith.
+End user. Alters the language itself. Architects the spec, writes SDRs, evolves the compiler, defines new language constructs. Currently: Nicholas Frith.
 
 ### Claude
 
-Present with all of the above. Enables each profile to do whatever they aim to do — from answering operator questions to authoring modules to implementing spec changes.
+End user. Present with all of the above. Enables each profile to do whatever they aim to do — from answering operator questions to authoring modules to implementing spec changes.
 
 ## Project Status
 
