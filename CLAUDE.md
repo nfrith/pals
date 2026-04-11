@@ -27,6 +27,21 @@ End user. Present with all of the above. Enables each profile to do whatever the
 - This project is under active development and is not officially released yet.
 - ALS is not being used in any production environment yet.
 
+## Platform Support
+
+We are building ALS to be supported on Claude platforms — Claude Code CLI, Claude Cowork, Claude Code Desktop, Claude Code Web, and others. We want to support all of these frames.
+
+> \* The goal is to DESIGN/BRAINSTORM as if we were assuming support for every platform, but when implementation hits reality, we go by implementation. The support matrix below reflects the current implementation state.
+
+| Code | Platform | Status |
+|------|----------|--------|
+| `ALS-PLAT-CCLI` | Claude Code CLI | Supported |
+| `ALS-PLAT-CCWK` | Claude Cowork | Planned |
+| `ALS-PLAT-CDSK` | Claude Code Desktop | Planned |
+| `ALS-PLAT-CWEB` | Claude Code Web | Planned |
+
+> \*\* Document references to this table via the CODE column and you must use formal markdown links when doing so.
+
 ## Current Focus
 
 - **v1 is the current focus.** Lessons from v0 were applied — several hard-to-implement features like skill/app management and migrations were removed from the initial scope. They will be reintroduced into v1 later.
