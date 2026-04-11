@@ -2,7 +2,7 @@
 
 # ALS — Agent Language Specification
 
-A strict specification language for agent systems.
+A model harness engineering SDK — built for Claude.
 
 **Beta Research Preview**
 
@@ -14,13 +14,19 @@ ALS is public for early adopters who are comfortable with breakage, manual rewri
 
 ## What ALS Is
 
-ALS gives agent systems a strict, filesystem-backed contract:
+ALS is a model harness engineering SDK that bridges the interface between agent and operator. Built for the Claude platforms — Claude Code CLI, Claude Cowork, Claude Code Desktop, Claude Code Web — with a vision towards wearables and ambient computing.
+
+We started building this long before "model harness engineering" existed as a term. Before open-source alternatives appeared. The problem was clear from the start: agent systems need a strict contract between the human operator and the agents working alongside them. Who owns which state? What does the operator see? What do agents handle autonomously? How does the system follow the operator across devices?
+
+ALS answers these questions with a filesystem-backed specification language:
 
 - `shape.yaml` defines what valid records look like
 - the compiler validates module shapes, records, refs, and body structure
 - skill bundles define the intended process surface for working with that data
+- delamain bundles define autonomous agent pipelines with operator-owned and agent-owned states
+- the cyber-brain orchestrates what the operator sees and does next
 
-The goal is simple: fewer ad hoc file conventions, less drift, and a clearer boundary between structure and workflow.
+The goal: a strict boundary between structure and workflow, between operator attention and agent execution, across every device the operator touches.
 
 ## What Works Today
 

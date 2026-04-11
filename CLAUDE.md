@@ -40,7 +40,7 @@ We are building ALS to be supported on Claude platforms — Claude Code CLI, Cla
 | `ALS-PLAT-CDSK` | Claude Code Desktop | Planned |
 | `ALS-PLAT-CWEB` | Claude Code Web | Planned |
 
-> \*\* Document references to this table via the CODE column and you must use formal markdown links when doing so.
+> \*\* When referencing a platform anywhere in the codebase, use the CODE column with a formal markdown link back to this file: [`ALS-PLAT-XXXX`](nfrith-repos/als/CLAUDE.md). Never use bare platform codes without a link.
 
 ## Current Focus
 
