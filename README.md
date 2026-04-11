@@ -243,6 +243,12 @@ reference-system/ # Canonical reference fixture
 pre-release/      # Internal risk analysis and current-state notes
 ```
 
+## Watch It Being Built
+
+ALS isn't ready yet — but you can watch the factory floor live. We stream the building of ALS on YouTube: [youtube.com/@0xnfrith](https://youtube.com/@0xnfrith)
+
+Come hang out while it's being made.
+
 ## Feedback
 
 Use GitHub issues for:
