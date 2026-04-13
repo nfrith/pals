@@ -37,13 +37,9 @@ If the scan shows `All dispatchers are running. Nothing to do.` — report this 
 Otherwise, for each delamain listed in `OFFLINE_DELAMAINS`:
 
 1. Read the operator's preferences to determine HOW to start the dispatcher
-2. Execute the start commands accordingly (e.g., create tmux windows, run background shells, etc.)
-3. Ensure `bun install` has been run in the dispatcher directory before starting
-4. **Pass `CLAUDE_PLUGIN_ROOT` through** — dispatchers need this env var to check their template version at startup. The value is already available in this skill's context via `${CLAUDE_PLUGIN_ROOT}`. When starting a dispatcher (whether via tmux send-keys, background shell, or any other method), include it:
-   ```bash
-   CLAUDE_PLUGIN_ROOT=${CLAUDE_PLUGIN_ROOT} bun run src/index.ts
-   ```
-5. Start all offline dispatchers in parallel when possible
+2. Ensure `bun install` has been run in the dispatcher directory before starting
+3. Follow the operator's config commands **exactly as written** — copy-paste, substitute names, execute. Do not improvise alternative approaches.
+4. Start all offline dispatchers in parallel when possible
 
 After starting, verify with:
 
@@ -60,3 +56,4 @@ Report results to the operator in a single table.
 - If all dispatchers are already running, nothing to do.
 - The boot configuration is operator-local — it is not managed by `/change` or `/migrate`.
 - If no config exists, use `/init` to create one first.
+- **This skill must be run from the operator's session** (e.g., [OPERATOR] window), not from the cyber-brain or other Agent SDK processes. The Agent SDK cleans up tmux windows created during its query — dispatchers will die when the brain's turn ends. If the brain needs delamains started, it should message the operator to run `/bootup`.
