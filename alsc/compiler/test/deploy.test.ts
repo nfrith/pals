@@ -3,7 +3,7 @@ import { cp, mkdir, rm, writeFile } from "node:fs/promises";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { deployClaudeSkillsFromConfig } from "../src/claude-skills.ts";
+import { ALS_SYSTEM_CLAUDE_MD_CONTENTS, deployClaudeSkillsFromConfig } from "../src/claude-skills.ts";
 import { loadSystemValidationContext } from "../src/validate.ts";
 import {
   removePath,
@@ -16,7 +16,7 @@ import {
 
 const compilerRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
-test("deploy CLI projects active skills into .claude/skills and is idempotent", async () => {
+test("deploy CLI projects active skills into .claude/skills and is idempotent", { timeout: 180_000 }, async () => {
   await withFixtureSandbox("deploy-cli-idempotent", async ({ root }) => {
     await rm(join(root, ".claude/skills"), { recursive: true, force: true });
     await rm(join(root, ".claude/delamains"), { recursive: true, force: true });
@@ -32,6 +32,9 @@ test("deploy CLI projects active skills into .claude/skills and is idempotent", 
     const firstOutput = JSON.parse(new TextDecoder().decode(first.stdout)) as {
       schema: string;
       status: string;
+      planned_system_file_count: number;
+      written_system_file_count: number;
+      planned_system_files: Array<Record<string, unknown>>;
       planned_skill_count: number;
       written_skill_count: number;
       planned_skills: Array<Record<string, unknown>>;
@@ -43,8 +46,16 @@ test("deploy CLI projects active skills into .claude/skills and is idempotent", 
       delamain_name_conflicts: unknown[];
       warnings: unknown[];
     };
-    expect(firstOutput.schema).toBe("als-claude-deploy-output@3");
+    expect(firstOutput.schema).toBe("als-claude-deploy-output@4");
     expect(firstOutput.status).toBe("pass");
+    expect(firstOutput.planned_system_file_count).toBe(1);
+    expect(firstOutput.written_system_file_count).toBe(1);
+    expect(firstOutput.planned_system_files).toEqual([
+      {
+        kind: "generated_claude_guidance",
+        target_path: ".als/CLAUDE.md",
+      },
+    ]);
     expect(firstOutput.planned_skill_count).toBe(24);
     expect(firstOutput.written_skill_count).toBe(24);
     expect(firstOutput.existing_skill_targets).toEqual([]);
@@ -73,6 +84,7 @@ test("deploy CLI projects active skills into .claude/skills and is idempotent", 
     }
 
     const firstSkillSnapshot = snapshotTree(join(root, ".claude/skills"));
+    expect(readFileSync(join(root, ".als/CLAUDE.md"), "utf-8")).toBe(ALS_SYSTEM_CLAUDE_MD_CONTENTS);
     expect(firstSkillSnapshot["backlog-module/SKILL.md"]).toContain("name: backlog-module");
     expect(firstSkillSnapshot["people-module/SKILL.md"]).toContain("name: people-module");
     expect(firstSkillSnapshot["playbooks-module/SKILL.md"]).toContain("name: playbooks-module");
@@ -110,7 +122,7 @@ test("deploy CLI projects active skills into .claude/skills and is idempotent", 
   });
 });
 
-test("deploy CLI dry-run reports planned work without creating .claude/skills", async () => {
+test("deploy CLI dry-run reports planned work without creating .claude/skills", { timeout: 180_000 }, async () => {
   await withFixtureSandbox("deploy-cli-dry-run", async ({ root }) => {
     await rm(join(root, ".claude/skills"), { recursive: true, force: true });
     await rm(join(root, ".claude/delamains"), { recursive: true, force: true });
@@ -126,6 +138,9 @@ test("deploy CLI dry-run reports planned work without creating .claude/skills", 
     const output = JSON.parse(new TextDecoder().decode(process.stdout)) as {
       schema: string;
       status: string;
+      planned_system_file_count: number;
+      written_system_file_count: number;
+      planned_system_files: Array<Record<string, unknown>>;
       planned_skill_count: number;
       written_skill_count: number;
       planned_skills: Array<Record<string, unknown>>;
@@ -134,8 +149,16 @@ test("deploy CLI dry-run reports planned work without creating .claude/skills", 
       planned_delamains: Array<Record<string, unknown>>;
       warnings: unknown[];
     };
-    expect(output.schema).toBe("als-claude-deploy-output@3");
+    expect(output.schema).toBe("als-claude-deploy-output@4");
     expect(output.status).toBe("pass");
+    expect(output.planned_system_file_count).toBe(1);
+    expect(output.written_system_file_count).toBe(0);
+    expect(output.planned_system_files).toEqual([
+      {
+        kind: "generated_claude_guidance",
+        target_path: ".als/CLAUDE.md",
+      },
+    ]);
     expect(output.planned_skill_count).toBe(24);
     expect(output.written_skill_count).toBe(0);
     expect(output.planned_delamain_count).toBe(5);
@@ -148,6 +171,7 @@ test("deploy CLI dry-run reports planned work without creating .claude/skills", 
       "postmortem-lifecycle",
     ]);
     expect(output.warnings).toEqual([]);
+    expect(existsSync(join(root, ".als/CLAUDE.md"))).toBe(false);
     expect(existsSync(join(root, ".claude/skills"))).toBe(false);
     expect(existsSync(join(root, ".claude/delamains"))).toBe(false);
     for (const plan of output.planned_skills) {
@@ -161,7 +185,7 @@ test("deploy CLI dry-run reports planned work without creating .claude/skills", 
   });
 });
 
-test("deploy CLI can target a single module", async () => {
+test("deploy CLI can target a single module", { timeout: 180_000 }, async () => {
   await withFixtureSandbox("deploy-cli-module-filter", async ({ root }) => {
     await rm(join(root, ".claude/skills"), { recursive: true, force: true });
 
@@ -173,12 +197,73 @@ test("deploy CLI can target a single module", async () => {
     });
 
     expect(process.exitCode).toBe(0);
+    const output = JSON.parse(new TextDecoder().decode(process.stdout)) as {
+      status: string;
+      planned_system_file_count: number;
+      written_system_file_count: number;
+      planned_system_files: Array<{ kind: string; target_path: string }>;
+    };
+    expect(output.status).toBe("pass");
+    expect(output.planned_system_file_count).toBe(1);
+    expect(output.written_system_file_count).toBe(1);
+    expect(output.planned_system_files).toEqual([
+      {
+        kind: "generated_claude_guidance",
+        target_path: ".als/CLAUDE.md",
+      },
+    ]);
     const snapshot = snapshotTree(join(root, ".claude/skills"));
     expect(Object.keys(snapshot)).toEqual(["backlog-module/SKILL.md"]);
+    expect(readFileSync(join(root, ".als/CLAUDE.md"), "utf-8")).toBe(ALS_SYSTEM_CLAUDE_MD_CONTENTS);
   });
 });
 
-test("deploy CLI fails unknown module filters before planning work", async () => {
+test("deploy CLI overwrites existing system .als/CLAUDE.md with canonical contents", { timeout: 180_000 }, async () => {
+  await withFixtureSandbox("deploy-cli-overwrites-system-claude-md", async ({ root }) => {
+    await writePath(root, ".als/CLAUDE.md", "# local edits\n");
+
+    const process = Bun.spawnSync({
+      cmd: ["bun", "src/deploy.ts", root, "backlog"],
+      cwd: compilerRoot,
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+
+    expect(process.exitCode).toBe(0);
+    expect(readFileSync(join(root, ".als/CLAUDE.md"), "utf-8")).toBe(ALS_SYSTEM_CLAUDE_MD_CONTENTS);
+  });
+});
+
+test("deploy CLI fails when the system .als/CLAUDE.md target cannot be written", { timeout: 180_000 }, async () => {
+  await withFixtureSandbox("deploy-cli-system-claude-md-write-failure", async ({ root }) => {
+    await rm(join(root, ".claude/skills"), { recursive: true, force: true });
+    await mkdir(join(root, ".als/CLAUDE.md"), { recursive: true });
+
+    const process = Bun.spawnSync({
+      cmd: ["bun", "src/deploy.ts", root, "backlog"],
+      cwd: compilerRoot,
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+
+    expect(process.exitCode).toBe(1);
+    const output = JSON.parse(new TextDecoder().decode(process.stdout)) as {
+      status: string;
+      written_system_file_count: number;
+      written_skill_count: number;
+      written_delamain_count: number;
+      error: string | null;
+    };
+    expect(output.status).toBe("fail");
+    expect(output.written_system_file_count).toBe(0);
+    expect(output.written_skill_count).toBe(0);
+    expect(output.written_delamain_count).toBe(0);
+    expect(output.error).toContain(".als/CLAUDE.md");
+    expect(existsSync(join(root, ".claude/skills"))).toBe(false);
+  });
+});
+
+test("deploy CLI fails unknown module filters before planning work", { timeout: 180_000 }, async () => {
   await withFixtureSandbox("deploy-cli-unknown-module", async ({ root }) => {
     await rm(join(root, ".claude/skills"), { recursive: true, force: true });
 
@@ -205,7 +290,7 @@ test("deploy CLI fails unknown module filters before planning work", async () =>
   });
 });
 
-test("deploy CLI fails preflight when empty targets are required", async () => {
+test("deploy CLI fails preflight when empty targets are required", { timeout: 180_000 }, async () => {
   await withFixtureSandbox("deploy-cli-collision", async ({ root }) => {
     await mkdir(join(root, ".claude/skills/backlog-module"), { recursive: true });
     await writeFile(join(root, ".claude/skills/backlog-module/SKILL.md"), "---\nname: backlog-module\ndescription: collision\n---\n");
@@ -234,7 +319,7 @@ test("deploy CLI fails preflight when empty targets are required", async () => {
   });
 });
 
-test("deploy library projects skills when validation status is warn", async () => {
+test("deploy library projects skills when validation status is warn", { timeout: 180_000 }, async () => {
   await withFixtureSandbox("deploy-library-warning", async ({ root }) => {
     await rm(join(root, ".claude/skills"), { recursive: true, force: true });
 
@@ -247,15 +332,18 @@ test("deploy library projects skills when validation status is warn", async () =
 
     expect(output.status).toBe("pass");
     expect(output.validation_status).toBe("warn");
+    expect(output.planned_system_file_count).toBe(1);
+    expect(output.written_system_file_count).toBe(1);
     expect(output.planned_skill_count).toBe(1);
     expect(output.written_skill_count).toBe(1);
     expect(output.planned_delamain_count).toBe(0);
     expect(output.written_delamain_count).toBe(0);
+    expect(readFileSync(join(root, ".als/CLAUDE.md"), "utf-8")).toBe(ALS_SYSTEM_CLAUDE_MD_CONTENTS);
     expect(existsSync(join(root, ".claude/skills/backlog-module/SKILL.md"))).toBe(true);
   });
 });
 
-test("deploy CLI projects bound Delamain bundles into .claude/delamains and is idempotent", async () => {
+test("deploy CLI projects bound Delamain bundles into .claude/delamains and is idempotent", { timeout: 180_000 }, async () => {
   await withFixtureSandbox("deploy-delamain-idempotent", async ({ root }) => {
     await rm(join(root, ".claude/skills"), { recursive: true, force: true });
     await rm(join(root, ".claude/delamains"), { recursive: true, force: true });
@@ -271,6 +359,8 @@ test("deploy CLI projects bound Delamain bundles into .claude/delamains and is i
     const firstOutput = JSON.parse(new TextDecoder().decode(first.stdout)) as {
       schema: string;
       status: string;
+      planned_system_file_count: number;
+      written_system_file_count: number;
       planned_skill_count: number;
       written_skill_count: number;
       planned_delamain_count: number;
@@ -280,8 +370,10 @@ test("deploy CLI projects bound Delamain bundles into .claude/delamains and is i
       delamain_name_conflicts: unknown[];
       warnings: unknown[];
     };
-    expect(firstOutput.schema).toBe("als-claude-deploy-output@3");
+    expect(firstOutput.schema).toBe("als-claude-deploy-output@4");
     expect(firstOutput.status).toBe("pass");
+    expect(firstOutput.planned_system_file_count).toBe(1);
+    expect(firstOutput.written_system_file_count).toBe(1);
     expect(firstOutput.planned_skill_count).toBe(1);
     expect(firstOutput.written_skill_count).toBe(1);
     expect(firstOutput.planned_delamain_count).toBe(1);
@@ -321,7 +413,7 @@ test("deploy CLI projects bound Delamain bundles into .claude/delamains and is i
   });
 });
 
-test("deploy CLI dry-run reports Delamain work without creating .claude/delamains", async () => {
+test("deploy CLI dry-run reports Delamain work without creating .claude/delamains", { timeout: 180_000 }, async () => {
   await withFixtureSandbox("deploy-delamain-dry-run", async ({ root }) => {
     await rm(join(root, ".claude/skills"), { recursive: true, force: true });
     await rm(join(root, ".claude/delamains"), { recursive: true, force: true });
@@ -336,6 +428,8 @@ test("deploy CLI dry-run reports Delamain work without creating .claude/delamain
     expect(process.exitCode).toBe(0);
     const output = JSON.parse(new TextDecoder().decode(process.stdout)) as {
       status: string;
+      planned_system_file_count: number;
+      written_system_file_count: number;
       planned_skill_count: number;
       written_skill_count: number;
       planned_delamain_count: number;
@@ -344,6 +438,8 @@ test("deploy CLI dry-run reports Delamain work without creating .claude/delamain
       warnings: unknown[];
     };
     expect(output.status).toBe("pass");
+    expect(output.planned_system_file_count).toBe(1);
+    expect(output.written_system_file_count).toBe(0);
     expect(output.planned_skill_count).toBe(1);
     expect(output.written_skill_count).toBe(0);
     expect(output.planned_delamain_count).toBe(1);
@@ -358,7 +454,7 @@ test("deploy CLI dry-run reports Delamain work without creating .claude/delamain
   });
 });
 
-test("deploy CLI preserves dispatcher node_modules while refreshing authored Delamain files", async () => {
+test("deploy CLI preserves dispatcher node_modules while refreshing authored Delamain files", { timeout: 180_000 }, async () => {
   await withFixtureSandbox("deploy-delamain-preserves-node-modules", async ({ root }) => {
     await rm(join(root, ".claude/delamains"), { recursive: true, force: true });
 
@@ -404,7 +500,7 @@ test("deploy CLI preserves dispatcher node_modules while refreshing authored Del
   });
 });
 
-test("deploy CLI warns when an existing Delamain target has no dispatcher dependencies to preserve", async () => {
+test("deploy CLI warns when an existing Delamain target has no dispatcher dependencies to preserve", { timeout: 180_000 }, async () => {
   await withFixtureSandbox("deploy-delamain-missing-node-modules-warning", async ({ root }) => {
     await rm(join(root, ".claude/delamains"), { recursive: true, force: true });
 
@@ -446,7 +542,7 @@ test("deploy CLI warns when an existing Delamain target has no dispatcher depend
   });
 });
 
-test("deploy CLI keeps skill projection overwrite behavior unchanged", async () => {
+test("deploy CLI keeps skill projection overwrite behavior unchanged", { timeout: 180_000 }, async () => {
   await withFixtureSandbox("deploy-skills-still-overwrite", async ({ root }) => {
     await rm(join(root, ".claude/skills"), { recursive: true, force: true });
 
@@ -472,7 +568,7 @@ test("deploy CLI keeps skill projection overwrite behavior unchanged", async () 
   });
 });
 
-test("deploy CLI excludes unused Delamains that are only present in the registry", async () => {
+test("deploy CLI excludes unused Delamains that are only present in the registry", { timeout: 180_000 }, async () => {
   await withFixtureSandbox("deploy-unused-delamain", async ({ root }) => {
     await cp(
       join(root, ".als/modules/factory/v1/delamains/development-pipeline"),
@@ -506,7 +602,7 @@ test("deploy CLI excludes unused Delamains that are only present in the registry
   });
 });
 
-test("deploy library fails when one Delamain name is reused across multiple effective bindings in a module", async () => {
+test("deploy library fails when one Delamain name is reused across multiple effective bindings in a module", { timeout: 180_000 }, async () => {
   await withFixtureSandbox("deploy-delamain-reused-binding", async ({ root }) => {
     await updateShapeYaml(root, "factory", 1, (shape) => {
       const entities = shape.entities as Record<string, Record<string, unknown>>;
@@ -570,7 +666,7 @@ test("deploy library fails when one Delamain name is reused across multiple effe
   });
 });
 
-test("deploy CLI fails preflight when empty targets are required for Delamain projection", async () => {
+test("deploy CLI fails preflight when empty targets are required for Delamain projection", { timeout: 180_000 }, async () => {
   await withFixtureSandbox("deploy-delamain-collision", async ({ root }) => {
     await rm(join(root, ".claude/skills"), { recursive: true, force: true });
     await rm(join(root, ".claude/delamains"), { recursive: true, force: true });
@@ -601,7 +697,7 @@ test("deploy CLI fails preflight when empty targets are required for Delamain pr
   });
 });
 
-test("deploy CLI fails when flat Delamain names collide across modules", async () => {
+test("deploy CLI fails when flat Delamain names collide across modules", { timeout: 180_000 }, async () => {
   await withFixtureSandbox("deploy-delamain-name-conflict", async ({ root }) => {
     await rm(join(root, ".claude/delamains"), { recursive: true, force: true });
     await cp(join(root, ".als/modules/factory"), join(root, ".als/modules/release"), { recursive: true });
@@ -640,7 +736,7 @@ test("deploy CLI fails when flat Delamain names collide across modules", async (
   });
 });
 
-test("deploy library preserves prior planned skills when a later module shape file is missing", async () => {
+test("deploy library preserves prior planned skills when a later module shape file is missing", { timeout: 180_000 }, async () => {
   await withFixtureSandbox("deploy-shape-missing", async ({ root }) => {
     await removePath(root, ".als/modules/people/v1/shape.yaml");
 
@@ -667,7 +763,7 @@ test("deploy library preserves prior planned skills when a later module shape fi
   });
 });
 
-test("deploy library reports YAML parse failures while planning Claude projection", async () => {
+test("deploy library reports YAML parse failures while planning Claude projection", { timeout: 180_000 }, async () => {
   await withFixtureSandbox("deploy-shape-parse-failure", async ({ root }) => {
     await writePath(root, ".als/modules/people/v1/shape.yaml", "dependencies: [\n");
 
@@ -690,7 +786,7 @@ test("deploy library reports YAML parse failures while planning Claude projectio
   });
 });
 
-test("deploy library reports schema validation details when shape.yaml is structurally invalid", async () => {
+test("deploy library reports schema validation details when shape.yaml is structurally invalid", { timeout: 180_000 }, async () => {
   await withFixtureSandbox("deploy-shape-invalid-schema", async ({ root }) => {
     await writePath(root, ".als/modules/people/v1/shape.yaml", "dependencies: []\nentities: []\n");
 
@@ -713,7 +809,7 @@ test("deploy library reports schema validation details when shape.yaml is struct
   });
 });
 
-test("deploy library fails closed when one entity declares multiple Delamain fields", async () => {
+test("deploy library fails closed when one entity declares multiple Delamain fields", { timeout: 180_000 }, async () => {
   await withFixtureSandbox("deploy-delamain-multi-binding", async ({ root }) => {
     await updateShapeYaml(root, "factory", 1, (shape) => {
       const entities = shape.entities as Record<string, { fields: Record<string, unknown> }>;

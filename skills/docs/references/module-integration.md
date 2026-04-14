@@ -55,9 +55,12 @@ The SKILL.md procedure says "Follow the procedure in references/plan-input.md" f
 
 ## The Deploy Pipeline
 
-`alsc deploy claude` projects active ALS assets into `.claude/`:
+`alsc deploy claude` manages one system-owned file under `.als/` and projects active ALS assets into `.claude/`:
 
 ```
+.als/
+└── CLAUDE.md                    →  generated + overwritten on every Claude deploy
+
 .als/modules/backlog/v2/
 ├── skills/
 │   ├── backlog-manage/        →  .claude/skills/backlog-manage/
@@ -68,6 +71,7 @@ The SKILL.md procedure says "Follow the procedure in references/plan-input.md" f
 ```
 
 **Important**:
+- Claude deploy writes `.als/CLAUDE.md` on every run, including module-filter deploys, and always overwrites it with the canonical ALS-managed guidance.
 - Skill deploy under `.claude/skills/` still overwrites the target directory completely.
 - Delamain deploy under `.claude/delamains/<name>/` refreshes authored files via merge projection so an existing `dispatcher/node_modules/` survives.
 - Delamain deploy projects `dispatcher/VERSION` with the rest of the authored dispatcher bundle.

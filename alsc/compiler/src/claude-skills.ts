@@ -19,6 +19,7 @@ import type {
   ClaudeSkillDeployWarning,
   ClaudeSkillProjectionCollision,
   ClaudeSkillProjectionPlan,
+  ClaudeSystemFilePlan,
 } from "./types.ts";
 import { loadSystemValidationContext, validateLoadedSystem } from "./validate.ts";
 
@@ -44,6 +45,11 @@ interface ClaudeDelamainProjectionWorkPlan extends ClaudeDelamainProjectionPlan 
   discriminator_value: string | null;
 }
 
+interface ClaudeSystemFileWorkPlan extends ClaudeSystemFilePlan {
+  target_path_abs: string;
+  contents: string;
+}
+
 type ClaudeSkillDeployProceedStatus = Exclude<ClaudeSkillDeployOutput["validation_status"], "fail">;
 
 type DelamainBindingSelection =
@@ -61,6 +67,20 @@ interface DelamainProjectionBinding {
 }
 
 const DELAMAIN_RUNTIME_MANIFEST_SCHEMA = "als-delamain-runtime-manifest@1";
+const ALS_SYSTEM_CLAUDE_MD_TARGET_PATH = ".als/CLAUDE.md";
+
+export const ALS_SYSTEM_CLAUDE_MD_CONTENTS = `# .als Directory
+
+This directory is managed by ALS. Its contents are generated and maintained by ALS skills and the compiler.
+
+Do not manually add, edit, or remove files here. Make changes through ALS skills such as \`/new\`, \`/change\`, \`/migrate\`, and \`/validate\`.
+
+This directory contains ALS definitions, including shapes, Delamain bundles, skill definitions, and migration bundles.
+
+The compiler reads from \`.als/\` and projects runtime assets into \`.claude/\`.
+
+Customize the system through ALS skills, not by editing \`.als/\` files directly.
+`;
 
 export function deployClaudeSkills(systemRootInput: string, options: ClaudeSkillDeployOptions = {}): ClaudeSkillDeployOutput {
   const systemRootAbs = resolve(systemRootInput);
@@ -131,6 +151,7 @@ export function deployClaudeSkillsFromConfig(
     );
   }
 
+  const systemFilePlans = buildSystemFilePlans(systemRootAbs);
   const planning = buildProjectionPlans(systemRootAbs, systemConfig, moduleFilter);
   if (planning.error) {
     return buildDeployOutput({
@@ -140,6 +161,8 @@ export function deployClaudeSkillsFromConfig(
       moduleFilter,
       dryRun,
       requireEmptyTargets,
+      systemFilePlans,
+      writtenSystemFileCount: 0,
       skillPlans: planning.skill_plans,
       writtenSkillCount: 0,
       existingSkillTargets: collectExistingSkillTargets(planning.skill_plans),
@@ -166,6 +189,8 @@ export function deployClaudeSkillsFromConfig(
       moduleFilter,
       dryRun,
       requireEmptyTargets,
+      systemFilePlans,
+      writtenSystemFileCount: 0,
       skillPlans,
       writtenSkillCount: 0,
       existingSkillTargets,
@@ -186,6 +211,8 @@ export function deployClaudeSkillsFromConfig(
       moduleFilter,
       dryRun,
       requireEmptyTargets,
+      systemFilePlans,
+      writtenSystemFileCount: 0,
       skillPlans,
       writtenSkillCount: 0,
       existingSkillTargets,
@@ -198,9 +225,37 @@ export function deployClaudeSkillsFromConfig(
     });
   }
 
+  let writtenSystemFileCount = 0;
   let writtenSkillCount = 0;
   let writtenDelamainCount = 0;
   if (!dryRun) {
+    for (const plan of systemFilePlans) {
+      try {
+        writeSystemFile(plan);
+        writtenSystemFileCount += 1;
+      } catch (error) {
+        return buildDeployOutput({
+          status: "fail",
+          systemRootRel,
+          validationStatus,
+          moduleFilter,
+          dryRun,
+          requireEmptyTargets,
+          systemFilePlans,
+          writtenSystemFileCount,
+          skillPlans,
+          writtenSkillCount,
+          existingSkillTargets,
+          delamainPlans,
+          writtenDelamainCount,
+          existingDelamainTargets,
+          delamainNameConflicts: [],
+          warnings,
+          error: `Could not write Claude system file '${plan.target_path}': ${formatError(error)}`,
+        });
+      }
+    }
+
     for (const plan of skillPlans) {
       try {
         overwriteProjectionDirectory(plan.source_dir_abs, plan.target_dir_abs);
@@ -213,6 +268,8 @@ export function deployClaudeSkillsFromConfig(
           moduleFilter,
           dryRun,
           requireEmptyTargets,
+          systemFilePlans,
+          writtenSystemFileCount,
           skillPlans,
           writtenSkillCount,
           existingSkillTargets,
@@ -239,6 +296,8 @@ export function deployClaudeSkillsFromConfig(
           moduleFilter,
           dryRun,
           requireEmptyTargets,
+          systemFilePlans,
+          writtenSystemFileCount,
           skillPlans,
           writtenSkillCount,
           existingSkillTargets,
@@ -260,6 +319,8 @@ export function deployClaudeSkillsFromConfig(
     moduleFilter,
     dryRun,
     requireEmptyTargets,
+    systemFilePlans,
+    writtenSystemFileCount: dryRun ? 0 : writtenSystemFileCount,
     skillPlans,
     writtenSkillCount: dryRun ? 0 : writtenSkillCount,
     existingSkillTargets,
@@ -366,6 +427,18 @@ function buildProjectionPlans(
     delamain_name_conflicts: collectDelamainNameConflicts(delamainPlans),
     error: null,
   };
+}
+
+function buildSystemFilePlans(systemRootAbs: string): ClaudeSystemFileWorkPlan[] {
+  const targetPathAbs = resolve(systemRootAbs, ALS_SYSTEM_CLAUDE_MD_TARGET_PATH);
+  return [
+    {
+      kind: "generated_claude_guidance",
+      target_path: toSystemRelative(systemRootAbs, targetPathAbs),
+      target_path_abs: targetPathAbs,
+      contents: ALS_SYSTEM_CLAUDE_MD_CONTENTS,
+    },
+  ];
 }
 
 function loadModuleShapeForProjection(
@@ -667,6 +740,13 @@ function toDelamainProjectionPlan(plan: ClaudeDelamainProjectionWorkPlan): Claud
   };
 }
 
+function toSystemFilePlan(plan: ClaudeSystemFileWorkPlan): ClaudeSystemFilePlan {
+  return {
+    kind: plan.kind,
+    target_path: plan.target_path,
+  };
+}
+
 function safeStat(pathAbs: string): ReturnType<typeof statSync> | null {
   try {
     return statSync(pathAbs);
@@ -696,6 +776,11 @@ function overwriteProjectionDirectory(sourceDirAbs: string, targetDirAbs: string
 function mergeProjectionDirectory(sourceDirAbs: string, targetDirAbs: string): void {
   mkdirSync(dirname(targetDirAbs), { recursive: true });
   cpSync(sourceDirAbs, targetDirAbs, { recursive: true, force: true });
+}
+
+function writeSystemFile(plan: ClaudeSystemFileWorkPlan): void {
+  mkdirSync(dirname(plan.target_path_abs), { recursive: true });
+  writeFileSync(plan.target_path_abs, plan.contents);
 }
 
 function writeDelamainRuntimeManifest(plan: ClaudeDelamainProjectionWorkPlan): void {
@@ -783,6 +868,8 @@ function buildFailureOutput(
     moduleFilter,
     dryRun,
     requireEmptyTargets,
+    systemFilePlans: [],
+    writtenSystemFileCount: 0,
     skillPlans: [],
     writtenSkillCount: 0,
     existingSkillTargets: [],
@@ -790,6 +877,7 @@ function buildFailureOutput(
     writtenDelamainCount: 0,
     existingDelamainTargets: [],
     delamainNameConflicts: [],
+    warnings: [],
     error,
   });
 }
@@ -801,6 +889,8 @@ function buildDeployOutput(params: {
   moduleFilter: string | null;
   dryRun: boolean;
   requireEmptyTargets: boolean;
+  systemFilePlans: ClaudeSystemFileWorkPlan[];
+  writtenSystemFileCount: number;
   skillPlans: ClaudeSkillProjectionWorkPlan[];
   writtenSkillCount: number;
   existingSkillTargets: ClaudeSkillProjectionCollision[];
@@ -820,6 +910,9 @@ function buildDeployOutput(params: {
     module_filter: params.moduleFilter,
     dry_run: params.dryRun,
     require_empty_targets: params.requireEmptyTargets,
+    planned_system_file_count: params.systemFilePlans.length,
+    written_system_file_count: params.writtenSystemFileCount,
+    planned_system_files: params.systemFilePlans.map(toSystemFilePlan),
     planned_skill_count: params.skillPlans.length,
     written_skill_count: params.writtenSkillCount,
     planned_skills: params.skillPlans.map(toSkillProjectionPlan),

@@ -108,6 +108,11 @@ export interface ClaudeDelamainProjectionCollision {
   target_kind: "file" | "directory";
 }
 
+export interface ClaudeSystemFilePlan {
+  kind: "generated_claude_guidance";
+  target_path: string;
+}
+
 export interface ClaudeDelamainNameConflict {
   delamain_name: string;
   // This list always contains at least two distinct module ids when emitted.
@@ -133,6 +138,9 @@ export interface ClaudeSkillDeployOutput {
   module_filter: string | null;
   dry_run: boolean;
   require_empty_targets: boolean;
+  planned_system_file_count: number;
+  written_system_file_count: number;
+  planned_system_files: ClaudeSystemFilePlan[];
   planned_skill_count: number;
   written_skill_count: number;
   planned_skills: ClaudeSkillProjectionPlan[];

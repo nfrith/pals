@@ -54,6 +54,17 @@ Rules:
 - Authored ALS v1 source YAML does not include a top-level `schema` field.
 - Validators reject stale authored `schema` fields so removed syntax does not linger in systems or prompts.
 
+### Generated .als/CLAUDE.md
+
+`alsc deploy claude` also manages a generated system-root guidance file at `.als/CLAUDE.md`.
+
+Rules:
+- Claude deploy writes or refreshes `.als/CLAUDE.md` on every run, including module-filter deploys.
+- The file is ALS-owned, generic across systems, and overwritten on deploy rather than treated as authored YAML input.
+- The file explains that ALS owns `.als/`, that `.als/` changes flow through ALS skills, and that the compiler reads `.als/` then projects runtime assets into `.claude/`.
+- Claude deploy dry-run reports the planned `.als/CLAUDE.md` write in `als-claude-deploy-output@4`.
+- The deploy output reports this file under `planned_system_files` with `kind: generated_claude_guidance` and `target_path: .als/CLAUDE.md`.
+
 ## Module version bundle
 
 Lives at `.als/modules/{module_id}/v{version}/`.

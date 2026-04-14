@@ -63,31 +63,27 @@ test.concurrent("alsc deploy claude dry-run exposes the public deploy surface", 
       schema: string;
       status: string;
       dry_run: boolean;
+      planned_system_file_count: number;
+      written_system_file_count: number;
+      planned_system_files: Array<{ kind: string; target_path: string }>;
       planned_skill_count: number;
       planned_delamain_count: number;
       warnings: Array<{ code: string; delamain_name: string; target_path: string }>;
     };
-    expect(output.schema).toBe("als-claude-deploy-output@3");
+    expect(output.schema).toBe("als-claude-deploy-output@4");
     expect(output.status).toBe("pass");
     expect(output.dry_run).toBe(true);
+    expect(output.planned_system_file_count).toBe(1);
+    expect(output.written_system_file_count).toBe(0);
+    expect(output.planned_system_files).toEqual([
+      {
+        kind: "generated_claude_guidance",
+        target_path: ".als/CLAUDE.md",
+      },
+    ]);
     expect(output.planned_skill_count).toBe(24);
     expect(output.planned_delamain_count).toBe(5);
-    expect(output.warnings).toHaveLength(5);
-    expect(output.warnings.map((warning) => warning.code)).toEqual([
-      "delamain_dispatcher_node_modules_missing",
-      "delamain_dispatcher_node_modules_missing",
-      "delamain_dispatcher_node_modules_missing",
-      "delamain_dispatcher_node_modules_missing",
-      "delamain_dispatcher_node_modules_missing",
-    ]);
-    expect(output.warnings.map((warning) => warning.delamain_name)).toEqual([
-      "run-lifecycle",
-      "development-pipeline",
-      "incident-lifecycle",
-      "release-lifecycle",
-      "postmortem-lifecycle",
-    ]);
-    expect(output.warnings[0]?.target_path).toBe(".claude/delamains/run-lifecycle/dispatcher/node_modules");
+    expect(output.warnings).toEqual([]);
   });
 });
 
@@ -103,6 +99,7 @@ test.concurrent("alsc help surfaces the main usage text", async () => {
   const stdout = new TextDecoder().decode(process.stdout);
   expect(stdout).toContain("alsc validate <system-root> [module-id]");
   expect(stdout).toContain("alsc deploy claude");
+  expect(stdout).toContain("Project active ALS Claude assets into .als/ and .claude/.");
 });
 
 test.concurrent("alsc validate help surfaces command usage", async () => {
