@@ -18,12 +18,12 @@ session_id=$(echo "$input" | jq -r '.session_id // ""')
 [[ -n "$session_id" ]] || exit 0
 
 # --- System root discovery ---
-# Walk up from the edited file looking for .als/system.yaml
+# Walk up from the edited file looking for .als/system.ts
 find_system_root() {
   local dir
   dir=$(dirname "$1")
   while [[ "$dir" != "/" ]]; do
-    if [[ -f "$dir/.als/system.yaml" ]]; then
+    if [[ -f "$dir/.als/system.ts" ]]; then
       echo "$dir"
       return 0
     fi
@@ -34,19 +34,37 @@ find_system_root() {
 
 system_root=$(find_system_root "$file_path") || exit 0
 
+if ! command -v bun &>/dev/null; then
+  exit 0
+fi
+
 # --- Module resolution ---
 rel_path="${file_path#"$system_root"/}"
 [[ "$rel_path" != "$file_path" ]] || exit 0
 
-module_id=""
-while IFS=: read -r mod mod_path; do
-  if [[ "$rel_path" == "$mod_path/"* ]]; then
-    module_id="$mod"
-    break
-  fi
-done < <(awk '/^  [^ ].*:$/ { mod = $1; sub(/:$/, "", mod) } /^    path:/ { p = $2; gsub(/["'"'"']/, "", p); print mod ":" p }' "$system_root/.als/system.yaml")
+module_id=$(bun -e '
+  const { join } = require("node:path");
+  const [systemRoot, relPath] = process.argv.slice(1);
+  try {
+    const requireFn = require;
+    const systemPath = join(systemRoot, ".als", "system.ts");
+    const resolvedPath = requireFn.resolve(systemPath);
+    delete requireFn.cache?.[resolvedPath];
+    const loaded = requireFn(resolvedPath);
+    const system = loaded.system ?? loaded.default;
+    for (const [moduleId, moduleConfig] of Object.entries(system?.modules ?? {})) {
+      if (relPath === moduleConfig.path || relPath.startsWith(`${moduleConfig.path}/`)) {
+        console.log(moduleId);
+        break;
+      }
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(`ALS breadcrumb hook: could not load ${join(systemRoot, ".als", "system.ts")}: ${message}`);
+  }
+' "$system_root" "$rel_path")
 
-# Also catch writes to .als/ metadata (shape files, system.yaml, etc.)
+# Also catch writes to .als/ metadata (module entrypoints, system.ts, etc.)
 if [[ -z "$module_id" && "$rel_path" == ".als/"* ]]; then
   module_id="__system__"
 fi

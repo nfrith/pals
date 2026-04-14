@@ -4,7 +4,7 @@ Reference for the `.als/config.md` file — the operator's persistent boot confi
 
 ## Location
 
-`.als/config.md` sits alongside `.als/system.yaml` in the system root.
+`.als/config.md` sits alongside `.als/system.ts` in the system root.
 
 ## Structure
 
@@ -22,7 +22,7 @@ updated: 2026-04-10
 
 | Field | Type | Required | Notes |
 |-------|------|----------|-------|
-| `system_id` | string | yes | Must match `.als/system.yaml` `system_id` |
+| `system_id` | string | yes | Must match `.als/system.ts` `system_id` |
 | `created` | date | yes | When this config was created |
 | `updated` | date | yes | Last modified date |
 

@@ -1,879 +1,780 @@
-# ALS Shape Language Reference
+# ALS Shape Language
 
-This is the complete format specification for ALS v1 shape files and system configuration. Use this reference when producing YAML output.
+ALS authored source is TypeScript.
 
-## system.yaml
+The canonical entrypoints are:
 
-Lives at `.als/system.yaml`. Declares the system identity and module registry.
+- `.als/system.ts`
+- `.als/modules/{module_id}/v{version}/module.ts`
+- `.als/modules/{module_id}/v{version}/delamains/{name}/delamain.ts` for authored Delamain definitions referenced from the module bundle
 
-```yaml
-als_version: 1                      # active ALS language version for the whole system
-system_id: my-system                  # unique system identifier used in ref URIs
+Authored source must stay synchronous, deterministic, and declarative. Export plain ALS data. Do not use async work, I/O, env branching, time or random access, getters, setters, or functions inside exported ALS definitions.
 
-modules:
-  people:                             # module id, kebab-case
-    path: workspace/people            # module mount path relative to the system root
-    version: 1                        # currently deployed shape version
-    skills:                           # live active skill ids for the active module version
-      - people-module
+Use `as const` on authored definitions so literal ids, enum values, and path fragments stay precise through the helper surface.
+
+## Authoring Helpers
+
+Use the typed helper surface from `.als/authoring.ts`:
+
+```ts
+export { defineSystem, defineModule, defineDelamain } from "../path/to/compiler/src/authoring/index.ts";
+```
+
+The helpers are identity functions. Their job is to give TypeScript a stable typed authoring surface.
+
+## system.ts
+
+`system.ts` declares the system identity plus the mounted module registry.
+
+```ts
+import { defineSystem } from "./authoring.ts";
+
+export const system = defineSystem({
+  als_version: 1,
+  system_id: "reference-system",
+  modules: {
+    backlog: {
+      path: "workspace/backlog",
+      version: 1,
+      skills: ["backlog-module"],
+    },
+    people: {
+      path: "workspace/people",
+      version: 1,
+      skills: ["people-module"],
+    },
+  },
+} as const);
+
+export default system;
 ```
 
 Rules:
-- `als_version`: required positive integer. One system validates against one ALS language version at a time.
-- This compiler currently supports `als_version: 1` only.
-- ALS language-version upgrades are whole-system cutovers. Long-lived mixed ALS versions inside one system are not part of the v1 contract.
-- `system_id`: non-empty string, used in ref URIs
-- Module ids must match `^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$`
-- Module `path` is a normalized relative path from the system root made of one or more slash-separated slug segments
-- Each `path` segment must match `^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$`
-- Module `skills` is a required array of live active skill ids and may be empty
-- Each skill id must match `^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$`
-- Active skill ids must be globally unique across the live system
-- Modules may register operator-facing monitor or override skills even when their bound Delamains have no operator-owned states. Those skills remain ordinary entries in `.als/system.yaml`; they are not encoded inside `delamain.yaml`.
-- Module paths cannot be absolute, contain empty segments, contain `.` or `..`, or contain hidden segments like `.als`
-- The module's data lives at `{path}/`
-- The module subtree may contain reserved non-record markdown files named `AGENTS.md` or `CLAUDE.md` at any depth
-- Matching for reserved agent files is case-insensitive, including the `.md` extension
-- Reserved agent files are ignored during ALS record validation and do not need entity path matches
-- Reserved agent files are the only case-insensitive markdown filename exception in module discovery
-- Other markdown record files must use lowercase `.md`; non-reserved files like `README.MD` are invalid
-- JSONL record files must use lowercase `.jsonl`; files like `STREAM.JSONL` are invalid
-- Other markdown and JSONL record files in the module subtree remain subject to normal ALS discovery and validation rules
-- Validation fails cleanly if ALS cannot read a directory inside the module subtree during discovery
-- The declared `path` must exist as a directory when validating
-- No two modules may have identical or overlapping mount paths
-- Module versions are directory bundles at `.als/modules/{module_id}/v{version}/`
-- Active shape files are inferred at `.als/modules/{module_id}/v{version}/shape.yaml`
-- A module declared at `version: N` must have contiguous bundle history from `v1` through `vN`
-- Bundles above the active version may exist for staged future work and are ignored by default validation
-- If `skills` is non-empty, the active bundle must contain `skills/{skill_id}/SKILL.md` for every listed skill id
-- If `skills` is empty, the active bundle may omit `skills/` entirely
-- Unlisted skill directories under the active bundle's `skills/` directory are invalid
-- Extra files inside a listed skill directory are allowed
-- Every bundle `vK` where `K > 1` must contain `migrations/MANIFEST.md` plus at least one additional migration artifact
-- Authored ALS v1 source YAML does not include a top-level `schema` field.
-- Validators reject stale authored `schema` fields so removed syntax does not linger in systems or prompts.
 
-### Generated .als/CLAUDE.md
+- `als_version` is the active ALS language version declared by `.als/system.ts`.
+- `modules.{module_id}.path` is the mounted record root for that module.
+- `modules.{module_id}.version` points at `.als/modules/{module_id}/v{version}`.
+- `modules.{module_id}.skills` lists the active operator-facing skill ids for that mounted version.
+- Active skill ids must stay globally unique across the system.
+- Module mount paths must stay normalized, relative, and non-overlapping.
 
-`alsc deploy claude` also manages a generated system-root guidance file at `.als/CLAUDE.md`.
+## module.ts
 
-Rules:
-- Claude deploy writes or refreshes `.als/CLAUDE.md` on every run, including module-filter deploys.
-- The file is ALS-owned, generic across systems, and overwritten on deploy rather than treated as authored YAML input.
-- The file explains that ALS owns `.als/`, that `.als/` changes flow through ALS skills, and that the compiler reads `.als/` then projects runtime assets into `.claude/`.
-- Claude deploy dry-run reports the planned `.als/CLAUDE.md` write in `als-claude-deploy-output@4`.
-- The deploy output reports this file under `planned_system_files` with `kind: generated_claude_guidance` and `target_path: .als/CLAUDE.md`.
+`module.ts` defines the authored module contract that record validation uses.
 
-## Module version bundle
+```ts
+import { defineModule } from "../../../authoring.ts";
 
-Lives at `.als/modules/{module_id}/v{version}/`.
+export const module = defineModule({
+  dependencies: [{ module: "people" }],
+  delamains: {
+    "development-pipeline": {
+      path: "delamains/development-pipeline/delamain.ts",
+    },
+  },
+  entities: {
+    item: {
+      source_format: "markdown",
+      path: "items/{id}.md",
+      identity: {
+        id_field: "id",
+      },
+      fields: {
+        id: { type: "id", allow_null: false },
+        title: { type: "string", allow_null: false },
+        owner: {
+          type: "ref",
+          allow_null: false,
+          target: { module: "people", entity: "person" },
+        },
+      },
+      body: {
+        title: {
+          source: {
+            kind: "field",
+            field: "title",
+          },
+        },
+        sections: [
+          {
+            name: "DESCRIPTION",
+            allow_null: false,
+            content: {
+              mode: "freeform",
+              blocks: {
+                paragraph: {},
+                bullet_list: {},
+              },
+            },
+          },
+        ],
+      },
+    },
+  },
+} as const);
 
-```yaml
-dependencies: []                      # required even when empty
-
-delamains:
-  development-pipeline:
-    path: delamains/development-pipeline/delamain.yaml
-
-entities:
-  # ... entity definitions
-```
-
-With cross-module references:
-
-```yaml
-dependencies:                         # other modules this one references
-  - module: people                    # just the module id
-
-entities:
-  # ... entity definitions
+export default module;
 ```
 
 Rules:
-- Every required module version bundle contains `shape.yaml`
-- The live active skill interface is declared in `.als/system.yaml`, but the canonical skill bundles live under `skills/{skill_id}/SKILL.md`
-- Migration assets for `vK > 1` live under `migrations/` in the target bundle `vK`
-- `dependencies` is required. Use an empty list when the module has no cross-module references.
-- `delamains` is optional. Omit it when the module does not use Delamain-bound fields.
-- `delamains` maps Delamain names to primary definition file paths relative to the active module version bundle.
-- Delamain registry paths must resolve to files inside the same active module version bundle.
-- Delamain registry paths in `shape.yaml` are module-bundle-relative. Delamain-local asset paths inside `delamain.yaml` are Delamain-bundle-relative.
-- If a ref targets another module, that module must be listed in `dependencies`.
-- `entities`: keyed by entity name matching `^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$`
-- Authored ALS v1 shape files do not include a top-level `schema` field.
-- Validators reject stale authored `schema` fields so removed syntax does not linger in systems or prompts.
 
-## Entity definition
+- Every required module version bundle contains `module.ts`.
+- `dependencies` names other modules whose entities may be referenced from this module.
+- `delamains.{name}.path` is module-bundle-relative and points at an authored `delamain.ts`.
+- `entities` defines the valid authored record contract for the mounted module path.
 
-Entities have three supported shapes:
+## Entity Source Formats
 
-1. Markdown plain entities with a shared `fields` set and an explicit `body` contract
-2. Markdown variant entities with root/base `fields`, a `discriminator`, an optional shared `body`, a `section_definitions` library, and per-variant `fields` + full ordered `sections`
-3. JSONL entities with path-derived identity and a closed `rows.fields` schema
+ALS supports two record source formats:
 
-### Plain entity
+- `markdown`
+- `jsonl`
 
-```yaml
-entity-name:
-  source_format: markdown
-  path: items/{id}.md                 # path template relative to module data dir
+### markdown entities
 
-  identity:
-    id_field: id                      # always "id"
-    parent:                           # optional — only for nested entities
-      entity: parent-entity-name      # must be another entity in this module
-      ref_field: parent_ref           # field in this entity that refs the parent
+Markdown entities declare:
 
-  fields:
-    # ... field definitions
+- `path`
+- `identity`
+- `fields`
+- `body` for plain entities, or `body` plus `section_definitions` and `variants` for variant entities
 
-  body:
-    title:
-      source:
-        kind: field
-        field: title
+Constraints:
 
-    preamble:
-      allow_null: true
-      content:
-        mode: freeform
-        blocks:
-          paragraph: {}
-      guidance:
-        include: framing context before the main sections
-        exclude: section-specific detail
+- `path` must contain `{id}` and end in `.md`.
+- `fields.id` must exist and must be `{ type: "id", allow_null: false }`.
+- `identity.parent` may only target another markdown entity in the same module definition.
 
-    sections:
-      # ... inline section definitions
+### jsonl entities
+
+JSONL entities declare:
+
+- `path`
+- `rows`
+
+Constraints:
+
+- `path` must contain `{id}` and end in `.jsonl`.
+- JSONL entities do not declare `identity`, `fields`, `body`, `discriminator`, `section_definitions`, or `variants`.
+
+## Field Types
+
+Supported field types:
+
+- `id`
+- `string`
+- `number`
+- `date`
+- `enum`
+- `delamain`
+- `ref`
+- `file_path`
+- `list`
+
+`allow_null` remains part of the authored contract for every field type except `id`, which is always non-null.
+
+### enum
+
+```ts
+status: {
+  type: "enum",
+  allow_null: false,
+  allowed_values: ["draft", "active", "done"],
+}
 ```
 
-### Variant entity
+Allowed values must be non-empty and unique.
 
-```yaml
-entity-name:
-  source_format: markdown
-  path: items/{id}.md
+### ref
 
-  identity:
-    id_field: id
-
-  discriminator: type
-
-  fields:                             # root/base fields present for every variant
-    id:
-      type: id
-      allow_null: false
-    title:
-      type: string
-      allow_null: false
-    type:
-      type: enum
-      allow_null: false
-      allowed_values: [app, research]
-
-  body:                               # optional shared top-level body regions
-    title:
-      source:
-        kind: field
-        field: title
-    preamble:
-      allow_null: true
-      content:
-        mode: freeform
-        blocks:
-          paragraph: {}
-
-  section_definitions:                # reusable h2 section definitions keyed by section name
-    DESCRIPTION:
-      allow_null: false
-      content:
-        mode: freeform
-        blocks:
-          paragraph: {}
-      guidance:
-        include: what this item is and why it exists
-        exclude: status history
-    ACTIVITY_LOG:
-      allow_null: false
-      content:
-        mode: freeform
-        blocks:
-          bullet_list: {}
-          ordered_list: {}
-      guidance:
-        include: dated progress history
-        exclude: evergreen requirements
-
-  variants:
-    app:
-      fields:                         # variant-local fields added to the root/base set
-        status:
-          type: enum
-          allow_null: false
-          allowed_values: [draft, active, completed]
-        delivery_track:
-          type: enum
-          allow_null: false
-          allowed_values: [net-new, enhancement, hardening]
-        target_release:
-          type: string
-          allow_null: false
-      sections: [DESCRIPTION, ACTIVITY_LOG]   # authoritative full h2 section order for app records
-
-    research:
-      fields:
-        status:
-          type: enum
-          allow_null: false
-          allowed_values: [draft, findings-ready, completed]
-        research_question:
-          type: string
-          allow_null: false
-      sections: [DESCRIPTION, ACTIVITY_LOG]
+```ts
+owner: {
+  type: "ref",
+  allow_null: false,
+  target: {
+    module: "people",
+    entity: "person",
+  },
+}
 ```
+
+Cross-module refs require a declared dependency on the target module.
+
+### file_path
+
+```ts
+context_file: {
+  type: "file_path",
+  allow_null: true,
+  base: "system_root",
+}
+```
+
+Supported bases:
+
+- `system_root`: normalized relative path from the ALS system root directory that contains `.als/system.ts`
+- `host_absolute`: absolute host path
+
+### list
+
+```ts
+tags: {
+  type: "list",
+  allow_null: true,
+  items: {
+    type: "enum",
+    allowed_values: ["ops", "infra", "docs"],
+  },
+}
+```
+
+```ts
+people: {
+  type: "list",
+  allow_null: true,
+  items: {
+    type: "ref",
+    target: { module: "people", entity: "person" },
+  },
+}
+```
+
+```ts
+sessions: {
+  type: "list",
+  allow_null: true,
+  items: {
+    type: "file_path",
+    base: "system_root",
+  },
+}
+```
+
+Supported list item types for markdown frontmatter:
+
+- `string`
+- `enum`
+- `ref`
+- `file_path`
+
+Supported list item types for JSONL row schemas:
+
+- `string`
+- `enum`
+
+## Body Contracts
+
+ALS body contracts remain declarative.
+
+### title sources
+
+Supported title sources:
+
+- field source
+- authored title (`kind: "authored"`)
+- template source with `field` and `literal` parts
+
+Example:
+
+```ts
+title: {
+  source: {
+    kind: "template",
+    parts: [
+      { kind: "field", field: "id" },
+      { kind: "literal", value: ": " },
+      { kind: "field", field: "title" },
+    ],
+  },
+}
+```
+
+Title functions are not part of the contract in this pass.
+
+### preamble and guidance
+
+Body regions (preamble, sections, section_definitions values) support `guidance` with `include` and `exclude` strings. These tell agents what content belongs in each region:
+
+```ts
+{
+  name: "DESCRIPTION",
+  allow_null: false,
+  content: {
+    mode: "freeform",
+    blocks: {
+      paragraph: {},
+      bullet_list: {},
+    },
+  },
+  guidance: {
+    include: "what this item is and why it exists",
+    exclude: "status history, implementation details",
+  },
+}
+```
+
+`body.preamble` declares content between the `h1` title and the first declared `## section`:
+
+```ts
+body: {
+  title: {
+    source: { kind: "field", field: "title" },
+  },
+  preamble: {
+    allow_null: true,
+    content: {
+      mode: "freeform",
+      blocks: { paragraph: {} },
+    },
+  },
+  sections: [/* ... */],
+}
+```
+
+### content modes
+
+Supported content modes:
+
+- `freeform`
+- `outline`
+
+Freeform block types:
+
+- `paragraph`
+- `bullet_list`
+- `ordered_list`
+- `table`
+- `heading`
+- `blockquote`
+- `code`
+
+Outline content combines:
+
+- optional `preamble`
+- ordered `nodes`
+- per-node freeform content
+
+## Variant Entities
+
+Variant markdown entities use:
+
+- `discriminator`
+- optional shared `body`
+- `section_definitions`
+- `variants`
+
+Example:
+
+```ts
+item: {
+  source_format: "markdown",
+  path: "items/{id}.md",
+  identity: { id_field: "id" },
+  discriminator: "type",
+  fields: {
+    id: { type: "id", allow_null: false },
+    title: { type: "string", allow_null: false },
+    type: {
+      type: "enum",
+      allow_null: false,
+      allowed_values: ["app", "research"],
+    },
+  },
+  body: {
+    title: {
+      source: { kind: "field", field: "title" },
+    },
+    preamble: {
+      allow_null: true,
+      content: { mode: "freeform", blocks: { paragraph: {} } },
+    },
+  },
+  section_definitions: {
+    DESCRIPTION: {
+      allow_null: false,
+      content: { mode: "freeform", blocks: { paragraph: {}, bullet_list: {} } },
+      guidance: {
+        include: "what this item is and why it exists",
+        exclude: "status history",
+      },
+    },
+    ACTIVITY_LOG: {
+      allow_null: false,
+      content: { mode: "freeform", blocks: { bullet_list: {}, ordered_list: {} } },
+      guidance: {
+        include: "dated progress history",
+        exclude: "evergreen requirements",
+      },
+    },
+  },
+  variants: {
+    app: {
+      fields: {
+        status: {
+          type: "enum",
+          allow_null: false,
+          allowed_values: ["draft", "active", "completed"],
+        },
+        delivery_track: {
+          type: "enum",
+          allow_null: false,
+          allowed_values: ["net-new", "enhancement", "hardening"],
+        },
+      },
+      sections: ["DESCRIPTION", "ACTIVITY_LOG"],
+    },
+    research: {
+      fields: {
+        status: {
+          type: "enum",
+          allow_null: false,
+          allowed_values: ["draft", "findings-ready", "completed"],
+        },
+        research_question: { type: "string", allow_null: false },
+      },
+      sections: ["DESCRIPTION", "ACTIVITY_LOG"],
+    },
+  },
+}
+```
+
+The discriminator chooses both the body contract (which sections appear) and the variant-local frontmatter. For `type: app`, the effective frontmatter is root fields (`id`, `title`, `type`) plus app fields (`status`, `delivery_track`). For `type: research`, it is root fields plus research fields (`status`, `research_question`).
 
 Rules:
-- Every entity declares `source_format`.
-- Plain entities declare their full body contract in `body`.
-- Variant entities continue to use `section_definitions` plus each variant's `sections` list for authoritative `h2` section order.
-- `variants.<variant>.fields` declare frontmatter fields, not section metadata. Once the discriminator resolves, the effective frontmatter contract is the root/base `fields` plus that variant's `fields`.
-- Variant entities may also declare shared `body.title` and shared `body.preamble` at the entity root.
-- Variant entities may omit `body` entirely when they do not declare a shared title or shared preamble.
-- Markdown entities must use `.md` paths.
+
+- The discriminator field must exist, be type `enum`, and be non-null.
+- Variant keys must exactly match the discriminator enum values.
+- Variant-local fields must not collide with root fields.
+- Variant sections must reference declared `section_definitions`.
+- Variant entities may omit `body` entirely when no shared title or preamble is needed.
 - Markdown entities must not declare `rows`.
-- Markdown `identity.parent` targets must also be markdown entities.
 
-#### Variant-local frontmatter
+## Delamain Authoring
 
-The discriminator chooses both the body contract and the variant-local frontmatter contract.
-The examples below are illustrative. They show the contract shape, not an exact mirror of any one fixture.
+Authored Delamain definitions live in `delamain.ts` and are referenced from the module registry.
 
-For `type: app`, the frontmatter contract is:
+```ts
+import { defineDelamain } from "../../../../../authoring.ts";
 
-- root/base fields such as `id`, `title`, and `type`
-- app fields such as variant-scoped `status`, `delivery_track`, and `target_release`
+export const delamain = defineDelamain({
+  phases: ["intake", "implementation", "closed"],
+  states: {
+    draft: {
+      initial: true,
+      phase: "intake",
+      actor: "operator",
+    },
+    "in-dev": {
+      phase: "implementation",
+      actor: "agent",
+      resumable: true,
+      "session-field": "dev_session",
+      path: "agents/in-dev.md",
+    },
+    completed: {
+      phase: "closed",
+      terminal: true,
+    },
+  },
+  transitions: [
+    { class: "advance", from: "draft", to: "in-dev" },
+    { class: "exit", from: "in-dev", to: "completed" },
+  ],
+} as const);
 
-For `type: research`, the frontmatter contract is:
-
-- root/base fields such as `id`, `title`, and `type`
-- research fields such as variant-scoped `status` and `research_question`
-
-Illustrative example records:
-
-```yaml
----
-id: ITEM-001
-title: Ship backlog variants
-type: app
-status: active
-delivery_track: enhancement
-target_release: 2026-Q2
----
-```
-
-```yaml
----
-id: ITEM-002
-title: Evaluate backlog rollups
-type: research
-status: findings-ready
-research_question: Should rollup buckets stay outside the compiler?
----
-```
-
-### JSONL entity
-
-```yaml
-entity-name:
-  source_format: jsonl
-  path: streams/{id}.jsonl
-
-  rows:
-    fields:
-      observed_at:
-        type: string
-        allow_null: false
-      metric:
-        type: enum
-        allow_null: false
-        allowed_values: [latency_ms]
-      value:
-        type: number
-        allow_null: false
-      tags:
-        type: list
-        allow_null: false
-        items:
-          type: enum
-          allowed_values: [api-gateway, baseline, canary]
+export default delamain;
 ```
 
 Rules:
-- JSONL entities must use `.jsonl` paths.
-- JSONL entities do not declare `identity`.
-- JSONL entity identity comes from matched path bindings, including `{id}`.
-- JSONL entities must not declare markdown-only surfaces such as `fields`, `body`, `discriminator`, `section_definitions`, or `variants`.
-- `rows.fields` is the authoritative per-line schema.
-- Empty JSONL files are valid. This supports stream-like entities that may temporarily contain zero rows.
+
+- Delamain registry paths in `module.ts` are module-bundle-relative.
+- Delamain-local agent asset paths inside `delamain.ts` are Delamain-bundle-relative.
+- Delamain prompt assets stay filesystem assets beside the authored definition.
+- Dispatcher template version is runtime asset metadata. It is not declared in `module.ts`, authored `delamain.ts`, `runtime-manifest.json`, or record frontmatter.
+- For agent file format (frontmatter keys, body-as-prompt, sub-agents), see `delamain-agents.md`.
+
+## Bundle Layout
+
+Required authored layout:
+
+```text
+.als/
+  system.ts
+  authoring.ts
+  modules/
+    backlog/
+      v1/
+        module.ts
+        skills/
+          backlog-manage/
+            SKILL.md
+        delamains/
+          development-pipeline/
+            delamain.ts
+            agents/
+              in-dev.md
+```
+
+Rules:
+
+- Version bundles remain contiguous from `v1` through the active version.
+- Active skills are still declared in `.als/system.ts`, but canonical skill bundles live under `skills/{skill_id}/SKILL.md`.
+- Every bundle `vK` where `K > 1` must contain `migrations/MANIFEST.md` plus at least one additional migration artifact.
+
+## Deployment Note
+
+Authored Delamains are TypeScript, but Claude deploy still writes a runtime `delamain.yaml` into `.claude/delamains/{name}/` beside `runtime-manifest.json` so existing dispatchers keep the same downstream contract.
+
+## Detailed Rules
+
+`shape-language.md` is the authoritative reference for ALS authored source. Runtime-specific details such as deployed dispatcher behavior, agent markdown frontmatter, and `.als/config.md` boot metadata are split into the neighboring `delamain-agents.md`, `delamain-dispatcher.md`, and `bootup-config.md` references.
+
+### system.ts Detailed Rules
+
+- `als_version` is required and must be a positive integer.
+- ALS v1 currently supports `als_version: 1` only.
+- ALS language-version upgrades remain whole-system cutovers. Mixed authored ALS versions inside one system are not part of the v1 contract.
+- `system_id` is required and must be a non-empty string.
+- Module ids must match `^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$`.
+- Module mount paths are normalized relative paths from the ALS system root.
+- Module mount paths must not be absolute, contain empty segments, contain `.` or `..`, or contain hidden segments such as `.als`.
+- No two modules may have identical or overlapping mount paths.
+- The declared module path must exist as a directory when validating.
+- Active skill ids must be globally unique across the live system.
+- If `skills` is non-empty, the active bundle must contain `skills/{skill_id}/SKILL.md` for every listed skill id.
+- If `skills` is empty, the active bundle may omit `skills/` entirely.
+- Unlisted skill directories under the active bundle's `skills/` directory are invalid.
+- Bundles above the active version may exist for staged future work and are ignored by default validation.
+- A module declared at `version: N` must have contiguous bundle history from `v1` through `vN`.
+
+### module.ts Detailed Rules
+
+- Every required module version bundle contains `module.ts`.
+- `dependencies` is required. Use an empty array when the module has no cross-module refs.
+- `delamains` is optional. Omit it when the module does not use Delamain-bound fields.
+- `delamains.{name}.path` must resolve to a file inside the same active module version bundle.
+- Delamain registry paths in `module.ts` are module-bundle-relative.
+- Delamain-local asset paths inside authored `delamain.ts` remain Delamain-bundle-relative.
+- If a `ref` targets another module, that target module must be listed in `dependencies`.
+- Entity names must match `^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$`.
+- Authored ALS v1 source does not include a top-level `schema` field. Validators reject stale `schema` keys so removed syntax does not linger in systems or prompts.
+
+### Path Templates
+
+Path templates use `{placeholder}` segments to map records to filesystem locations.
+
+- `{id}` captures this entity's id.
+- `{parent_entity_name}` captures an ancestor id using the ancestor entity name, not the ref field name.
+- Every path must contain `{id}`.
+- Markdown entities must end in `.md`.
+- JSONL entities must end in `.jsonl`.
+- Nested entities should include ancestor placeholders so lineage is encoded in the path.
+
+Examples:
+
+- Flat markdown: `items/{id}.md`
+- Self-named directory: `items/{id}/{id}.md`
+- Nested markdown: `programs/{program}/experiments/{id}/{id}.md`
+- Deep nested markdown: `programs/{program}/experiments/{experiment}/runs/{id}.md`
+- JSONL stream: `streams/{id}.jsonl`
+
+### Detailed Field Rules
+
+Markdown entities must declare an `id` field of type `id`. Every declared markdown field must appear explicitly in record frontmatter. `allow_null` controls whether the explicit value may be `null`; it does not allow omission.
+
+There is no optional-field syntax in ALS v1. Omit the field entirely only by changing the authored contract.
+
+#### id
+
+```ts
+id: { type: "id", allow_null: false }
+```
+
+- Primary key.
+- Must be a non-empty string.
+- Must match the filename stem.
+- `allow_null: true` is invalid on `id`.
+
+#### string
+
+```ts
+title: { type: "string", allow_null: false }
+```
+
+- Must be a string.
+- Empty strings are rejected.
+
+#### number
+
+```ts
+budget: { type: "number", allow_null: true }
+```
+
+- Must remain numeric.
+- `NaN` and infinities are rejected in authored source.
+
+#### date
+
+```ts
+started_on: { type: "date", allow_null: false }
+```
+
+- Values must use `YYYY-MM-DD`.
+- Timestamp-like values remain `type: "string"` in ALS v1.
+
+#### enum
+
+- `allowed_values` is required.
+- Allowed values must be non-empty unique strings.
+
+#### delamain
+
+```ts
+status: {
+  type: "delamain",
+  allow_null: false,
+  delamain: "development-pipeline",
+}
+```
+
+- Must reference a Delamain name declared in the bundle `delamains` registry.
+- Uses the referenced Delamain's state names as its legal persisted values.
+- Must not also declare `allowed_values`.
+- May appear at most once per effective entity schema. For plain entities, at most one `type: delamain` field on the entity. For variant entities, if root/base fields declare one, variants declare none; if root/base fields declare none, each variant may declare at most one.
+- Invalid persisted Delamain state values are reported through the same invalid-value diagnostic family used for plain enums.
+
+#### ref
+
+- Ref values in record frontmatter use the format: `"[display-label](als://system_id/module/entity/id)"`
+- The URI path encodes lineage: `als://system_id/module/entity-type/entity-id` for root entities, or `als://system_id/module/parent-type/parent-id/child-type/child-id` for nested entities.
+- Use `ref` when the intended meaning is ALS entity identity. Use `file_path` when the intended meaning is a filesystem artifact.
+- Refs may target markdown entities or JSONL entities. There are no row-level refs or row-level canonical URIs.
+- Refs always target entity identity, not row identity.
+- Cross-module refs require a declared dependency on the target module.
+- `identity.parent` may only target another markdown entity in the same module definition.
+
+#### file_path
+
+- `file_path` values are plain strings, not markdown links.
+- Supported bases are `system_root` and `host_absolute`.
+- `file_path` values must be non-empty plain file paths, not URIs such as `https://...` or `file://...`.
+- `system_root` means a normalized relative path from the ALS system root containing `.als/system.ts`. Values use `/` separators, must not begin with `/`, `\`, or a drive prefix such as `C:`, and must not contain `\`, `.`, `..`, or empty path segments.
+- `host_absolute` means an absolute host path on the validator platform. Values must be normalized, must not contain empty, `.`, or `..` path segments after the root, and must not end with a directory separator.
+- File-path targets must exist, be accessible enough for validation, and resolve to files rather than directories.
+- File paths may point outside the declaring module subtree and may point to hidden paths including `.als/`.
+- File paths do not participate in `dependencies` or ALS ref resolution.
+
+#### list
+
+- Markdown frontmatter supports `list<string>`, `list<enum>`, `list<ref>`, and `list<file_path>`.
+- JSONL row schemas support `list<string>` and `list<enum>` only.
+- `list<enum>` rejects duplicate members.
+- Empty lists are allowed. `allow_null` only controls whether the field value may be `null`.
+
+### JSONL Detailed Rules
+
+Example JSONL entity:
+
+```ts
+metrics: {
+  source_format: "jsonl",
+  path: "streams/{id}.jsonl",
+  rows: {
+    fields: {
+      observed_at: { type: "string", allow_null: false },
+      metric: {
+        type: "enum",
+        allow_null: false,
+        allowed_values: ["latency_ms", "error_rate"],
+      },
+      value: { type: "number", allow_null: false },
+      tags: {
+        type: "list",
+        allow_null: false,
+        items: {
+          type: "enum",
+          allowed_values: ["api-gateway", "baseline", "canary"],
+        },
+      },
+    },
+  },
+}
+```
+
+- JSONL entities declare `path` plus `rows.fields`.
+- JSONL entities do not declare `identity`, `fields`, `body`, `discriminator`, `section_definitions`, or `variants`.
+- Empty JSONL files are valid.
 - Every JSONL line must be one JSON object.
 - Every JSONL line must satisfy the same declared row schema.
 - Every declared JSONL row key must be present on every line.
 - `allow_null: true` allows explicit `null`; it does not allow omission.
 - Undeclared JSONL row keys are rejected.
-- JSONL rows support only `string`, `number`, `date`, `enum`, `list<string>`, and `list<enum>` in this pass.
-- `date` remains `YYYY-MM-DD`. Timestamp values should use `type: string` in this pass.
-- ALS refs can target JSONL entities, but there are no row-level refs or row-level canonical URIs.
+- JSONL rows support only `string`, `number`, `date`, `enum`, `list<string>`, and `list<enum>` in ALS v1.
 
-### Path templates
+### Body Contract Detailed Rules
 
-Path templates use `{placeholder}` segments to map entities to filesystem paths.
+`body` is the explicit top-level markdown body contract for a record. It may declare:
 
-- `{id}` captures this entity's id
-- `{parent_entity_name}` captures an ancestor's id (use the entity name, not the field name)
-- Every path must contain `{id}`
-- Nested entities should include ancestor placeholders to encode lineage
+- `title`
+- `preamble`
+- `sections` for plain entities
 
-Examples:
-- Flat: `items/{id}.md`
-- Self-named directory: `items/{id}/{id}.md`
-- Nested: `programs/{program}/experiments/{id}/{id}.md`
-- Deeply nested: `programs/{program}/experiments/{experiment}/runs/{id}.md`
-- JSONL stream: `streams/{id}.jsonl`
+There are no invisible body zones. Every authored top-level body region must be declared.
 
-### Field types
+#### Title sources
 
-Markdown entities must declare an `id` field of type `id`. Every declared markdown field must appear in record frontmatter. `allow_null` controls whether the explicit value may be `null`; it does not allow omission.
-
-There is no mechanism to declare optional fields.
-
-#### id
-
-```yaml
-id:
-  type: id
-  allow_null: false
-```
-
-Primary key. Must be a non-empty string. Must match the filename stem.
-The compiler rejects `allow_null: true` on `id`.
-
-#### string
-
-```yaml
-title:
-  type: string
-  allow_null: false
-```
-
-#### number
-
-```yaml
-budget:
-  type: number
-  allow_null: true
-```
-
-#### date
-
-```yaml
-started_on:
-  type: date
-  allow_null: false
-```
-
-Values must be `YYYY-MM-DD` format.
-
-#### enum
-
-```yaml
-status:
-  type: enum
-  allow_null: false
-  allowed_values: [draft, active, completed]
-```
-
-Must include `allowed_values` — a list of at least one unique string.
-
-#### delamain
-
-```yaml
-delamains:
-  development-pipeline:
-    path: delamains/development-pipeline/delamain.yaml
-
-entities:
-  work-item:
-    fields:
-      status:
-        type: delamain
-        allow_null: false
-        delamain: development-pipeline
-```
-
-Must declare `delamain` and reference a Delamain name declared in the module bundle's `delamains` registry.
-
-A `type: delamain` field:
-
-- uses the referenced Delamain's declared state names as its legal persisted values
-- does not also declare `allowed_values`
-- remains a frontmatter field like any other field, but its current-value set comes from the Delamain bundle instead of inline enum values
-- may appear at most once per effective entity schema
-- for plain entities, that means at most one `type: delamain` field on the entity
-- for variant entities, root/base fields may declare at most one `type: delamain` field; if root/base fields declare one, variants declare none
-- for variant entities whose root/base fields declare no `type: delamain` field, each variant may declare at most one `type: delamain` field in that variant's effective schema
-- invalid persisted Delamain state values are reported through the same frontmatter invalid-value diagnostic family used for plain enums
-
-#### ref
-
-```yaml
-owner_ref:
-  type: ref
-  allow_null: true
-  target:
-    module: people          # target module id
-    entity: person          # target entity name
-```
-
-Ref values in record frontmatter use the format: `"[display-label](als://system_id/module/entity/ancestor/.../id)"`
-
-The URI path encodes the full lineage: `als://system_id/module/entity-type/entity-id` for root entities, or `als://system_id/module/parent-type/parent-id/child-type/child-id` for nested entities.
-
-- `target.module` can be this module or another module (if another, it must be in `dependencies`)
-- Refs may target markdown entities or JSONL entities. Refs always target entity identity, not row identity.
-
-#### file_path
-
-```yaml
-context_file:
-  type: file_path
-  allow_null: true
-  base: system_root
-```
-
-`file_path` values are plain YAML strings. They do not use markdown-link syntax.
-They must be non-empty plain file paths, not URIs such as `https://...` or `file://...`.
-
-Allowed `base` values:
-
-- `system_root`: normalized relative path from the ALS system root directory that contains `.als/system.yaml`
-- `host_absolute`: absolute file path on the validator host platform
-
-`system_root` values:
-
-- use `/` separators
-- must not begin with `/`, `\`, or a drive prefix such as `C:`
-- must not contain `\`, `.`, `..`, or empty path segments
-
-`host_absolute` values:
-
-- must be absolute paths on the validator host platform
-- must be normalized absolute paths
-- must not contain empty, `.`, or `..` path segments after the root
-- must not end with a directory separator
-
-All `file_path` targets:
-
-- must exist at validation time
-- must be accessible enough for validation to confirm they are files
-- must resolve to files, not directories
-- may point outside the declaring module subtree
-- may point to hidden paths and `.als/...`
-- do not participate in `dependencies` or ALS ref resolution
-
-Use `ref` when the intended meaning is ALS entity identity. Use `file_path` when the intended meaning is a filesystem artifact.
-
-#### list
-
-```yaml
-tags:
-  type: list
-  allow_null: true
-  items:
-    type: string
-```
-
-Items can be `type: string`, `type: ref` (with a `target`), `type: enum` (with `allowed_values`), or `type: file_path` (with `base`):
-
-```yaml
-people:
-  type: list
-  allow_null: true
-  items:
-    type: ref
-    target:
-      module: people
-      entity: person
-```
-
-```yaml
-sessions:
-  type: list
-  allow_null: true
-  items:
-    type: file_path
-    base: system_root
-```
-
-```yaml
-folders:
-  type: list
-  allow_null: false
-  items:
-    type: enum
-    allowed_values: [lotf, aitw, claude-cowork]
-```
-
-- `list<enum>` validates each item as a string enum member.
-- `list<enum>` rejects duplicate members.
-- `list<string>`, `list<ref>`, and `list<file_path>` do not enforce uniqueness.
-- Empty lists are allowed. `allow_null` only controls whether the field value may be `null`.
-
-### Delamain bundles
-
-Delamain bundles live under `.als/modules/{module_id}/v{version}/delamains/{name}/`.
-
-The primary definition file is a YAML file, typically `delamain.yaml`, referenced from the module bundle's `delamains` registry.
-
-Claude projection carries each active Delamain bundle into `.claude/delamains/{name}/` as a downstream runtime artifact.
-
-Example:
-
-```yaml
-phases: [intake, planning, implementation, closed]
-
-states:
-  draft:
-    initial: true
-    phase: intake
-    actor: operator
-  planning:
-    phase: planning
-    actor: agent
-    resumable: true
-    delegated: true
-    session-field: planner_session
-    path: agents/planning.md
-  in-dev:
-    phase: implementation
-    actor: agent
-    resumable: true
-    session-field: dev_session
-    path: agents/in-dev.md
-    sub-agent: sub-agents/developer.md
-  completed:
-    phase: closed
-    terminal: true
-
-transitions:
-  - class: advance
-    from: draft
-    to: planning
-  - class: advance
-    from: planning
-    to: in-dev
-  - class: exit
-    from: in-dev
-    to: completed
-```
-
-Autonomous lifecycle example:
-
-```yaml
-phases: [execution, closed]
-
-states:
-  queued:
-    initial: true
-    phase: execution
-    actor: agent
-    resumable: false
-    path: agents/queued.md
-  running:
-    phase: execution
-    actor: agent
-    resumable: false
-    path: agents/running.md
-  completed:
-    phase: closed
-    terminal: true
-  failed:
-    phase: closed
-    terminal: true
-
-transitions:
-  - class: advance
-    from: queued
-    to: running
-  - class: rework
-    from: running
-    to: queued
-  - class: exit
-    from: running
-    to: completed
-  - class: exit
-    from: running
-    to: failed
-```
-
-Rules:
-
-- Delamain primary definition files declare ordered `phases`, authoritative `states`, and explicit `transitions`.
-- Each Delamain primary definition file has exactly one `initial: true` state.
-- Every state declares `phase`.
-- Every declared phase must contain at least one state.
-- The initial state must be in the first declared phase.
-- Terminal states must be in the last declared phase.
-- Non-terminal states declare `actor: operator | agent`.
-- Terminal states do not declare `actor`.
-- Delamain does not require operator-owned non-terminal states. A module may author a fully autonomous lifecycle where every non-terminal state is `actor: agent`.
-- Transitions declare `class: advance | rework | exit`, `from`, and `to`.
-- `advance` and `rework` use a single-state `from`.
-- `exit` uses a single-state `from` or a non-empty list-valued `from`.
-- Self-loop transitions are rejected.
-- Every state must be reachable from the initial state.
-- Terminal states must not have outgoing transitions.
-- Every non-terminal state must have at least one outgoing transition.
-- Every non-terminal state must have a path to at least one terminal state.
-- Delamain-local asset paths such as state `path` and `sub-agent` resolve relative to the directory containing the Delamain primary definition file, not relative to the module bundle root.
-- Resolved Delamain-local asset paths must remain inside the same active module version bundle.
-- Claude projection refreshes authored Delamain bundle files into `.claude/delamains/{name}/`.
-- Claude projection also writes `runtime-manifest.json` into each deployed `.claude/delamains/{name}/` bundle.
-- The deployed runtime manifest records one effective binding: module mount path, entity path template, Delamain-bound status field, and optional discriminator field/value.
-- One Delamain bundle owns exactly one effective binding. Reusing the same Delamain name across multiple effective bindings is rejected during Claude deploy planning.
-- The canonical dispatcher template exposes its latest template version at `${CLAUDE_PLUGIN_ROOT}/skills/new/references/dispatcher/VERSION`.
-- Every copied Delamain dispatcher bundle must contain `dispatcher/VERSION` with a positive integer copied from the canonical template.
-- `dispatcher/package.json` `version` is package metadata and is not the dispatcher template version.
-- Dispatcher template version is runtime asset metadata. It is not declared in `shape.yaml`, `delamain.yaml`, `runtime-manifest.json`, or record frontmatter.
-- Dispatcher startup compares the local `dispatcher/VERSION` with the canonical plugin `VERSION`.
-- If the local dispatcher version is numerically older than the canonical version, startup logs the version mismatch with `run /upgrade-dispatchers to update` and continues polling.
-- Missing, unreadable, or malformed local dispatcher `VERSION` is a hard startup error.
-- Missing, unreadable, or malformed canonical plugin dispatcher `VERSION` is a hard startup error.
-- System-level dispatcher versioning is out of scope for this first pass; dispatcher template version is per copied bundle.
-- Claude projection preserves an existing `dispatcher/node_modules/` directory when one is already present in the target.
-- Claude projection does not run `bun install` or any other package-manager command.
-- Claude projection may leave stale authored files or incidental runtime files in the target when the host uses merge-based projection to preserve installed dependencies.
-- Missing `dispatcher/node_modules/` at projection time is a warning, not a projection failure.
-- The generic dispatcher runtime is supported from deployed `.claude/delamains/{name}/` bundles, not directly from authored `.als/modules/.../delamains/.../` source bundles.
-- `actor: agent` states declare exactly one `path` plus explicit boolean `resumable`.
-- `delegated` is optional and only valid on `actor: agent` states.
-- If `delegated` is omitted, hosts treat it as `false`.
-- If `resumable: true`, the state declares exactly one `session-field`.
-- If `resumable: false`, the state does not declare `session-field`.
-- `session-field` names become implicit nullable string frontmatter fields on entities bound to that Delamain.
-- A Delamain-declared `session-field` name must not collide with any explicit entity field name or any other implicit Delamain session field name materialized on the same effective entity schema.
-- If `delegated: true`, hosts do not pass the saved `session-field` value to the Agent SDK `resume` option.
-- If `delegated: true`, hosts do not auto-persist the dispatcher-owned Agent SDK session id into the state's `session-field`.
-- If `delegated: true`, runtime context still exposes `session_field` and `session_id`.
-- If `delegated: true` and the state has no declared `session-field`, runtime context uses `session_field: null` and `session_id: null`.
-- If `delegated: true` and the state declares `session-field`, runtime context uses the field name plus the saved value or `null`.
-- `sub-agent` is optional and only valid on `actor: agent` states.
-
-### Delamain agent files
-
-Agent files are markdown files with YAML frontmatter and a markdown body. They live inside the delamain bundle at the paths declared by state `path` and `sub-agent` fields.
-
-State agent example (`agents/planning.md`):
-
-```markdown
----
-name: planning
-description: Planning agent for the development pipeline
-tools: Read, Edit, Grep
-model: sonnet
----
-
-You are the planning agent for the development pipeline...
-```
-
-Sub-agent example (`sub-agents/developer.md`):
-
-```markdown
----
-name: developer
-description: Implementation sub-agent
-tools: Read, Edit, Bash, Grep
-model: sonnet
----
-
-You carry out the implementation plan...
-```
-
-Required frontmatter:
-
-- `name` — agent identifier string
-- `description` — what the agent does
-
-Optional frontmatter:
-
-- `tools` — comma-separated list of allowed Claude Code tools (default: Read, Edit)
-- `model` — `sonnet`, `opus`, or `haiku` (default: sonnet)
-
-Body:
-
-- The markdown body after frontmatter is the agent's prompt.
-- The dispatcher appends runtime context (item ID, current state, legal transitions) at dispatch time.
-- Agent prompts are not interpreted semantically by the compiler — they are prose assets.
-
-Rules:
-
-- Every resolved state-agent and sub-agent markdown file must contain YAML frontmatter.
-- Every resolved state-agent and sub-agent markdown file must contain a non-empty markdown body after frontmatter.
-- State-agent and sub-agent markdown files must declare frontmatter `name` and `description`.
-- Agent file paths resolve relative to the delamain bundle root directory.
-- Resolved paths must remain inside the same active module version bundle.
-- Additional Claude-style frontmatter such as `tools`, `model`, or `color` is allowed.
-- The compiler does not validate prompt content, tool lists, or model selection in this pass.
-
-### JSONL row field types
-
-JSONL `rows.fields` reuse a strict subset of the field types above:
-
-- allowed: `string`, `number`, `date`, `enum`, `list<string>`, `list<enum>`
-- rejected in JSONL rows: `id`, `ref`, `file_path`, nested objects, nested lists, and heterogeneous unions
-- `allow_null` works the same way as markdown frontmatter fields, but the row key must still be present on every line
-- JSONL `list<enum>` rejects duplicate members just like markdown frontmatter `list<enum>`
-
-### Body regions
-
-`body` is the explicit top-level body contract for a record. It may declare:
-
-- `title`: the record `h1`
-- `preamble`: top-level content between the `h1` and the first declared `h2`, or before the first `h2` when no title is declared
-- `sections`: the ordered `h2` regions for plain entities
-
-Every authored top-level body region must be declared. There are no invisible body zones.
-For plain entities, `body.sections` must be a non-empty ordered list.
-
-#### Title region
-
-Field-bound title:
-
-```yaml
-body:
-  title:
-    source:
-      kind: field
-      field: title
-```
-
-Authored title:
-
-```yaml
-body:
-  title:
-    source:
-      kind: authored
-```
-
-Templated title:
-
-```yaml
-body:
-  title:
-    source:
-      kind: template
-      parts:
-        - kind: field
-          field: id
-        - kind: literal
-          value: " "
-        - kind: field
-          field: title
-```
-
-Rules:
 - `body.title` is optional.
 - If `body.title` is declared, the record must contain exactly one `h1`.
 - There is no implicit `title == id` rule.
-- `source.kind` must be one of `field`, `authored`, or `template`.
-- `field` sources must reference a declared field of type `id` or `string` with `allow_null: false`.
-- `authored` means the `h1` text is authored directly in the record body and is not matched to a field.
-- `template.parts` must be a non-empty ordered list.
-- Template parts must be either:
-  - `{ kind: field, field: <field_name> }`
-  - `{ kind: literal, value: <string> }`
-- Field parts use the same field restrictions as `source.kind: field`.
+- `source.kind` must be `field`, `authored`, or `template`.
+- `field` sources must reference a declared non-null `id` or `string` field.
+- `template.parts` must be a non-empty ordered list of `{ kind: "field" }` or `{ kind: "literal" }` entries.
 - The rendered field or template value must match the authored `h1` text exactly.
 
 #### Region definitions
 
-`body.preamble`, inline `body.sections` entries, `section_definitions` values, and `outline.preamble` all use the same region-definition shape.
+`body.preamble`, inline `body.sections` entries, `section_definitions` values, and `outline.preamble` all share the same region-definition shape.
 
-```yaml
-preamble:
-  allow_null: false
-  content:
-    mode: freeform
-    blocks:
-      paragraph: {}
-  guidance:
-    include: what belongs here
-    exclude: what does not belong here
-```
-
-```yaml
-- name: DESCRIPTION
-  allow_null: false
-  content:
-    mode: freeform
-    blocks:
-      paragraph: {}
-  guidance:
-    include: what belongs here
-    exclude: what does not belong here
-```
-
-Rules:
-- `allow_null`: if true, the region may contain the literal word `null` instead of authored Markdown content.
-- `content`: required content contract.
-- `guidance`: optional authoring hints.
+- `allow_null: true` allows the literal word `null` in place of authored markdown content.
+- `content` is required.
+- `guidance` is optional.
 - If `guidance` is present, `include` and `exclude` are optional non-empty strings.
-- Inline `body.sections` entries must declare `name`, rendered as `## NAME` in the markdown file.
-- `section_definitions` keys are section names for variant entities and render as `## SECTION_NAME`.
+- Inline `body.sections` entries declare `name`, rendered as `## NAME`.
+- Variant `section_definitions` keys are also rendered as `## SECTION_NAME`.
 - Every declared section must appear in the record body.
-- Sections must appear in the same order they are declared by the shape.
-- No duplicate section names within an entity.
+- Sections must appear in declared order.
+- Duplicate section names are invalid.
 
 #### Content contracts
 
 Every non-title body region declares a `content` contract with exactly one mode:
 
-- `mode: freeform`
-- `mode: outline`
+- `mode: "freeform"`
+- `mode: "outline"`
 
 ##### Freeform content
 
-```yaml
-content:
-  mode: freeform
-  blocks:
-    paragraph:
-      min_count: 1
-    bullet_list:
-      max_items: 8
-    table:
-      syntax: gfm
-    heading:
-      min_depth: 3
-      max_depth: 4
-    blockquote: {}
-    code:
-      require_language: true
+Example:
+
+```ts
+content: {
+  mode: "freeform",
+  blocks: {
+    paragraph: { min_count: 1 },
+    bullet_list: { max_items: 8 },
+    table: { syntax: "gfm" },
+    heading: { min_depth: 3, max_depth: 4 },
+    blockquote: {},
+    code: { require_language: true },
+  },
+}
 ```
 
-Rules:
+`{}` means the block type is allowed with no extra constraints.
+
 - `blocks` must declare at least one block type.
-- Supported block types in the current v1 body contract are:
-  - `paragraph`
-  - `bullet_list`
-  - `ordered_list`
-  - `table`
-  - `heading`
-  - `blockquote`
-  - `code`
-- `{}` means the block type is allowed with no extra constraints.
-- Supported block options in the current v1 body contract are:
+- Supported block types are `paragraph`, `bullet_list`, `ordered_list`, `table`, `heading`, `blockquote`, and `code`.
+- Supported block options are:
   - `paragraph.min_count` / `paragraph.max_count`
   - `blockquote.min_count` / `blockquote.max_count`
   - `bullet_list.min_items` / `bullet_list.max_items`
@@ -881,129 +782,122 @@ Rules:
   - `table.syntax`
   - `heading.min_depth` / `heading.max_depth`
   - `code.require_language`
-- Phrasing-level validation is only partially enforced by the compiler in current v1.
-- The compiler intentionally rejects raw HTML and reference-style syntax, but it does not exhaustively validate every other inline node.
-- Authored records in current v1 currently use this inline markdown subset:
-  - plain text
-  - `strong`
-  - `emphasis`
-  - `inlineCode`
-  - inline links
-  - inline images
-  - hard line breaks
-- Reference-style links and reference-style images are not supported in current v1.
-- Markdown `definition` nodes are not supported in current v1.
-- Raw HTML is not allowed anywhere in ALS v1 record bodies, including inside paragraphs, headings, and other phrasing content.
-- Thematic breaks such as `---`, `***`, and `___` are not supported in current v1.
+- Raw HTML is rejected everywhere in ALS bodies.
+- Reference-style links and reference-style images are rejected.
+- Markdown definition nodes are rejected.
+- Thematic breaks are rejected.
 - `table.syntax` is required and must currently be `gfm`.
-- ALS v1 table support currently means GitHub Flavored Markdown pipe tables.
-- Current GFM table limits are part of the ALS v1 contract:
-  - one header row
-  - one delimiter row
-  - zero or more body rows
-  - inline markdown only inside cells
-  - no multiline cell blocks
-  - no headerless tables
-  - no row spans or column spans
-- HTML tables and other markdown table dialects are not part of the current v1 body contract.
-- In top-level `body.preamble` and top-level `body.sections[*]` regions, structural heading depth is `2`: `h1` is reserved for the declared title and `h2` is reserved for declared sections.
-- Because of that structural depth, freeform `heading` content in those top-level regions can only match `h3` or deeper.
+- ALS table support is GitHub Flavored Markdown pipe tables only: one header row, one delimiter row, zero or more body rows, inline markdown only inside cells, no multiline cell blocks, no headerless tables, no row/column spans. HTML tables are not part of v1.
+- Phrasing-level validation is only partially enforced by the compiler in current v1. The compiler rejects raw HTML and reference-style syntax, but does not exhaustively validate every inline node.
+- Authored records currently use this inline markdown subset: plain text, strong, emphasis, inlineCode, inline links, inline images, hard line breaks.
+- In top-level `body.preamble` and top-level `body.sections` regions, structural heading depth is `2`, so freeform `heading` content can only match `h3` or deeper.
 
 ##### Outline content
 
-```yaml
-content:
-  mode: outline
-  preamble:
-    allow_null: false
-    content:
-      mode: freeform
-      blocks:
-        paragraph:
-          min_count: 1
-  nodes:
-    - heading:
-        depth: 3
-        text: Detection
-      content:
-        mode: freeform
-        blocks:
-          bullet_list: {}
-    - heading:
-        depth: 3
-        text: Recovery Lead Notes
-      content:
-        mode: freeform
-        blocks:
-          blockquote: {}
+Example:
+
+```ts
+content: {
+  mode: "outline",
+  preamble: {
+    allow_null: false,
+    content: {
+      mode: "freeform",
+      blocks: { paragraph: { min_count: 1 } },
+    },
+  },
+  nodes: [
+    {
+      heading: { depth: 3, text: "Detection" },
+      content: {
+        mode: "freeform",
+        blocks: { bullet_list: {} },
+      },
+    },
+    {
+      heading: { depth: 3, text: "Recovery Lead Notes" },
+      content: {
+        mode: "freeform",
+        blocks: { blockquote: {} },
+      },
+    },
+  ],
+}
 ```
 
-Rules:
-- `outline.preamble` is optional.
-- `outline.preamble` uses the same exact region-definition shape as `body.preamble`.
+Use `outline` when the heading tree itself is part of the schema contract. Use `freeform` when headings are allowed but their exact labels and order are not declared.
+
+- `outline.preamble` is optional and uses the same region-definition shape as `body.preamble`.
 - `nodes` must be a non-empty ordered list.
-- Each node must declare:
-  - `heading.depth`
-  - `heading.text`
-  - `content`
+- Each node must declare `heading.depth`, `heading.text`, and `content`.
 - `heading.depth` is explicit and exact.
-- In current v1, outline nodes are ordered, required, and exact.
-- In current v1, outline does not define optional nodes, repeated nodes, or other cardinality syntax.
-- `node.content` currently uses `mode: freeform`.
+- ALS v1 outline nodes are ordered, required, and exact.
+- ALS v1 outline does not define optional nodes, repeated nodes, or other cardinality syntax.
+- `node.content` currently uses `mode: "freeform"`.
 - If a node's freeform content allows headings, those headings must be deeper than that node's declared `heading.depth`.
-- Use `outline` when the heading tree itself is part of the schema contract.
-- Use `freeform` when headings are allowed but their exact labels and order are not declared by the schema.
 
-### Variant section definitions
+### Variant Entity Detailed Rules
 
-Variant entities define reusable `h2` section contracts in `section_definitions` and then reference them by name from each variant.
-
-```yaml
-section_definitions:
-  DESCRIPTION:
-    allow_null: false
-    content:
-      mode: freeform
-      blocks:
-        paragraph: {}
-    guidance:
-      include: what this item is and why it exists
-      exclude: historical updates
-
-variants:
-  app:
-    fields:
-      status:
-        type: enum
-        allow_null: false
-        allowed_values: [draft, active, completed]
-    sections: [DESCRIPTION, ACTIVITY_LOG]
-```
-
-Rules:
-- `discriminator` must point to a root/base field that is `type: enum` and `allow_null: false`.
-- Variant keys form a bijection with the discriminator enum values: every enum value needs a variant, and extra variant keys are invalid.
-- Variant-local field names cannot collide with root/base field names.
-- When the discriminator resolves successfully, only the selected variant's frontmatter fields are added to the root/base field contract for that record.
+- `discriminator` must point to a root/base field that is `type: "enum"` and `allow_null: false`.
+- Variant keys form a bijection with the discriminator enum values.
+- Variant-local field names must not collide with root/base field names.
+- Once the discriminator resolves, the effective frontmatter contract is the root/base `fields` plus that variant's `fields`.
 - Every section name referenced by a variant must exist in `section_definitions`.
-- A variant's `sections` list is the authoritative full `h2` section order for records of that variant.
+- A variant's `sections` list is the authoritative full `h2` order for that variant.
 - Shared `body.title` and shared `body.preamble`, when declared, apply to every variant of the entity.
-- If the discriminator is missing, non-string, or invalid, the compiler emits `PAL-RV-FM-008`, validates only root/base fields, emits `PAL-RV-BODY-004` for the body, and does not guess variant-specific fields or body sections.
+- If the discriminator is missing, non-string, or invalid, the compiler validates only root/base fields and emits the unresolved-variant body diagnostic instead of guessing variant-specific fields or sections.
 
-## Naming rules and conventions
+### Delamain State Machine Rules
 
-- Module ids, entity names, and skill ids are compiler-enforced single-segment slugs matching `^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$`
-- Module mount paths are slash-separated slug segments using that same segment regex
-- Field names are compiler-enforced and must match `^[a-z][a-z0-9_]*$`
-- `system_id` can be any non-empty string; `kebab-case` is recommended but not enforced
-- Section names can be any non-empty string; `UPPER_SNAKE_CASE` is recommended
-- Record ids: any non-empty string, but must match filename stem
-- Authoring workflows should default skill ids to `<module-id>-<base-skill-name>`
-- When the base phrase already repeats the module name, normalize it to one leading module prefix rather than doubling it
+- Delamain primary definition files declare ordered `phases`, authoritative `states`, and explicit `transitions`.
+- Each Delamain definition has exactly one `initial: true` state.
+- Every state declares `phase`.
+- Every declared phase must contain at least one state.
+- The initial state must be in the first declared phase.
+- Terminal states must be in the last declared phase.
+- Non-terminal states declare `actor: "operator" | "agent"`.
+- Terminal states do not declare `actor`.
+- Delamain does not require operator-owned non-terminal states; fully autonomous lifecycles are allowed.
+- `advance` and `rework` use a single-state `from`.
+- `exit` uses a single-state `from` or a non-empty list-valued `from`.
+- Self-loop transitions are rejected.
+- Every state must be reachable from the initial state.
+- Terminal states must not have outgoing transitions.
+- Every non-terminal state must have at least one outgoing transition and a path to at least one terminal state.
+- `actor: "agent"` states declare exactly one `path` plus explicit boolean `resumable`.
+- `delegated` is optional and only valid on `actor: "agent"` states.
+- If `resumable: true`, the state declares exactly one `session-field`.
+- If `resumable: false`, the state does not declare `session-field`.
+- Delamain-declared session-field names become implicit nullable string frontmatter fields on bound entities.
+- A Delamain session-field must not collide with any explicit entity field name or any other implicit session field materialized on the same effective entity schema.
+- Delamain-local prompt asset paths such as `path` and `sub-agent` resolve relative to the Delamain bundle root and must stay inside the same active module version bundle.
 
-## What a record file looks like
+### Naming And Record Conventions
 
-A record is a markdown file with YAML frontmatter, a validated body title when declared, optional declared preamble content, and headed sections:
+- Module ids, entity names, and skill ids are single-segment kebab-case slugs matching `^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$`.
+- Module mount paths are slash-separated slug segments using that same segment regex.
+- Field names must match `^[a-z][a-z0-9_]*$`.
+- `system_id` may be any non-empty string, though kebab-case is recommended.
+- Section names may be any non-empty string; `UPPER_SNAKE_CASE` is recommended.
+- Record ids may be any non-empty string but must match the filename stem.
+- Authoring workflows should default skill ids to `<module-id>-<base-skill-name>`. When the base phrase already repeats the module name, normalize to one leading module prefix.
+- `AGENTS.md` and `CLAUDE.md` at any depth in the module subtree are reserved non-record files, matched case-insensitively (including the `.md` extension), and ignored during record validation.
+- Other markdown record files must use lowercase `.md`; `README.MD` is invalid. JSONL record files must use lowercase `.jsonl`.
+
+### Record Layout
+
+A markdown record consists of:
+
+- YAML frontmatter that satisfies the effective field contract
+- a validated body title when `body.title` is declared
+- optional declared preamble content
+- declared `##` sections in authored order
+
+If `body.title` is declared, the `# Title` heading after frontmatter is validated according to `title.source`. Nullable body regions with no content use the literal word `null`.
+
+## What a Record File Looks Like
+
+A markdown record with YAML frontmatter, validated body title, optional preamble, and declared sections:
 
 ```markdown
 ---
@@ -1027,9 +921,7 @@ This is the description content.
 - 2026-03-17: Created the example record.
 ```
 
-- If `body.title` is declared, the `# Title` heading after frontmatter is validated according to `title.source`
-- Each declared frontmatter field must appear explicitly, using YAML `null` when `allow_null: true` and no value is available
-- If `body.preamble` is declared, authored content before the first declared `##` belongs to that preamble region
-- Each declared section appears as `## SECTION_NAME` in the order declared by the shape
-- Nullable body regions with no content use the literal word `null`
-- Empty string is not a valid value for `type: string` fields
+- Each declared frontmatter field must appear explicitly, using YAML `null` when `allow_null: true` and no value is available.
+- If `body.preamble` is declared, authored content before the first declared `##` belongs to that preamble region.
+- Each declared section appears as `## SECTION_NAME` in the order declared by the shape.
+- Empty string is not a valid value for `type: string` fields.

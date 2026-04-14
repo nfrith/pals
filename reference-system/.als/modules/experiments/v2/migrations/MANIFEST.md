@@ -70,7 +70,7 @@ This release does not change the module skill interface. Operators still use the
 ## Cutover Gates
 - `author-v2-bundle`: `v2` shape, skill bundle, and migration assets are authored.
 - `run-migration-cleanly`: The migration script completes or clearly reports records queued for manual completion.
-- `flip-system-version-last`: `.als/system.yaml` points `experiments` at `version: 2` only after records are in `v2` form.
+- `flip-system-version-last`: `.als/system.ts` points `experiments` at `version: 2` only after records are in `v2` form.
 
 ## Risks
 - `client-backfill-needs-operator-input`: Existing program records may require an external mapping to determine `client_ref`.

@@ -4,12 +4,12 @@
 # Walk up from cwd to find system root
 sys_root="$(pwd)"
 while [[ "$sys_root" != "/" ]]; do
-    [[ -f "$sys_root/.als/system.yaml" ]] && break
+    [[ -f "$sys_root/.als/system.ts" ]] && break
     sys_root=$(dirname "$sys_root")
 done
 
-if [[ ! -f "$sys_root/.als/system.yaml" ]]; then
-    echo "No .als/system.yaml found in parent directories. Not an ALS system."
+if [[ ! -f "$sys_root/.als/system.ts" ]]; then
+    echo "No .als/system.ts found in parent directories. Not an ALS system."
     exit 0
 fi
 

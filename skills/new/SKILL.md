@@ -5,11 +5,11 @@ description: Create a new ALS system or add a module to an existing one. Use thi
 
 # new
 
-You help operators design and create ALS modules — structured markdown storage with typed frontmatter, governed prose sections, and a skill-based interface for interacting with the module's data. Your job is to understand what someone needs to store, design the right data model and operational interface, and produce valid shape YAML and skill definitions.
+You help operators design and create ALS modules — structured markdown storage with typed frontmatter, governed prose sections, and a skill-based interface for interacting with the module's data. Your job is to understand what someone needs to store, design the right data model and operational interface, and produce valid ALS authored definitions plus skill bundles.
 
 You are not a form. You are a domain modeler. The operator knows their domain but not the ALS format. You know the format but not their domain. The interview is where those meet.
 
-Before producing any YAML or skill definitions, read `../docs/references/shape-language.md` and `../docs/references/skill-patterns.md` from the sibling docs skill. The shape language reference is the complete format specification for schemas. The skill patterns reference defines the decomposition patterns for module skills. Everything you produce must conform to them.
+Before producing any ALS authored definitions or skill bundles, read `../docs/references/shape-language.md` and `../docs/references/skill-patterns.md` from the sibling docs skill. The shape-language reference is the core authored contract for `system.ts`, `module.ts`, and `delamain.ts`. The skill-patterns reference defines the decomposition patterns for module skills. Everything you produce must conform to them.
 
 ## Phase 0: Prerequisites
 
@@ -25,7 +25,7 @@ Before doing anything else, verify the runtime environment.
 
 ## Phase 1: Detection
 
-Check whether `.als/system.yaml` exists in the working directory.
+Check whether `.als/system.ts` exists in the working directory.
 
 - **If it does not exist**: this is a bootstrap. You will create the system from scratch. Proceed to Phase 2 — you need the interview before you can create anything.
 - **If it exists**: read it. Understand the system_id and all existing modules, especially their mount paths. This context matters for the interview — the operator may want to reference entities from existing modules, and new modules must fit into the existing path layout without overlapping it. Proceed to Phase 2.
@@ -46,7 +46,7 @@ Start with one open question:
 
 Listen carefully. Do not interrupt with clarifications yet. Let them talk. The first answer contains most of what you need — entities are the nouns, relationships are the verbs, constraints are the adjectives.
 
-### If bootstrapping (no system.yaml)
+### If bootstrapping (no system.ts)
 
 You also need to establish:
 - **System identity**: what should the `system_id` be? This names the whole system. Help them pick something short and meaningful.
@@ -159,7 +159,7 @@ Present agent states as multiSelect options.
 
 State the inference to the operator for confirmation but do not ask them to reason about session mechanics.
 
-For each resumable state, generate a session field name by convention: `{state_name}_session` (e.g., `planner_session`, `dev_session`). These are implicit — they do not appear in shape.yaml.
+For each resumable state, generate a session field name by convention: `{state_name}_session` (e.g., `planner_session`, `dev_session`). These are implicit — they do not appear in `module.ts`.
 
 ### Sections
 
@@ -328,9 +328,9 @@ Once approved, create everything.
 
 1. Create `.als/` directory
 2. Create `.als/modules/` directory
-3. Create `.als/system.yaml` with the system_id and first module registration (use `skills` array with skill names)
+3. Create `.als/system.ts` with the system_id and first module registration (use a `skills` array with skill ids)
 4. Create the module version bundle at `.als/modules/{module_id}/v1/`
-5. Create the module's shape YAML at `.als/modules/{module_id}/v1/shape.yaml`
+5. Create the module's authored bundle entrypoint at `.als/modules/{module_id}/v1/module.ts`
 6. If the module has skills, create `.als/modules/{module_id}/v1/skills/`
 7. Create a `SKILL.md` for each skill at `.als/modules/{module_id}/v1/skills/{skill_name}/SKILL.md`
 8. If a Delamain was designed, create the Delamain bundle (see "Delamain bundle authoring" below)
@@ -358,8 +358,8 @@ bun ${CLAUDE_PLUGIN_ROOT}/alsc/compiler/src/cli.ts deploy claude <system-root> [
 ### If adding to an existing system
 
 1. Create the module version bundle at `.als/modules/{module_id}/v1/`
-2. Create the module's shape YAML at `.als/modules/{module_id}/v1/shape.yaml`
-3. Register the module in `.als/system.yaml` (add to the `modules` map with `skills` array)
+2. Create the module's authored bundle entrypoint at `.als/modules/{module_id}/v1/module.ts`
+3. Register the module in `.als/system.ts` (add to the `modules` map with `skills` array)
 4. If the module has skills, create `.als/modules/{module_id}/v1/skills/`
 5. Create a `SKILL.md` for each skill at `.als/modules/{module_id}/v1/skills/{skill_name}/SKILL.md`
 6. If a Delamain was designed, create the Delamain bundle (see "Delamain bundle authoring" below)
@@ -402,14 +402,14 @@ Each skill must declare its scope boundaries — what entities it manages, what 
 
 Only create this when the operator approved a Delamain design in Phase 3. Read `../docs/references/shape-language.md` (Delamain bundles and Delamain agent files sections) for the full format spec.
 
-#### 1. Register in shape.yaml
+#### 1. Register in module.ts
 
-Add the `delamains` registry to `shape.yaml` and change the entity's status field from `type: enum` to `type: delamain`:
+Add the `delamains` registry to `module.ts` and change the entity's status field from `type: enum` to `type: delamain`:
 
-```yaml
+```ts
 delamains:
   {delamain-name}:
-    path: delamains/{delamain-name}/delamain.yaml
+    path: delamains/{delamain-name}/delamain.ts
 
 entities:
   {entity-name}:
@@ -426,7 +426,7 @@ Remove `allowed_values` from the status field — the Delamain states are the le
 
 ```
 .als/modules/{module_id}/v1/delamains/{delamain-name}/
-├── delamain.yaml
+├── delamain.ts
 ├── agents/
 │   └── {state-name}.md        # one per actor: agent state
 └── dispatcher/
@@ -442,9 +442,9 @@ Remove `allowed_values` from the status field — the Delamain states are the le
         └── dispatcher.ts
 ```
 
-#### 3. Write delamain.yaml
+#### 3. Write delamain.ts
 
-Produce the YAML from the approved design: `phases`, `states` (with `actor`, `path`, `resumable`, `session-field` as designed), and `transitions` (with `class`, `from`, `to`).
+Produce the authored `delamain.ts` definition from the approved design: `phases`, `states` (with `actor`, `path`, `resumable`, `session-field` as designed), and `transitions` (with `class`, `from`, `to`).
 
 Agent paths use the pattern `agents/{state-name}.md` and resolve relative to the delamain bundle root.
 
@@ -500,4 +500,4 @@ If a Delamain was created, also tell the operator:
 - Agent files are TODO scaffolds that need prompts written before the dispatcher can run.
 - The dispatcher is ready to run once agent prompts are authored: `cd <delamain-bundle>/dispatcher && bun run src/index.ts`
 - The dispatcher reads `${CLAUDE_PLUGIN_ROOT}/skills/new/references/dispatcher/VERSION` at startup and will fail if the plugin root or either `VERSION` file is missing or malformed.
-- Session fields are implicit — they do not need to be added to shape.yaml or entity frontmatter manually. The dispatcher handles persistence.
+- Session fields are implicit — they do not need to be added to `module.ts` or entity frontmatter manually. The dispatcher handles persistence.

@@ -17,8 +17,8 @@ Before entering either mode, ensure the module's delamain dispatchers are runnin
 
 ### Delamain check
 
-1. Resolve the system root — the directory containing `.als/system.yaml`. Store the **absolute path**.
-2. Read `shape.yaml` for the active module version. Check if `delamains:` is declared.
+1. Resolve the system root — the directory containing `.als/system.ts`. Store the **absolute path**.
+2. Read `module.ts` for the active module version. Check if `delamains:` is declared.
 3. If no delamains, skip to mode selection.
 4. For each declared delamain, check if a heartbeat file exists and is fresh:
    ```bash
@@ -68,7 +68,7 @@ Read all files in the module data path. Parse YAML frontmatter. Collect items wh
 
 Items in other statuses are agent-owned or terminal. Ignore them.
 
-Resolve the data path from `.als/system.yaml` module entry. The entity path template is `items/{id}.md` relative to the module path.
+Resolve the data path from `.als/system.ts` module entry. The entity path template is `items/{id}.md` relative to the module path.
 
 If no items need attention: "No items require operator attention." Offer direct mode.
 

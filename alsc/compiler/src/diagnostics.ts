@@ -67,8 +67,10 @@ export const codes = {
 // Stable machine-readable subcodes are being rolled out incrementally.
 // Older diagnostics still emit null for reason until each call site is upgraded.
 export const reasons = {
-  YAML_READ_FAILED: "yaml.read_failed",
-  YAML_PARSE_FAILED: "yaml.parse_failed",
+  AUTHORED_SOURCE_READ_FAILED: "authored_source.read_failed",
+  AUTHORED_SOURCE_LOAD_FAILED: "authored_source.load_failed",
+  AUTHORED_SOURCE_EXPORT_MISSING: "authored_source.export_missing",
+  AUTHORED_SOURCE_VALUE_UNSUPPORTED: "authored_source.value_unsupported",
   SYSTEM_ALS_VERSION_INVALID: "system.als_version.invalid",
   SYSTEM_ALS_VERSION_UNSUPPORTED: "system.als_version.unsupported",
   SYSTEM_FILTER_CONTEXT_INVALID: "system.filter_context.invalid",

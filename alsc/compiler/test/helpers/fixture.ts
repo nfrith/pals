@@ -5,12 +5,15 @@ import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
 import matter from "gray-matter";
-import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
+import { loadAuthoredSourceExport } from "../../src/authored-load.ts";
 import type { CompilerDiagnostic, ModuleValidationReport, SystemValidationOutput } from "../../src/types.ts";
 import { validateSystem } from "../../src/validate.ts";
 
 const fixtureRoot = fileURLToPath(
   new URL("../../../../reference-system/", import.meta.url),
+);
+const compilerAuthoringPath = fileURLToPath(
+  new URL("../../src/authoring/index.ts", import.meta.url),
 );
 
 export interface FixtureSandbox {
@@ -22,6 +25,10 @@ async function createFixtureSandbox(label = "fixture", sourceRoot = fixtureRoot)
   const root = join(tmpdir(), `als-compiler-${safeLabel}-${randomUUID()}`);
   await mkdir(root, { recursive: false });
   copyFixtureTree(sourceRoot, root);
+  await writeFile(
+    join(root, ".als/authoring.ts"),
+    `export { defineSystem, defineModule, defineDelamain } from ${JSON.stringify(compilerAuthoringPath)};\n`,
+  );
   return { root };
 }
 
@@ -74,7 +81,7 @@ export async function updateSystemYaml(
   root: string,
   transform: (current: Record<string, unknown>) => void | Promise<void>,
 ): Promise<void> {
-  await updateYamlFile(root, ".als/system.yaml", transform);
+  await updateAuthoredObjectFile(root, ".als/system.ts", "system", transform);
 }
 
 export async function updateShapeYaml(
@@ -83,7 +90,7 @@ export async function updateShapeYaml(
   version: number,
   transform: (current: Record<string, unknown>) => void | Promise<void>,
 ): Promise<void> {
-  await updateYamlFile(root, `.als/modules/${moduleId}/v${version}/shape.yaml`, transform);
+  await updateAuthoredObjectFile(root, `.als/modules/${moduleId}/v${version}/module.ts`, "module", transform);
 }
 
 export async function updateRecord(
@@ -228,30 +235,56 @@ function fixturePath(root: string, relativePath: string): string {
   return join(root, relativePath);
 }
 
-async function updateYamlFile(
+async function updateAuthoredObjectFile(
   root: string,
   relativePath: string,
+  exportName: "system" | "module" | "delamain",
   transform: (current: Record<string, unknown>) => void | Promise<void>,
 ): Promise<void> {
   const filePath = fixturePath(root, relativePath);
-  const parsed = parseYaml(await readFile(filePath, "utf-8"));
-  if (!isRecord(parsed)) {
-    throw new Error(`Expected YAML object at '${relativePath}', received ${describeYamlType(parsed)}`);
+  const phase = exportName === "system" ? "system_config" : "module_shape";
+  const loaded = loadAuthoredSourceExport(filePath, exportName, phase, "fixture", null);
+  if (!loaded.success) {
+    throw new Error(`Expected authored object at '${relativePath}', received diagnostics: ${describeDiagnostics(loaded.diagnostics)}`);
   }
 
-  const current = structuredClone(parsed);
+  if (!isRecord(loaded.data)) {
+    throw new Error(`Expected authored object at '${relativePath}', received ${describeValueType(loaded.data)}`);
+  }
+
+  const current = structuredClone(loaded.data);
   await transform(current);
-  await writeFile(filePath, stringifyYaml(current));
+  await writeFile(filePath, serializeAuthoredDefinition(exportName, current));
 }
 
-function copyFixtureTree(sourceRoot: string, destinationRoot: string): void {
+function copyFixtureTree(sourceRoot: string, destinationRoot: string, relativeRoot = ""): void {
   for (const entry of readdirSync(sourceRoot, { withFileTypes: true })) {
+    const relativePath = relativeRoot ? join(relativeRoot, entry.name) : entry.name;
+
+    if (entry.isDirectory() && relativePath === ".claude") {
+      // Fixture sandboxes model authored source, not deployed Claude runtime
+      // output. Tests that need .claude assets project or create them explicitly.
+      continue;
+    }
+
+    if (entry.isDirectory() && entry.name === "node_modules") {
+      // Fixture sandboxes do not need vendored runtime dependencies from the
+      // checked-in reference deployment; deploy tests create or preserve their
+      // own node_modules state explicitly when they need it.
+      continue;
+    }
+
+    if (entry.isFile() && relativePath === join(".als", "CLAUDE.md")) {
+      // .als/CLAUDE.md is generated deploy output, not authored source.
+      continue;
+    }
+
     const sourcePath = join(sourceRoot, entry.name);
     const destinationPath = join(destinationRoot, entry.name);
 
     if (entry.isDirectory()) {
       mkdirSync(destinationPath, { recursive: true });
-      copyFixtureTree(sourcePath, destinationPath);
+      copyFixtureTree(sourcePath, destinationPath, relativePath);
       continue;
     }
 
@@ -264,10 +297,29 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function describeYamlType(value: unknown): string {
+function describeValueType(value: unknown): string {
   if (value === null) return "null";
   if (Array.isArray(value)) return "array";
   return typeof value;
+}
+
+function serializeAuthoredDefinition(
+  exportName: "system" | "module" | "delamain",
+  value: Record<string, unknown>,
+): string {
+  const helperName = exportName === "system"
+    ? "defineSystem"
+    : exportName === "module"
+      ? "defineModule"
+      : "defineDelamain";
+
+  const importPath = exportName === "system"
+    ? "./authoring.ts"
+    : exportName === "module"
+      ? "../../../authoring.ts"
+      : "../../../../../authoring.ts";
+
+  return `import { ${helperName} } from ${JSON.stringify(importPath)};\n\nexport const ${exportName} = ${helperName}(${JSON.stringify(value, null, 2)} as const);\n\nexport default ${exportName};\n`;
 }
 
 function describeSearch(code: string, fileSuffix?: string): string {

@@ -1,26 +1,27 @@
-phases: [investigation, remediation, closure]
-
+phases:
+  - investigation
+  - remediation
+  - closure
 states:
   investigating:
     initial: true
     phase: investigation
     actor: agent
-    resumable: false
     path: agents/investigating.md
+    resumable: false
   mitigated:
     phase: remediation
     actor: agent
-    resumable: false
     path: agents/mitigated.md
+    resumable: false
   resolved:
     phase: remediation
     actor: agent
-    resumable: false
     path: agents/resolved.md
+    resumable: false
   closed:
-    phase: closure
     terminal: true
-
+    phase: closure
 transitions:
   - class: advance
     from: investigating

@@ -96,7 +96,7 @@ pane_cmd=$(tmux -L {SOCKET} list-panes -t "{SESSION}:{WINDOW}" -F '#{pane_curren
 
 Some agents don't do work directly — they spawn an external process (e.g., a Codex session) and stop. This is the delegated dispatch pattern.
 
-The `delegated: true` field in `delamain.yaml` tells the dispatcher to skip Agent SDK resume and auto-persist for delegated states while still exposing runtime session metadata to the agent.
+The `delegated: true` field in the authored `delamain.ts` definition, projected into runtime `delamain.yaml`, tells the dispatcher to skip Agent SDK resume and auto-persist for delegated states while still exposing runtime session metadata to the agent.
 
 Key rules for delegated agents:
 - **Check idempotency first** — verify the delegate isn't already running
@@ -165,7 +165,7 @@ When a state agent needs to perform a large unit of focused work, delegate to a 
 
 ### 5. Session Field Ownership
 
-Session fields are implicit — they exist on items but are not declared in `shape.yaml`. They are managed by the dispatcher (for direct dispatch) or the dispatch command chain (for delegated dispatch). Skills and agents should not create, modify, or validate session fields unless they are part of the delegated dispatch mechanism.
+Session fields are implicit — they exist on items but are not declared in `module.ts`. They are managed by the dispatcher (for direct dispatch) or the dispatch command chain (for delegated dispatch). Skills and agents should not create, modify, or validate session fields unless they are part of the delegated dispatch mechanism.
 
 ### 6. Agent Prompt Structure
 

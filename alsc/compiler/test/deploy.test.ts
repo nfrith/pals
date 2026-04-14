@@ -578,7 +578,7 @@ test("deploy CLI excludes unused Delamains that are only present in the registry
     await updateShapeYaml(root, "factory", 1, (shape) => {
       const delamains = (shape.delamains ?? {}) as Record<string, unknown>;
       delamains["unused-flow"] = {
-        path: "delamains/unused-flow/delamain.yaml",
+        path: "delamains/unused-flow/delamain.ts",
       };
       shape.delamains = delamains;
     });
@@ -738,7 +738,7 @@ test("deploy CLI fails when flat Delamain names collide across modules", { timeo
 
 test("deploy library preserves prior planned skills when a later module shape file is missing", { timeout: 180_000 }, async () => {
   await withFixtureSandbox("deploy-shape-missing", async ({ root }) => {
-    await removePath(root, ".als/modules/people/v1/shape.yaml");
+    await removePath(root, ".als/modules/people/v1/module.ts");
 
     const validationContext = loadSystemValidationContext(root);
     expect(validationContext.system_config).not.toBeNull();
@@ -758,14 +758,14 @@ test("deploy library preserves prior planned skills when a later module shape fi
     expect(output.planned_skills.length).toBe(output.planned_skill_count);
     expect(output.planned_skills.map((plan) => plan.module_id)).toContain("people");
     expect(output.planned_skills.map((plan) => plan.module_id)).toContain("backlog");
-    expect(output.error).toContain("Could not read shape.yaml");
+    expect(output.error).toContain("Could not load module.ts");
     expect(output.error).toContain("module 'people'");
   });
 });
 
-test("deploy library reports YAML parse failures while planning Claude projection", { timeout: 180_000 }, async () => {
+test("deploy library reports TypeScript load failures while planning Claude projection", { timeout: 180_000 }, async () => {
   await withFixtureSandbox("deploy-shape-parse-failure", async ({ root }) => {
-    await writePath(root, ".als/modules/people/v1/shape.yaml", "dependencies: [\n");
+    await writePath(root, ".als/modules/people/v1/module.ts", "export const module = {\n");
 
     const validationContext = loadSystemValidationContext(root);
     expect(validationContext.system_config).not.toBeNull();
@@ -781,14 +781,18 @@ test("deploy library reports YAML parse failures while planning Claude projectio
     expect(output.status).toBe("fail");
     expect(output.validation_status).toBe("pass");
     expect(output.planned_skill_count).toBeGreaterThan(0);
-    expect(output.error).toContain("Could not parse shape.yaml");
+    expect(output.error).toContain("Could not load module.ts");
     expect(output.error).toContain("module 'people'");
   });
 });
 
-test("deploy library reports schema validation details when shape.yaml is structurally invalid", { timeout: 180_000 }, async () => {
+test("deploy library reports schema validation details when module.ts is structurally invalid", { timeout: 180_000 }, async () => {
   await withFixtureSandbox("deploy-shape-invalid-schema", async ({ root }) => {
-    await writePath(root, ".als/modules/people/v1/shape.yaml", "dependencies: []\nentities: []\n");
+    await writePath(
+      root,
+      ".als/modules/people/v1/module.ts",
+      'import { defineModule } from "../../../authoring.ts";\n\nexport const module = defineModule({\n  "dependencies": [],\n  "entities": []\n} as const);\n\nexport default module;\n',
+    );
 
     const validationContext = loadSystemValidationContext(root);
     expect(validationContext.system_config).not.toBeNull();
@@ -804,7 +808,7 @@ test("deploy library reports schema validation details when shape.yaml is struct
     expect(output.status).toBe("fail");
     expect(output.validation_status).toBe("pass");
     expect(output.planned_skill_count).toBeGreaterThan(0);
-    expect(output.error).toContain("Could not validate shape.yaml");
+    expect(output.error).toContain("Could not validate module.ts");
     expect(output.error).toContain("entities");
   });
 });

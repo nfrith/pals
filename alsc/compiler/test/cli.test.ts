@@ -1,21 +1,32 @@
 import { expect, test } from "bun:test";
-import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { runCli } from "../src/cli.ts";
 import { withFixtureSandbox } from "./helpers/fixture.ts";
 
-const compilerRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+function captureCli(args: string[]): { exitCode: number; stdout: string; stderr: string } {
+  let stdout = "";
+  let stderr = "";
+  const exitCode = runCli(args, {
+    stdout(value) {
+      stdout += value.endsWith("\n") ? value : `${value}\n`;
+    },
+    stderr(value) {
+      stderr += value.endsWith("\n") ? value : `${value}\n`;
+    },
+  });
 
-test.concurrent("alsc validate emits the validation output contract", async () => {
+  return {
+    exitCode,
+    stdout,
+    stderr,
+  };
+}
+
+test("alsc validate emits the validation output contract", async () => {
   await withFixtureSandbox("cli-validate", async ({ root }) => {
-    const process = Bun.spawnSync({
-      cmd: ["bun", "src/cli.ts", "validate", root],
-      cwd: compilerRoot,
-      stdout: "pipe",
-      stderr: "pipe",
-    });
+    const process = captureCli(["validate", root]);
 
     expect(process.exitCode).toBe(0);
-    const output = JSON.parse(new TextDecoder().decode(process.stdout)) as {
+    const output = JSON.parse(process.stdout) as {
       schema: string;
       status: string;
       system_path: string;
@@ -28,17 +39,12 @@ test.concurrent("alsc validate emits the validation output contract", async () =
   });
 });
 
-test.concurrent("alsc validate supports module-filtered runs", async () => {
+test("alsc validate supports module-filtered runs", async () => {
   await withFixtureSandbox("cli-validate-filter", async ({ root }) => {
-    const process = Bun.spawnSync({
-      cmd: ["bun", "src/cli.ts", "validate", root, "backlog"],
-      cwd: compilerRoot,
-      stdout: "pipe",
-      stderr: "pipe",
-    });
+    const process = captureCli(["validate", root, "backlog"]);
 
     expect(process.exitCode).toBe(0);
-    const output = JSON.parse(new TextDecoder().decode(process.stdout)) as {
+    const output = JSON.parse(process.stdout) as {
       status: string;
       module_filter: string | null;
       modules: Array<{ module_id: string }>;
@@ -49,17 +55,12 @@ test.concurrent("alsc validate supports module-filtered runs", async () => {
   });
 });
 
-test.concurrent("alsc deploy claude dry-run exposes the public deploy surface", async () => {
+test("alsc deploy claude dry-run exposes the public deploy surface", async () => {
   await withFixtureSandbox("cli-deploy-dry-run", async ({ root }) => {
-    const process = Bun.spawnSync({
-      cmd: ["bun", "src/cli.ts", "deploy", "claude", "--dry-run", root],
-      cwd: compilerRoot,
-      stdout: "pipe",
-      stderr: "pipe",
-    });
+    const process = captureCli(["deploy", "claude", "--dry-run", root]);
 
     expect(process.exitCode).toBe(0);
-    const output = JSON.parse(new TextDecoder().decode(process.stdout)) as {
+    const output = JSON.parse(process.stdout) as {
       schema: string;
       status: string;
       dry_run: boolean;
@@ -87,41 +88,26 @@ test.concurrent("alsc deploy claude dry-run exposes the public deploy surface", 
   });
 });
 
-test.concurrent("alsc help surfaces the main usage text", async () => {
-  const process = Bun.spawnSync({
-    cmd: ["bun", "src/cli.ts", "--help"],
-    cwd: compilerRoot,
-    stdout: "pipe",
-    stderr: "pipe",
-  });
+test("alsc help surfaces the main usage text", async () => {
+  const process = captureCli(["--help"]);
 
   expect(process.exitCode).toBe(0);
-  const stdout = new TextDecoder().decode(process.stdout);
+  const { stdout } = process;
   expect(stdout).toContain("alsc validate <system-root> [module-id]");
   expect(stdout).toContain("alsc deploy claude");
   expect(stdout).toContain("Project active ALS Claude assets into .als/ and .claude/.");
 });
 
-test.concurrent("alsc validate help surfaces command usage", async () => {
-  const process = Bun.spawnSync({
-    cmd: ["bun", "src/cli.ts", "validate", "--help"],
-    cwd: compilerRoot,
-    stdout: "pipe",
-    stderr: "pipe",
-  });
+test("alsc validate help surfaces command usage", async () => {
+  const process = captureCli(["validate", "--help"]);
 
   expect(process.exitCode).toBe(0);
-  expect(new TextDecoder().decode(process.stdout)).toContain("Usage: alsc validate <system-root> [module-id]");
+  expect(process.stdout).toContain("Usage: alsc validate <system-root> [module-id]");
 });
 
-test.concurrent("alsc rejects invalid command usage with a usage error", async () => {
-  const process = Bun.spawnSync({
-    cmd: ["bun", "src/cli.ts", "deploy", "ghost"],
-    cwd: compilerRoot,
-    stdout: "pipe",
-    stderr: "pipe",
-  });
+test("alsc rejects invalid command usage with a usage error", async () => {
+  const process = captureCli(["deploy", "ghost"]);
 
   expect(process.exitCode).toBe(2);
-  expect(new TextDecoder().decode(process.stderr)).toContain("Usage: alsc deploy claude");
+  expect(process.stderr).toContain("Usage: alsc deploy claude");
 });

@@ -37,7 +37,7 @@ for (const invalidPath of [
 
       const result = validateFixture(root);
       expect(result.status).toBe("fail");
-      expectSystemDiagnostic(result, codes.SYSTEM_INVALID, ".als/system.yaml");
+      expectSystemDiagnostic(result, codes.SYSTEM_INVALID, ".als/system.ts");
     });
   });
 }
@@ -78,7 +78,7 @@ test.concurrent("exact duplicate module paths are rejected", async () => {
 
     const result = validateFixture(root);
     expect(result.status).toBe("fail");
-    const diagnostic = expectSystemDiagnostic(result, codes.SYSTEM_MODULE_PATH_CONFLICT, ".als/system.yaml");
+    const diagnostic = expectSystemDiagnostic(result, codes.SYSTEM_MODULE_PATH_CONFLICT, ".als/system.ts");
     expect(diagnostic.message).toContain("workspace/backlog");
   });
 });
@@ -93,7 +93,7 @@ test.concurrent("nested module paths are rejected", async () => {
 
     const result = validateFixture(root);
     expect(result.status).toBe("fail");
-    const diagnostic = expectSystemDiagnostic(result, codes.SYSTEM_MODULE_PATH_CONFLICT, ".als/system.yaml");
+    const diagnostic = expectSystemDiagnostic(result, codes.SYSTEM_MODULE_PATH_CONFLICT, ".als/system.ts");
     expect(diagnostic.message).toContain("workspace/backlog/archive");
   });
 });
@@ -107,7 +107,7 @@ test.concurrent("ancestor module paths are rejected", async () => {
 
     const result = validateFixture(root);
     expect(result.status).toBe("fail");
-    const diagnostic = expectSystemDiagnostic(result, codes.SYSTEM_MODULE_PATH_CONFLICT, ".als/system.yaml");
+    const diagnostic = expectSystemDiagnostic(result, codes.SYSTEM_MODULE_PATH_CONFLICT, ".als/system.ts");
     expect(diagnostic.message).toContain("workspace");
   });
 });
@@ -127,7 +127,7 @@ test.concurrent("missing inferred shape files are rejected", async () => {
 
 test.concurrent("inferred shape paths must be files", async () => {
   await withFixtureSandbox("system-shape-path-file", async ({ root }) => {
-    await mkdirPath(root, ".als/modules/client-registry/v9/shape.yaml");
+    await mkdirPath(root, ".als/modules/client-registry/v9/module.ts");
     await updateSystemYaml(root, (config) => {
       const modules = config.modules as Record<string, Record<string, unknown>>;
       modules["client-registry"].version = 9;
@@ -135,7 +135,7 @@ test.concurrent("inferred shape paths must be files", async () => {
 
     const result = validateFixture(root);
     expect(result.status).toBe("fail");
-    const diagnostic = expectSystemDiagnostic(result, codes.SHAPE_FILE_MISSING, ".als/modules/client-registry/v9/shape.yaml");
+    const diagnostic = expectSystemDiagnostic(result, codes.SHAPE_FILE_MISSING, ".als/modules/client-registry/v9/module.ts");
     expect(diagnostic.reason).toBe(reasons.SYSTEM_SHAPE_FILE_NOT_FILE);
   });
 });
@@ -160,7 +160,7 @@ test.concurrent("unknown module filters fail cleanly", async () => {
     const result = validateFixture(root, "ghost-module");
     expect(result.status).toBe("fail");
     expect(result.module_filter).toBe("ghost-module");
-    expectSystemDiagnostic(result, codes.SYSTEM_FILTER_UNKNOWN, ".als/system.yaml");
+    expectSystemDiagnostic(result, codes.SYSTEM_FILTER_UNKNOWN, ".als/system.ts");
   });
 });
 
@@ -190,7 +190,7 @@ test.concurrent("filtered validation fails cleanly when dependency context is in
     expect(result.modules).toHaveLength(1);
     expect(result.modules[0].module_id).toBe("backlog");
 
-    const diagnostic = expectSystemDiagnostic(result, codes.SYSTEM_FILTER_CONTEXT_INVALID, ".als/system.yaml");
+    const diagnostic = expectSystemDiagnostic(result, codes.SYSTEM_FILTER_CONTEXT_INVALID, ".als/system.ts");
     expect(diagnostic.reason).toBe(reasons.SYSTEM_FILTER_CONTEXT_INVALID);
     expect(diagnostic.actual).toEqual(["people"]);
 
@@ -210,7 +210,7 @@ test.concurrent("filtered validation suppresses unresolved refs when a dependenc
     expect(result.modules).toHaveLength(1);
     expect(result.modules[0].module_id).toBe("backlog");
 
-    const diagnostic = expectSystemDiagnostic(result, codes.SYSTEM_FILTER_CONTEXT_INVALID, ".als/system.yaml");
+    const diagnostic = expectSystemDiagnostic(result, codes.SYSTEM_FILTER_CONTEXT_INVALID, ".als/system.ts");
     expect(diagnostic.reason).toBe(reasons.SYSTEM_FILTER_CONTEXT_INVALID);
     expect(diagnostic.actual).toEqual(["people"]);
     expect(diagnostic.hint).toContain("transitive dependencies beyond them may not have been loaded");
@@ -227,7 +227,7 @@ test.concurrent("stale top-level schema fields in system config are rejected", a
 
     const result = validateFixture(root);
     expect(result.status).toBe("fail");
-    const diagnostic = expectSystemDiagnostic(result, codes.SYSTEM_INVALID, ".als/system.yaml");
+    const diagnostic = expectSystemDiagnostic(result, codes.SYSTEM_INVALID, ".als/system.ts");
     expect(diagnostic.reason).toBe(reasons.SYSTEM_SCHEMA_REMOVED);
   });
 });
@@ -240,7 +240,7 @@ test.concurrent("missing als_version fails with a dedicated system diagnostic", 
 
     const result = validateFixture(root);
     expect(result.status).toBe("fail");
-    const diagnostic = expectSystemDiagnostic(result, codes.SYSTEM_ALS_VERSION_INVALID, ".als/system.yaml");
+    const diagnostic = expectSystemDiagnostic(result, codes.SYSTEM_ALS_VERSION_INVALID, ".als/system.ts");
     expect(diagnostic.reason).toBe(reasons.SYSTEM_ALS_VERSION_INVALID);
   });
 });
@@ -258,7 +258,7 @@ for (const { label, value } of [
 
       const result = validateFixture(root);
       expect(result.status).toBe("fail");
-      const diagnostic = expectSystemDiagnostic(result, codes.SYSTEM_ALS_VERSION_INVALID, ".als/system.yaml");
+      const diagnostic = expectSystemDiagnostic(result, codes.SYSTEM_ALS_VERSION_INVALID, ".als/system.ts");
       expect(diagnostic.reason).toBe(reasons.SYSTEM_ALS_VERSION_INVALID);
       expect(diagnostic.field).toBe("als_version");
     });
@@ -273,7 +273,7 @@ test.concurrent("unsupported als_version stops validation before module loading"
 
     const result = validateFixture(root);
     expect(result.status).toBe("fail");
-    const diagnostic = expectSystemDiagnostic(result, codes.SYSTEM_ALS_VERSION_UNSUPPORTED, ".als/system.yaml");
+    const diagnostic = expectSystemDiagnostic(result, codes.SYSTEM_ALS_VERSION_UNSUPPORTED, ".als/system.ts");
     expect(diagnostic.reason).toBe(reasons.SYSTEM_ALS_VERSION_UNSUPPORTED);
     expect(result.modules).toHaveLength(0);
     expect(result.als_version).toBe(2);
@@ -310,7 +310,7 @@ test.concurrent("stale singular skill fields are rejected even when skills exist
 
     const result = validateFixture(root);
     expect(result.status).toBe("fail");
-    const diagnostic = expectSystemDiagnostic(result, codes.SYSTEM_INVALID, ".als/system.yaml");
+    const diagnostic = expectSystemDiagnostic(result, codes.SYSTEM_INVALID, ".als/system.ts");
     expect(diagnostic.field).toBe("modules.backlog.skill");
     expect(diagnostic.reason).toBe(reasons.SYSTEM_SKILL_REMOVED);
   });
@@ -342,7 +342,7 @@ for (const { label, value } of [
 
       const result = validateFixture(root);
       expect(result.status).toBe("fail");
-      const diagnostic = expectSystemDiagnostic(result, codes.SYSTEM_INVALID, ".als/system.yaml");
+      const diagnostic = expectSystemDiagnostic(result, codes.SYSTEM_INVALID, ".als/system.ts");
       expect(diagnostic.field).toBe("modules.backlog.skills");
     });
   });
@@ -357,7 +357,7 @@ test.concurrent("invalid skill ids are rejected", async () => {
 
     const result = validateFixture(root);
     expect(result.status).toBe("fail");
-    const diagnostic = expectSystemDiagnostic(result, codes.SYSTEM_INVALID, ".als/system.yaml");
+    const diagnostic = expectSystemDiagnostic(result, codes.SYSTEM_INVALID, ".als/system.ts");
     expect(diagnostic.field).toBe("modules.backlog.skills.0");
   });
 });
@@ -371,7 +371,7 @@ test.concurrent("duplicate skill ids surface a stable machine-readable reason", 
 
     const result = validateFixture(root);
     expect(result.status).toBe("fail");
-    const diagnostic = expectSystemDiagnostic(result, codes.SYSTEM_INVALID, ".als/system.yaml");
+    const diagnostic = expectSystemDiagnostic(result, codes.SYSTEM_INVALID, ".als/system.ts");
     expect(diagnostic.field).toBe("modules.backlog.skills.1");
     expect(diagnostic.reason).toBe(reasons.SYSTEM_SKILLS_DUPLICATE);
   });
@@ -386,7 +386,7 @@ test.concurrent("active skill ids must be globally unique across modules", async
 
     const result = validateFixture(root);
     expect(result.status).toBe("fail");
-    const diagnostic = expectSystemDiagnostic(result, codes.SYSTEM_INVALID, ".als/system.yaml");
+    const diagnostic = expectSystemDiagnostic(result, codes.SYSTEM_INVALID, ".als/system.ts");
     expect(diagnostic.field).toBe("modules.client-registry.skills.0");
     expect(diagnostic.reason).toBe(reasons.SYSTEM_SKILLS_GLOBAL_DUPLICATE);
     expect(diagnostic.message).toContain("backlog-module");
@@ -560,15 +560,15 @@ test.concurrent("unreadable system config files fail cleanly", async () => {
   await withFixtureSandbox("system-unreadable-config", async ({ root }) => {
     if (isRootUser()) return;
 
-    const systemConfigPath = join(root, ".als/system.yaml");
+    const systemConfigPath = join(root, ".als/system.ts");
     await chmod(systemConfigPath, 0o000);
 
     try {
       const result = validateFixture(root);
       expect(result.status).toBe("fail");
-      const diagnostic = expectSystemDiagnostic(result, codes.SYSTEM_INVALID, ".als/system.yaml");
-      expect(diagnostic.message).toContain("Could not read YAML file");
-      expect(diagnostic.hint).toContain("Check file permissions");
+      const diagnostic = expectSystemDiagnostic(result, codes.SYSTEM_INVALID, ".als/system.ts");
+      expect(diagnostic.message).toContain("Could not read TypeScript entrypoint");
+      expect(diagnostic.hint).toContain("TypeScript");
     } finally {
       await chmod(systemConfigPath, 0o600);
     }

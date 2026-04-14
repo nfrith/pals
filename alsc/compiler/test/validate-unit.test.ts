@@ -49,7 +49,7 @@ test("missing section definitions surface a shape diagnostic instead of crashing
       module_id: "backlog",
       entity_name: "item",
       record_file: "workspace/backlog/items/ITEM-0001.md",
-      shape_file: ".als/modules/backlog/v1/shape.yaml",
+      shape_file: ".als/modules/backlog/v1/module.ts",
     },
   );
 

@@ -1,12 +1,15 @@
-import { cpSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
-import { parse as parseYaml } from "yaml";
+import { stringify as stringifyYaml } from "yaml";
+import { loadAuthoredSourceExport } from "./authored-load.ts";
 import { DEPLOY_OUTPUT_SCHEMA_LITERAL } from "./contracts.ts";
+import type { DelamainShape } from "./delamain.ts";
+import { delamainShapeSchema } from "./delamain.ts";
 import type { FieldShape, ModuleShape, SystemConfig } from "./schema.ts";
 import { moduleShapeSchema } from "./schema.ts";
 import {
   inferredModuleBundlePath,
-  inferredShapePath,
+  inferredModuleEntryPath,
   inferredSkillEntryPath,
   toRepoRelative,
   toSystemRelative,
@@ -43,6 +46,7 @@ interface ClaudeDelamainProjectionWorkPlan extends ClaudeDelamainProjectionPlan 
   status_field: string;
   discriminator_field: string | null;
   discriminator_value: string | null;
+  rendered_delamain_yaml: string;
 }
 
 interface ClaudeSystemFileWorkPlan extends ClaudeSystemFilePlan {
@@ -286,6 +290,7 @@ export function deployClaudeSkillsFromConfig(
     for (const plan of delamainPlans) {
       try {
         mergeProjectionDirectory(plan.source_dir_abs, plan.target_dir_abs);
+        writeProjectedDelamainDefinition(plan);
         writeDelamainRuntimeManifest(plan);
         writtenDelamainCount += 1;
       } catch (error) {
@@ -402,6 +407,15 @@ function buildProjectionPlans(
       const sourceEntryAbs = resolve(moduleBundleAbs, registryEntry.path);
       const sourceDirAbs = dirname(sourceEntryAbs);
       const targetDirAbs = resolve(systemRootAbs, ".claude/delamains", delamainName);
+      const loadedDelamain = loadDelamainForProjection(moduleId, sourceEntryAbs);
+      if (!loadedDelamain.shape) {
+        return {
+          skill_plans: skillPlans,
+          delamain_plans: delamainPlans,
+          delamain_name_conflicts: collectDelamainNameConflicts(delamainPlans),
+          error: loadedDelamain.error,
+        };
+      }
 
       delamainPlans.push({
         module_id: moduleId,
@@ -417,6 +431,7 @@ function buildProjectionPlans(
         status_field: binding.status_field,
         discriminator_field: binding.discriminator_field,
         discriminator_value: binding.discriminator_value,
+        rendered_delamain_yaml: stringifyYaml(loadedDelamain.shape),
       });
     }
   }
@@ -446,37 +461,51 @@ function loadModuleShapeForProjection(
   moduleId: string,
   version: number,
 ): { shape: ModuleShape | null; error: string | null } {
-  const shapePathAbs = resolve(systemRootAbs, inferredShapePath(moduleId, version));
-  let rawShape: string;
-  try {
-    rawShape = readFileSync(shapePathAbs, "utf-8");
-  } catch (error) {
+  const shapePathAbs = resolve(systemRootAbs, inferredModuleEntryPath(moduleId, version));
+  const loadedShape = loadAuthoredSourceExport(shapePathAbs, "module", "module_shape", "projection", moduleId);
+  if (!loadedShape.success) {
     return {
       shape: null,
-      error: `Could not read shape.yaml while planning Claude projection for module '${moduleId}': ${error instanceof Error ? error.message : String(error)}`,
+      error: `Could not load module.ts while planning Claude projection for module '${moduleId}': ${loadedShape.diagnostics.map((diagnostic) => diagnostic.message).join("; ")}`,
     };
   }
 
-  let parsedYamlShape: unknown;
-  try {
-    parsedYamlShape = parseYaml(rawShape);
-  } catch (error) {
-    return {
-      shape: null,
-      error: `Could not parse shape.yaml while planning Claude projection for module '${moduleId}': ${error instanceof Error ? error.message : String(error)}`,
-    };
-  }
-
-  const parsedShape = moduleShapeSchema.safeParse(parsedYamlShape);
+  const parsedShape = moduleShapeSchema.safeParse(loadedShape.data);
   if (!parsedShape.success) {
     return {
       shape: null,
-      error: `Could not validate shape.yaml while planning Claude projection for module '${moduleId}': ${formatZodIssues(parsedShape.error.issues)}`,
+      error: `Could not validate module.ts while planning Claude projection for module '${moduleId}': ${formatZodIssues(parsedShape.error.issues)}`,
     };
   }
 
   return {
     shape: parsedShape.data,
+    error: null,
+  };
+}
+
+function loadDelamainForProjection(
+  moduleId: string,
+  entryPathAbs: string,
+): { shape: DelamainShape | null; error: string | null } {
+  const loadedDelamain = loadAuthoredSourceExport(entryPathAbs, "delamain", "module_shape", "projection", moduleId);
+  if (!loadedDelamain.success) {
+    return {
+      shape: null,
+      error: `Could not load delamain.ts while planning Claude projection for module '${moduleId}': ${loadedDelamain.diagnostics.map((diagnostic) => diagnostic.message).join("; ")}`,
+    };
+  }
+
+  const parsedDelamain = delamainShapeSchema.safeParse(loadedDelamain.data);
+  if (!parsedDelamain.success) {
+    return {
+      shape: null,
+      error: `Could not validate delamain.ts while planning Claude projection for module '${moduleId}': ${formatZodIssues(parsedDelamain.error.issues)}`,
+    };
+  }
+
+  return {
+    shape: parsedDelamain.data,
     error: null,
   };
 }
@@ -781,6 +810,10 @@ function mergeProjectionDirectory(sourceDirAbs: string, targetDirAbs: string): v
 function writeSystemFile(plan: ClaudeSystemFileWorkPlan): void {
   mkdirSync(dirname(plan.target_path_abs), { recursive: true });
   writeFileSync(plan.target_path_abs, plan.contents);
+}
+
+function writeProjectedDelamainDefinition(plan: ClaudeDelamainProjectionWorkPlan): void {
+  writeFileSync(resolve(plan.target_dir_abs, "delamain.yaml"), plan.rendered_delamain_yaml);
 }
 
 function writeDelamainRuntimeManifest(plan: ClaudeDelamainProjectionWorkPlan): void {

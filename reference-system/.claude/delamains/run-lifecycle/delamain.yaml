@@ -1,24 +1,24 @@
-phases: [execution, closed]
-
+phases:
+  - execution
+  - closed
 states:
   queued:
     initial: true
     phase: execution
     actor: agent
-    resumable: false
     path: agents/queued.md
+    resumable: false
   running:
     phase: execution
     actor: agent
-    resumable: false
     path: agents/running.md
+    resumable: false
   completed:
-    phase: closed
     terminal: true
+    phase: closed
   failed:
-    phase: closed
     terminal: true
-
+    phase: closed
 transitions:
   - class: advance
     from: queued

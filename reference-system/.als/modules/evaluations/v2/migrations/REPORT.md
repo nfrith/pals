@@ -23,7 +23,7 @@ Cut over the `evaluations` module from `v1` to `v2` after proving that the `deci
 ## Clone Dry Run
 - `clone-path`: `/tmp/als-migrate-rich-body-content-evaluations-v1-to-v2-20260324T000000Z`
 - `script-execution`: passed against the cloned system root.
-- `version-flip`: cloned `.als/system.yaml` updated `evaluations` from `version: 1` to `version: 2`.
+- `version-flip`: cloned `.als/system.ts` updated `evaluations` from `version: 1` to `version: 2`.
 - `validation`: whole-system validation passed against the cloned post-cutover state.
 - `records-migrated`: 2 evaluation records rewritten during the dry run.
 
@@ -33,8 +33,8 @@ Cut over the `evaluations` module from `v1` to `v2` after proving that the `deci
 - `shape-validation`: migrated clone records satisfied the `v2` shape.
 
 ## Live Cutover
-- `script-execution`: passed against the live system root while `.als/system.yaml` still pointed at `v1`.
-- `version-flip`: live `.als/system.yaml` updated `evaluations` from `version: 1` to `version: 2`.
+- `script-execution`: passed against the live system root while `.als/system.ts` still pointed at `v1`.
+- `version-flip`: live `.als/system.ts` updated `evaluations` from `version: 1` to `version: 2`.
 - `validation`: whole-system validation passed after the live cutover.
 - `rollback`: not needed.
 

@@ -1,26 +1,27 @@
-phases: [response, stabilization, closure]
-
+phases:
+  - response
+  - stabilization
+  - closure
 states:
   active:
     initial: true
     phase: response
     actor: agent
-    resumable: false
     path: agents/active.md
+    resumable: false
   monitoring:
     phase: stabilization
     actor: agent
-    resumable: false
     path: agents/monitoring.md
+    resumable: false
   recovered:
     phase: stabilization
     actor: agent
-    resumable: false
     path: agents/recovered.md
+    resumable: false
   closed:
-    phase: closure
     terminal: true
-
+    phase: closure
 transitions:
   - class: advance
     from: active

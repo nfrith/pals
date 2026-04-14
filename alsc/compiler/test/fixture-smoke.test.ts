@@ -191,7 +191,7 @@ test.concurrent("host absolute file path fields validate clean", async () => {
     });
 
     await updateRecord(root, "workspace/backlog/items/ITEM-0002.md", (record) => {
-      record.data.context_file = join(root, ".als/modules/backlog/v1/shape.yaml");
+      record.data.context_file = join(root, ".als/modules/backlog/v1/module.ts");
       record.data.session_files = [
         join(root, "content/sessions/2026-03-14-diagnostics-triage.md"),
         join(root, "content/sessions/2026-03-16-negative-coverage-pass.md"),

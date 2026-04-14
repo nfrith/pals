@@ -10,7 +10,7 @@ Prepare the next version of an ALS v1 module bundle through structured discovery
 `change` is the v1 successor to v0 `als-mutate`.
 
 It prepares a committed `vN+1/` bundle under `.als/modules/<module_id>/` and stops there.
-It does not modify `.als/system.yaml`, does not touch live records, does not execute the migration, and does not live-deploy `.claude/skills/` or `.claude/delamains/`.
+It does not modify `.als/system.ts`, does not touch live records, does not execute the migration, and does not live-deploy `.claude/skills/` or `.claude/delamains/`.
 
 ## Input
 
@@ -22,7 +22,7 @@ Examples:
 - `prepare the next version of backlog`
 - `change the experiments module in this system`
 
-Do not ask the operator for a skill path. Resolve the target module from `.als/system.yaml`.
+Do not ask the operator for a skill path. Resolve the target module from `.als/system.ts`.
 
 ## Required Reads
 
@@ -42,7 +42,7 @@ Use `manifest-template.md` as the manifest contract for `vN+1/migrations/MANIFES
 - Resolves the target module from the active ALS v1 system config
 - Validates that the current live system is clean before authoring
 - Creates the next module version bundle at `.als/modules/<module_id>/vN+1/`
-- Updates the next bundle's `shape.yaml`
+- Updates the next bundle's `module.ts`
 - Authors the staged future active skill bundle under `vN+1/skills/`
 - Authors a fresh `migrations/` directory with:
   - `MANIFEST.md`
@@ -51,7 +51,7 @@ Use `manifest-template.md` as the manifest contract for `vN+1/migrations/MANIFES
 
 ### What `change` does NOT do
 
-- Modify `.als/system.yaml`
+- Modify `.als/system.ts`
 - Change the module's active `version`
 - Modify any live module records
 - Execute migration scripts
@@ -66,9 +66,9 @@ Use `manifest-template.md` as the manifest contract for `vN+1/migrations/MANIFES
 Before reading module contents in detail, resolve the real system and baseline.
 
 1. Find the system root. Use the same system-root rules as the sibling `validate` skill: prefer an explicit user path, then clear conversation context, then the current directory tree.
-2. Read `.als/system.yaml`.
+2. Read `.als/system.ts`.
 3. Resolve the target module id from the operator request.
-4. Determine the active module version `vN` from `.als/system.yaml`.
+4. Determine the active module version `vN` from `.als/system.ts`.
 5. Run whole-system validation against the live system before doing any authoring.
 
 ```bash
@@ -86,15 +86,15 @@ Before speaking to the operator, silently build a complete mental model of the a
 Do not proceed to Phase 2 until all of the following is complete.
 
 1. **Read active system config context.**
-   - Read the target module entry in `.als/system.yaml`.
+   - Read the target module entry in `.als/system.ts`.
    - Note: module path, active version, active skill ids, and the full system module map.
 
 2. **Read the active shape.**
-   - Read `.als/modules/<module_id>/vN/shape.yaml` end to end.
+   - Read `.als/modules/<module_id>/vN/module.ts` end to end.
    - Note: entities, path templates, identity contracts, dependencies, field contracts, body contracts, enums, refs, and section names.
 
 3. **Read the active skill bundle in full.**
-   - For every active skill id listed in `.als/system.yaml`, read the full directory under `.als/modules/<module_id>/vN/skills/<skill_id>/`.
+   - For every active skill id listed in `.als/system.ts`, read the full directory under `.als/modules/<module_id>/vN/skills/<skill_id>/`.
    - Always read `SKILL.md`.
    - Also read supporting files under the skill directory when they exist. Do not treat `SKILL.md` as the whole skill if the bundle already contains references, assets, scripts, or other supporting files.
 
@@ -105,7 +105,7 @@ Do not proceed to Phase 2 until all of the following is complete.
 
 5. **Read recent prior versions.**
    - Read the two most recent prior versions only.
-   - If `vN-1` exists, read its `shape.yaml`, active skill bundle, and migration manifest.
+   - If `vN-1` exists, read its `module.ts`, active skill bundle, and migration manifest.
    - If `vN-2` exists, skim the same surfaces.
    - This is for recent evolution context, not archaeology.
 
@@ -181,7 +181,7 @@ Create:
 
 ```text
 .als/modules/<module_id>/vN+1/
-├── shape.yaml
+├── module.ts
 ├── skills/                  # omit entirely only when the staged future active skill set is empty
 │   └── <skill_id>/...
 └── migrations/
@@ -192,7 +192,7 @@ Create:
 #### Authoring Rules
 
 1. **Copy the active shape forward.**
-   - Start from `.als/modules/<module_id>/vN/shape.yaml`.
+   - Start from `.als/modules/<module_id>/vN/module.ts`.
    - Write the agreed `vN+1` shape by editing the copy.
 
 2. **Author the staged future active skill bundle.**
@@ -211,7 +211,7 @@ Create:
    - Use `references/manifest-template.md`.
    - Populate every field and section completely.
    - Record `skill_paths` for the full staged future active skill directories in `vN+1`.
-   - `skill_paths` is the authoritative staged future active skill set that `migrate` will later copy into `.als/system.yaml` `skills:`.
+   - `skill_paths` is the authoritative staged future active skill set that `migrate` will later copy into `.als/system.ts` `skills:`.
    - If the staged future active skill set is empty, use `skill_paths: []`.
    - Set `primary_migration_script` to the repo-root-relative path of the primary migration artifact created in `vN+1/migrations/`.
    - Set manifest `status: staged`.
@@ -240,7 +240,7 @@ Create:
 
 - The script must clearly identify itself as a prepared migration asset, not an executed migration.
 - It may be a stub, but it must match the manifest's stated migration direction and target paths.
-- It should accept the ALS system root as its first positional argument and fail cleanly if that root or `.als/system.yaml` is missing.
+- It should accept the ALS system root as its first positional argument and fail cleanly if that root or `.als/system.ts` is missing.
 - It should fail cleanly when invoked against a missing target path.
 - It should not pretend the migration is already complete.
 

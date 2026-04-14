@@ -77,7 +77,7 @@ No reference-path or identity-contract changes land in this cutover. Record ids,
 - `author-v2-bundle`: `v2` shape and `v2` skill bundle are authored.
 - `run-migration-cleanly`: The migration script executes without failure on all existing evaluation records.
 - `validate-migrated-records`: Migrated records satisfy the `v2` shape.
-- `flip-system-version-last`: `system.yaml` points `evaluations` at `version: 2` only after data is in `v2` form.
+- `flip-system-version-last`: `system.ts` points `evaluations` at `version: 2` only after data is in `v2` form.
 
 ## Risks
 - `owner-defaults-heuristic`: `owner` defaults are heuristic and may need human correction if future category values expand beyond the current mapping.

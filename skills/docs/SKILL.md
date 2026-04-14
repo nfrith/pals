@@ -1,6 +1,6 @@
 ---
 name: docs
-description: ALS format reference index. This skill should be used when the user asks about ALS format rules, shape YAML syntax, delamain definitions, delamain agents, delamain dispatchers, delegated dispatch, field types, agent file format, dispatcher behavior, skill decomposition patterns, or module integration.
+description: ALS format reference index. This skill should be used when the user asks about ALS format rules, TypeScript-authored system/module/delamain contracts, delamain agents, delamain dispatchers, delegated dispatch, field types, agent file format, dispatcher behavior, skill decomposition patterns, or module integration.
 ---
 
 # ALS Documentation Index
@@ -13,12 +13,11 @@ Centralized format references for all ALS skills. Other skills load these refere
 
 `references/shape-language.md`
 
-The complete ALS v1 format specification: system.yaml, shape.yaml, entities, field types, body contracts, delamain bundles, agent file format, and naming rules. This is the authoritative source for producing or validating ALS YAML.
+The core ALS v1 authored-source specification: `system.ts`, `module.ts`, `delamain.ts`, entities, field types, body contracts, JSONL rules, and naming rules. Use this together with the delamain-agent and delamain-dispatcher references for runtime asset details.
 
 Read this when:
-- Creating or modifying shape.yaml
+- Creating or modifying module.ts
 - Creating or modifying delamain definitions
-- Authoring agent or sub-agent markdown files
 - Understanding field types, body regions, or naming rules
 - Validating record frontmatter or body structure
 
@@ -49,7 +48,7 @@ Read this when:
 
 `references/delamain-agents.md`
 
-How to write state agents and sub-agents. Covers the agent file format, runtime context injection, and best practices: idempotency, delegated dispatch, session field ownership, sub-agent patterns.
+How to write state agents and sub-agents. Covers the agent file format, runtime context injection, and best practices: idempotency, delegated dispatch, session field ownership, and sub-agent patterns.
 
 Read this when:
 - Writing or modifying a state agent markdown file
@@ -79,7 +78,7 @@ Read this when:
 - Wiring a delamain into an existing module
 - Naming a pipeline console skill
 - Understanding how `alsc deploy claude` projects assets
-- Setting up system.yaml and shape.yaml for a delamain
+- Setting up system.ts and module.ts for a delamain
 
 ### Architect Notes
 

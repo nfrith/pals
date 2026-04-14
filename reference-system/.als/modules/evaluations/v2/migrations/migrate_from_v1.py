@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import subprocess
 import sys
 
 
@@ -15,30 +16,49 @@ OWNER_BY_CATEGORY = {
 
 
 def resolve_module_root(system_root: Path, module_id: str) -> Path:
-    system_config_path = system_root / ".als" / "system.yaml"
+    system_config_path = system_root / ".als" / "system.ts"
     if not system_config_path.exists():
-        raise ValueError(f"expected ALS system root with .als/system.yaml, got: {system_root}")
+        raise ValueError(f"expected ALS system root with .als/system.ts, got: {system_root}")
 
-    in_modules = False
-    in_target = False
+    script = """
+const [systemPath, moduleId] = process.argv.slice(1);
+try {
+  const requireFn = require;
+  const resolvedPath = requireFn.resolve(systemPath);
+  delete requireFn.cache?.[resolvedPath];
+  const loaded = requireFn(resolvedPath);
+  const system = loaded.system ?? loaded.default;
+  const moduleConfig = system?.modules?.[moduleId];
+  if (!moduleConfig?.path) {
+    throw new Error(`module '${moduleId}' is missing from ${systemPath}`);
+  }
+  process.stdout.write(String(moduleConfig.path));
+} catch (error) {
+  const message = error instanceof Error ? error.message : String(error);
+  process.stderr.write(message);
+  process.exit(1);
+}
+"""
 
-    for raw_line in system_config_path.read_text().splitlines():
-        if raw_line == "modules:":
-            in_modules = True
-            continue
+    try:
+        result = subprocess.run(
+            ["bun", "-e", script, str(system_config_path), module_id],
+            capture_output=True,
+            check=False,
+            text=True,
+        )
+    except FileNotFoundError as exc:
+        raise ValueError("bun is required to resolve ALS module mounts from system.ts") from exc
 
-        if not in_modules:
-            continue
+    if result.returncode != 0:
+        detail = result.stderr.strip() or result.stdout.strip() or "unknown bun error"
+        raise ValueError(f"could not resolve module '{module_id}' from {system_config_path}: {detail}")
 
-        if raw_line.startswith("  ") and not raw_line.startswith("    "):
-            in_target = raw_line.strip() == f"{module_id}:"
-            continue
+    module_path = result.stdout.strip()
+    if not module_path:
+        raise ValueError(f"module '{module_id}' is missing from {system_config_path}")
 
-        if in_target and raw_line.startswith("    path: "):
-            module_path = raw_line.split(": ", 1)[1]
-            return system_root / module_path
-
-    raise ValueError(f"module '{module_id}' is missing from {system_config_path}")
+    return system_root / module_path
 
 
 def split_frontmatter(text: str) -> tuple[list[str], list[str]]:

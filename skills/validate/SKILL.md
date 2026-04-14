@@ -1,6 +1,6 @@
 ---
 name: validate
-description: Run the ALS compiler to validate a system's modules, schemas, and records. Use when the user asks to validate, check, or compile their ALS system, or after making changes to module data or shape files.
+description: Run the ALS compiler to validate a system's modules, authored contracts, and records. Use when the user asks to validate, check, or compile their ALS system, or after making changes to module data or authored `module.ts` definitions.
 ---
 
 # validate
@@ -17,15 +17,15 @@ Before running the compiler, verify the runtime environment.
 
 3. Run `cd ${CLAUDE_PLUGIN_ROOT}/alsc/compiler && bun install` to ensure compiler dependencies are installed. This is idempotent and fast when dependencies already exist.
 
-You run the ALS compiler against a system to check that all shape files, records, and references are valid.
+You run the ALS compiler against a system to check that all authored `system.ts`/`module.ts` entrypoints, records, and references are valid.
 
 ## Determine the system root
 
-The compiler needs the path to the system root — the directory that contains `.als/system.yaml`.
+The compiler needs the path to the system root — the directory that contains `.als/system.ts`.
 
 1. If the user provides a path, use it.
 2. If the conversation has context about which system is being worked on, use that path.
-3. Otherwise, check if the current working directory (or a parent) contains `.als/system.yaml` and use that.
+3. Otherwise, check if the current working directory (or a parent) contains `.als/system.ts` and use that.
 4. If none of the above, ask the user.
 
 ## Determine the module filter

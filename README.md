@@ -20,7 +20,7 @@ We started building this long before "model harness engineering" existed as a te
 
 ALS answers these questions with a filesystem-backed specification language:
 
-- `shape.yaml` defines what valid records look like
+- `module.ts` defines what valid records look like
 - the compiler validates module shapes, records, refs, and body structure
 - skill bundles define the intended process surface for working with that data
 - delamain bundles define autonomous agent pipelines with operator-owned and agent-owned states
@@ -63,7 +63,7 @@ The ALS plugin adds skills to Claude Code — slash commands that guide Claude t
 
 ### `/new` — Create a system or module
 
-Describe what you want to track. ALS interviews you to understand the domain — entities, fields, relationships, lifecycle — then produces the shape file and skill definitions.
+Describe what you want to track. ALS interviews you to understand the domain — entities, fields, relationships, lifecycle — then produces the module entrypoint and skill definitions.
 
 ```
 /new I need to track client projects with status, owner, and deliverables
@@ -102,11 +102,11 @@ An ALS system is a directory with a `.als/` metadata tree and module data alongs
 ```
 my-system/
 ├── .als/
-│   ├── system.yaml                    # system identity and module registry
+│   ├── system.ts                      # system identity and module registry
 │   └── modules/
 │       ├── backlog/
 │       │   └── v1/
-│       │       ├── shape.yaml         # schema: fields, sections, body contract
+│       │       ├── module.ts          # schema: fields, sections, body contract
 │       │       └── skills/
 │       │           ├── backlog-create/
 │       │           │   └── SKILL.md   # skill: how to create records
@@ -114,7 +114,7 @@ my-system/
 │       │               └── SKILL.md   # skill: how to read records
 │       └── people/
 │           └── v1/
-│               ├── shape.yaml
+│               ├── module.ts
 │               └── skills/
 │                   └── people-module/
 │                       └── SKILL.md
@@ -129,7 +129,7 @@ my-system/
         └── PPL-001.md
 ```
 
-**`shape.yaml`** defines what valid records look like — fields, types, nullability, enums, refs, and the exact body sections each record must contain. Variant entities can also use a discriminator to select additional frontmatter fields and a variant-specific body contract.
+**`module.ts`** defines what valid records look like — fields, types, nullability, enums, refs, and the exact body sections each record must contain. Variant entities can also use a discriminator to select additional frontmatter fields and a variant-specific body contract.
 
 **`SKILL.md`** defines how agents interact with the data — the procedures, scope boundaries, and domain vocabulary for each operation.
 
@@ -162,7 +162,7 @@ CLASSICAL SOFTWARE                              ALS
 │       Database        │           │      Filesystem        │
 │                       │           │                        │
 │  ┌─────────────────┐  │           │  ┌──────────────────┐  │
-│  │     Schema      │  │           │  │    shape.yaml    │  │
+│  │     Schema      │  │           │  │     module.ts    │  │
 │  └─────────────────┘  │           │  └──────────────────┘  │
 │                       │           │                        │
 │  ┌────────┐┌────────┐ │           │  ┌────────┐┌────────┐  │
@@ -211,7 +211,7 @@ ALS
 └──────────┘                                               └──────────┘
 ┌──────────┐    Update shape ▶ Dry-run on clone ▶ Run on   ┌──────────┐
 │Filesystem│─────────────────────────────────────  live   ─▶│Filesystem│
-│shape.yaml│                                               │shape.yaml│
+│module.ts │                                               │module.ts │
 │ Records  │                                               │ Records  │
 └──────────┘                                               └──────────┘
 ```

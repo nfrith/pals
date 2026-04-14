@@ -32,7 +32,7 @@ If the parent doesn't exist or is in an invalid state, stop and tell the operato
 
 ### 3 — Gather Required Fields
 
-Collect all required fields for the entity type per the module shape (`.als/modules/infra/v1/shape.yaml`):
+Collect all required fields for the entity type per the module shape (`.als/modules/infra/v1/module.ts`):
 
 - **region**: `id`, `name`, `provider`, `status`
 - **cluster**: `id`, `name`, `region_ref`, `orchestrator`, `status`

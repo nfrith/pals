@@ -10,17 +10,17 @@ import { formatDispatcherVersionLine, loadDispatcherVersionInfo } from "./dispat
 // from runtime-manifest.json beside delamain.yaml.
 //
 // If SYSTEM_ROOT is not set, walk up from the dispatcher's location
-// looking for .als/system.yaml. Works at any nesting depth and after
+// looking for .als/system.ts. Works at any nesting depth and after
 // deployment to .claude/delamains/.
 // -------------------------------------------------------------------
 
 function findSystemRoot(start: string): string {
   let dir = start;
   while (dir !== dirname(dir)) {
-    if (existsSync(join(dir, ".als", "system.yaml"))) return dir;
+    if (existsSync(join(dir, ".als", "system.ts"))) return dir;
     dir = dirname(dir);
   }
-  throw new Error("No .als/system.yaml found in parent directories");
+  throw new Error("No .als/system.ts found in parent directories");
 }
 
 const SYSTEM_ROOT = process.env["SYSTEM_ROOT"]

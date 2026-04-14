@@ -12,7 +12,7 @@ It is owned by `migrate`.
 | `report_id` | string | yes | stable unique id for this migration execution report |
 | `manifest_id` | string | yes | must match the staged manifest id |
 | `module_id` | string | yes | must match the ALS module id |
-| `module_path` | string | yes | live module data path from `.als/system.yaml` |
+| `module_path` | string | yes | live module data path from `.als/system.ts` |
 | `from_version` | integer | yes | live module version before cutover |
 | `to_version` | integer | yes | target bundle version |
 | `primary_migration_script` | string | yes | repo-root-relative path to the canonical executable migration artifact |

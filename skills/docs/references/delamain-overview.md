@@ -50,7 +50,7 @@ A delamain is a directory containing:
 
 ```
 development-pipeline/
-├── delamain.yaml           # phases, states, transitions
+├── delamain.ts           # phases, states, transitions
 ├── agents/
 │   ├── queued.md           # one per agent-owned state
 │   ├── planning.md
@@ -67,7 +67,7 @@ development-pipeline/
         └── watcher.ts
 ```
 
-The delamain bundle is self-contained. It can live in `.als/modules/{module}/v{N}/delamains/` and is deployed to `.claude/delamains/` by the compiler.
+The Delamain bundle is self-contained. It lives in `.als/modules/{module}/v{N}/delamains/` as authored `delamain.ts` plus markdown assets, and is deployed to `.claude/delamains/` by the compiler as runtime files.
 
 ## Claude Projection
 

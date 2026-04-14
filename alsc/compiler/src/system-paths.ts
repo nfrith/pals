@@ -1,11 +1,15 @@
 import { relative } from "node:path";
 
+export function inferredSystemPath(): string {
+  return ".als/system.ts";
+}
+
 export function inferredModuleBundlePath(moduleId: string, version: number): string {
   return `.als/modules/${moduleId}/v${version}`;
 }
 
-export function inferredShapePath(moduleId: string, version: number): string {
-  return `${inferredModuleBundlePath(moduleId, version)}/shape.yaml`;
+export function inferredModuleEntryPath(moduleId: string, version: number): string {
+  return `${inferredModuleBundlePath(moduleId, version)}/module.ts`;
 }
 
 export function inferredSkillsPath(moduleId: string, version: number): string {

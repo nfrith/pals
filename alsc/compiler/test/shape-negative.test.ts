@@ -16,7 +16,7 @@ test.concurrent("stale top-level schema fields in shape files are rejected", asy
 
     const result = validateFixture(root);
     expect(result.status).toBe("fail");
-    const diagnostic = expectModuleDiagnostic(result, "backlog", codes.SHAPE_INVALID, ".als/modules/backlog/v1/shape.yaml");
+    const diagnostic = expectModuleDiagnostic(result, "backlog", codes.SHAPE_INVALID, ".als/modules/backlog/v1/module.ts");
     expect(diagnostic.reason).toBe(reasons.MODULE_SHAPE_SCHEMA_REMOVED);
   });
 });
@@ -43,14 +43,14 @@ test.concurrent("stale schema diagnostics do not suppress other shape parse erro
   });
 });
 
-test.concurrent("malformed shape yaml fails parsing cleanly", async () => {
-  await withFixtureSandbox("shape-yaml-parse-error", async ({ root }) => {
-    await updateTextFile(root, ".als/modules/backlog/v1/shape.yaml", () => "dependencies: [broken\n");
+test.concurrent("malformed module.ts fails loading cleanly", async () => {
+  await withFixtureSandbox("shape-ts-load-error", async ({ root }) => {
+    await updateTextFile(root, ".als/modules/backlog/v1/module.ts", () => "export const module = {\n");
 
     const result = validateFixture(root);
     expect(result.status).toBe("fail");
-    const diagnostic = expectModuleDiagnostic(result, "backlog", codes.SHAPE_INVALID, ".als/modules/backlog/v1/shape.yaml");
-    expect(diagnostic.message).toContain("Failed to parse YAML");
+    const diagnostic = expectModuleDiagnostic(result, "backlog", codes.SHAPE_INVALID, ".als/modules/backlog/v1/module.ts");
+    expect(diagnostic.message).toContain("Could not evaluate TypeScript entrypoint");
   });
 });
 
@@ -63,7 +63,7 @@ test.concurrent("duplicate dependencies are rejected", async () => {
 
     const result = validateFixture(root);
     expect(result.status).toBe("fail");
-    expectModuleDiagnostic(result, "experiments", codes.SHAPE_INVALID, ".als/modules/experiments/v2/shape.yaml");
+    expectModuleDiagnostic(result, "experiments", codes.SHAPE_INVALID, ".als/modules/experiments/v2/module.ts");
   });
 });
 
@@ -76,7 +76,7 @@ test.concurrent("dependencies must point at declared modules", async () => {
 
     const result = validateFixture(root);
     expect(result.status).toBe("fail");
-    expectModuleDiagnostic(result, "backlog", codes.SHAPE_CONTRACT_INVALID, ".als/modules/backlog/v1/shape.yaml");
+    expectModuleDiagnostic(result, "backlog", codes.SHAPE_CONTRACT_INVALID, ".als/modules/backlog/v1/module.ts");
   });
 });
 
@@ -91,7 +91,7 @@ test.concurrent("entity shapes must declare an id field", async () => {
 
     const result = validateFixture(root);
     expect(result.status).toBe("fail");
-    expectModuleDiagnostic(result, "backlog", codes.SHAPE_INVALID, ".als/modules/backlog/v1/shape.yaml");
+    expectModuleDiagnostic(result, "backlog", codes.SHAPE_INVALID, ".als/modules/backlog/v1/module.ts");
   });
 });
 
@@ -105,7 +105,7 @@ test.concurrent("id fields cannot allow null", async () => {
 
     const result = validateFixture(root);
     expect(result.status).toBe("fail");
-    expectModuleDiagnostic(result, "backlog", codes.SHAPE_INVALID, ".als/modules/backlog/v1/shape.yaml");
+    expectModuleDiagnostic(result, "backlog", codes.SHAPE_INVALID, ".als/modules/backlog/v1/module.ts");
   });
 });
 
@@ -119,7 +119,7 @@ test.concurrent("scalar enums must declare unique allowed values", async () => {
 
     const result = validateFixture(root);
     expect(result.status).toBe("fail");
-    expectModuleDiagnostic(result, "people", codes.SHAPE_INVALID, ".als/modules/people/v1/shape.yaml");
+    expectModuleDiagnostic(result, "people", codes.SHAPE_INVALID, ".als/modules/people/v1/module.ts");
   });
 });
 
@@ -132,7 +132,7 @@ test.concurrent("entity paths must include the id placeholder", async () => {
 
     const result = validateFixture(root);
     expect(result.status).toBe("fail");
-    expectModuleDiagnostic(result, "backlog", codes.SHAPE_INVALID, ".als/modules/backlog/v1/shape.yaml");
+    expectModuleDiagnostic(result, "backlog", codes.SHAPE_INVALID, ".als/modules/backlog/v1/module.ts");
   });
 });
 
@@ -152,7 +152,7 @@ test.concurrent("list enum items must declare allowed values", async () => {
 
     const result = validateFixture(root);
     expect(result.status).toBe("fail");
-    expectModuleDiagnostic(result, "people", codes.SHAPE_INVALID, ".als/modules/people/v1/shape.yaml");
+    expectModuleDiagnostic(result, "people", codes.SHAPE_INVALID, ".als/modules/people/v1/module.ts");
   });
 });
 
@@ -173,7 +173,7 @@ test.concurrent("list enum items must also declare unique allowed values", async
 
     const result = validateFixture(root);
     expect(result.status).toBe("fail");
-    expectModuleDiagnostic(result, "people", codes.SHAPE_INVALID, ".als/modules/people/v1/shape.yaml");
+    expectModuleDiagnostic(result, "people", codes.SHAPE_INVALID, ".als/modules/people/v1/module.ts");
   });
 });
 
@@ -190,7 +190,7 @@ test.concurrent("scalar file path fields must declare a base", async () => {
 
     const result = validateFixture(root);
     expect(result.status).toBe("fail");
-    expectModuleDiagnostic(result, "backlog", codes.SHAPE_INVALID, ".als/modules/backlog/v1/shape.yaml");
+    expectModuleDiagnostic(result, "backlog", codes.SHAPE_INVALID, ".als/modules/backlog/v1/module.ts");
   });
 });
 
@@ -210,7 +210,7 @@ test.concurrent("list file path items must declare a base", async () => {
 
     const result = validateFixture(root);
     expect(result.status).toBe("fail");
-    expectModuleDiagnostic(result, "backlog", codes.SHAPE_INVALID, ".als/modules/backlog/v1/shape.yaml");
+    expectModuleDiagnostic(result, "backlog", codes.SHAPE_INVALID, ".als/modules/backlog/v1/module.ts");
   });
 });
 
@@ -228,7 +228,7 @@ test.concurrent("unsupported file path bases are rejected", async () => {
 
     const result = validateFixture(root);
     expect(result.status).toBe("fail");
-    expectModuleDiagnostic(result, "backlog", codes.SHAPE_INVALID, ".als/modules/backlog/v1/shape.yaml");
+    expectModuleDiagnostic(result, "backlog", codes.SHAPE_INVALID, ".als/modules/backlog/v1/module.ts");
   });
 });
 
@@ -243,7 +243,7 @@ test.concurrent("duplicate variant section names are rejected", async () => {
 
     const result = validateFixture(root);
     expect(result.status).toBe("fail");
-    expectModuleDiagnostic(result, "backlog", codes.SHAPE_INVALID, ".als/modules/backlog/v1/shape.yaml");
+    expectModuleDiagnostic(result, "backlog", codes.SHAPE_INVALID, ".als/modules/backlog/v1/module.ts");
   });
 });
 
@@ -260,7 +260,7 @@ test.concurrent("discriminator fields must be non-null enums", async () => {
 
     const result = validateFixture(root);
     expect(result.status).toBe("fail");
-    expectModuleDiagnostic(result, "backlog", codes.SHAPE_INVALID, ".als/modules/backlog/v1/shape.yaml");
+    expectModuleDiagnostic(result, "backlog", codes.SHAPE_INVALID, ".als/modules/backlog/v1/module.ts");
   });
 });
 
@@ -273,7 +273,7 @@ test.concurrent("entities must declare source_format", async () => {
 
     const result = validateFixture(root);
     expect(result.status).toBe("fail");
-    const diagnostic = expectModuleDiagnostic(result, "backlog", codes.SHAPE_INVALID, ".als/modules/backlog/v1/shape.yaml");
+    const diagnostic = expectModuleDiagnostic(result, "backlog", codes.SHAPE_INVALID, ".als/modules/backlog/v1/module.ts");
     expect(diagnostic.field).toBe("entities.item.source_format");
     expect(diagnostic.message).toBe("entity.source_format is required");
   });
@@ -288,7 +288,7 @@ test.concurrent("entities must use supported source_format values", async () => 
 
     const result = validateFixture(root);
     expect(result.status).toBe("fail");
-    const diagnostic = expectModuleDiagnostic(result, "backlog", codes.SHAPE_INVALID, ".als/modules/backlog/v1/shape.yaml");
+    const diagnostic = expectModuleDiagnostic(result, "backlog", codes.SHAPE_INVALID, ".als/modules/backlog/v1/module.ts");
     expect(diagnostic.field).toBe("entities.item.source_format");
     expect(diagnostic.message).toBe("entity.source_format must be one of: markdown, jsonl");
   });
@@ -303,7 +303,7 @@ test.concurrent("markdown entities must use .md paths", async () => {
 
     const result = validateFixture(root);
     expect(result.status).toBe("fail");
-    expectModuleDiagnostic(result, "backlog", codes.SHAPE_INVALID, ".als/modules/backlog/v1/shape.yaml");
+    expectModuleDiagnostic(result, "backlog", codes.SHAPE_INVALID, ".als/modules/backlog/v1/module.ts");
   });
 });
 
@@ -323,7 +323,7 @@ test.concurrent("markdown entities must not declare rows", async () => {
 
     const result = validateFixture(root);
     expect(result.status).toBe("fail");
-    expectModuleDiagnostic(result, "backlog", codes.SHAPE_INVALID, ".als/modules/backlog/v1/shape.yaml");
+    expectModuleDiagnostic(result, "backlog", codes.SHAPE_INVALID, ".als/modules/backlog/v1/module.ts");
   });
 });
 
@@ -336,7 +336,7 @@ test.concurrent("jsonl entities must use .jsonl paths", async () => {
 
     const result = validateFixture(root);
     expect(result.status).toBe("fail");
-    expectModuleDiagnostic(result, "observability", codes.SHAPE_INVALID, ".als/modules/observability/v1/shape.yaml");
+    expectModuleDiagnostic(result, "observability", codes.SHAPE_INVALID, ".als/modules/observability/v1/module.ts");
   });
 });
 
@@ -356,7 +356,7 @@ test.concurrent("markdown identity.parent cannot target jsonl entities", async (
 
     const result = validateFixture(root);
     expect(result.status).toBe("fail");
-    const diagnostic = expectModuleDiagnostic(result, "observability", codes.SHAPE_INVALID, ".als/modules/observability/v1/shape.yaml");
+    const diagnostic = expectModuleDiagnostic(result, "observability", codes.SHAPE_INVALID, ".als/modules/observability/v1/module.ts");
     expect(diagnostic.field).toBe("entities.dashboard.identity.parent.entity");
     expect(diagnostic.message).toContain("must also use source_format=markdown");
   });
@@ -374,7 +374,7 @@ test.concurrent("jsonl entities must declare at least one row field", async () =
 
     const result = validateFixture(root);
     expect(result.status).toBe("fail");
-    expectModuleDiagnostic(result, "observability", codes.SHAPE_INVALID, ".als/modules/observability/v1/shape.yaml");
+    expectModuleDiagnostic(result, "observability", codes.SHAPE_INVALID, ".als/modules/observability/v1/module.ts");
   });
 });
 
@@ -389,7 +389,7 @@ test.concurrent("jsonl entities cannot declare markdown-only surfaces", async ()
 
     const result = validateFixture(root);
     expect(result.status).toBe("fail");
-    expectModuleDiagnostic(result, "observability", codes.SHAPE_INVALID, ".als/modules/observability/v1/shape.yaml");
+    expectModuleDiagnostic(result, "observability", codes.SHAPE_INVALID, ".als/modules/observability/v1/module.ts");
   });
 });
 
@@ -412,7 +412,7 @@ test.concurrent("jsonl row schemas reject unsupported ref fields", async () => {
 
     const result = validateFixture(root);
     expect(result.status).toBe("fail");
-    expectModuleDiagnostic(result, "observability", codes.SHAPE_INVALID, ".als/modules/observability/v1/shape.yaml");
+    expectModuleDiagnostic(result, "observability", codes.SHAPE_INVALID, ".als/modules/observability/v1/module.ts");
   });
 });
 
@@ -426,7 +426,7 @@ test.concurrent("legacy required keys on fields are rejected", async () => {
 
     const result = validateFixture(root);
     expect(result.status).toBe("fail");
-    expectModuleDiagnostic(result, "backlog", codes.SHAPE_INVALID, ".als/modules/backlog/v1/shape.yaml");
+    expectModuleDiagnostic(result, "backlog", codes.SHAPE_INVALID, ".als/modules/backlog/v1/module.ts");
   });
 });
 
@@ -440,7 +440,7 @@ test.concurrent("discriminator fields cannot allow null", async () => {
 
     const result = validateFixture(root);
     expect(result.status).toBe("fail");
-    expectModuleDiagnostic(result, "backlog", codes.SHAPE_INVALID, ".als/modules/backlog/v1/shape.yaml");
+    expectModuleDiagnostic(result, "backlog", codes.SHAPE_INVALID, ".als/modules/backlog/v1/module.ts");
   });
 });
 
@@ -454,7 +454,7 @@ test.concurrent("variant keys must match the discriminator enum values", async (
 
     const result = validateFixture(root);
     expect(result.status).toBe("fail");
-    expectModuleDiagnostic(result, "backlog", codes.SHAPE_INVALID, ".als/modules/backlog/v1/shape.yaml");
+    expectModuleDiagnostic(result, "backlog", codes.SHAPE_INVALID, ".als/modules/backlog/v1/module.ts");
   });
 });
 
@@ -471,7 +471,7 @@ test.concurrent("extra variant keys outside the discriminator enum are rejected"
 
     const result = validateFixture(root);
     expect(result.status).toBe("fail");
-    expectModuleDiagnostic(result, "backlog", codes.SHAPE_INVALID, ".als/modules/backlog/v1/shape.yaml");
+    expectModuleDiagnostic(result, "backlog", codes.SHAPE_INVALID, ".als/modules/backlog/v1/module.ts");
   });
 });
 
@@ -489,7 +489,7 @@ test.concurrent("variant fields cannot collide with root fields", async () => {
 
     const result = validateFixture(root);
     expect(result.status).toBe("fail");
-    expectModuleDiagnostic(result, "backlog", codes.SHAPE_INVALID, ".als/modules/backlog/v1/shape.yaml");
+    expectModuleDiagnostic(result, "backlog", codes.SHAPE_INVALID, ".als/modules/backlog/v1/module.ts");
   });
 });
 
@@ -504,7 +504,7 @@ test.concurrent("legacy required keys on inline sections are rejected", async ()
 
     const result = validateFixture(root);
     expect(result.status).toBe("fail");
-    expectModuleDiagnostic(result, "people", codes.SHAPE_INVALID, ".als/modules/people/v1/shape.yaml");
+    expectModuleDiagnostic(result, "people", codes.SHAPE_INVALID, ".als/modules/people/v1/module.ts");
   });
 });
 
@@ -518,7 +518,7 @@ test.concurrent("legacy required keys on section definitions are rejected", asyn
 
     const result = validateFixture(root);
     expect(result.status).toBe("fail");
-    expectModuleDiagnostic(result, "backlog", codes.SHAPE_INVALID, ".als/modules/backlog/v1/shape.yaml");
+    expectModuleDiagnostic(result, "backlog", codes.SHAPE_INVALID, ".als/modules/backlog/v1/module.ts");
   });
 });
 
@@ -533,7 +533,7 @@ test.concurrent("variant sections must reference declared section definitions", 
 
     const result = validateFixture(root);
     expect(result.status).toBe("fail");
-    expectModuleDiagnostic(result, "backlog", codes.SHAPE_INVALID, ".als/modules/backlog/v1/shape.yaml");
+    expectModuleDiagnostic(result, "backlog", codes.SHAPE_INVALID, ".als/modules/backlog/v1/module.ts");
   });
 });
 
@@ -547,7 +547,7 @@ test.concurrent("parent entities must exist in the same shape file", async () =>
 
     const result = validateFixture(root);
     expect(result.status).toBe("fail");
-    expectModuleDiagnostic(result, "experiments", codes.SHAPE_INVALID, ".als/modules/experiments/v2/shape.yaml");
+    expectModuleDiagnostic(result, "experiments", codes.SHAPE_INVALID, ".als/modules/experiments/v2/module.ts");
   });
 });
 
@@ -561,7 +561,7 @@ test.concurrent("parent ref fields must be declared", async () => {
 
     const result = validateFixture(root);
     expect(result.status).toBe("fail");
-    expectModuleDiagnostic(result, "experiments", codes.SHAPE_INVALID, ".als/modules/experiments/v2/shape.yaml");
+    expectModuleDiagnostic(result, "experiments", codes.SHAPE_INVALID, ".als/modules/experiments/v2/module.ts");
   });
 });
 
@@ -578,7 +578,7 @@ test.concurrent("parent ref fields must use ref type", async () => {
 
     const result = validateFixture(root);
     expect(result.status).toBe("fail");
-    expectModuleDiagnostic(result, "experiments", codes.SHAPE_INVALID, ".als/modules/experiments/v2/shape.yaml");
+    expectModuleDiagnostic(result, "experiments", codes.SHAPE_INVALID, ".als/modules/experiments/v2/module.ts");
   });
 });
 
@@ -592,7 +592,7 @@ test.concurrent("parent ref fields must stay non-null", async () => {
 
     const result = validateFixture(root);
     expect(result.status).toBe("fail");
-    expectModuleDiagnostic(result, "experiments", codes.SHAPE_INVALID, ".als/modules/experiments/v2/shape.yaml");
+    expectModuleDiagnostic(result, "experiments", codes.SHAPE_INVALID, ".als/modules/experiments/v2/module.ts");
   });
 });
 
@@ -604,7 +604,7 @@ test.concurrent("cross-module ref targets must have declared dependencies", asyn
 
     const result = validateFixture(root);
     expect(result.status).toBe("fail");
-    expectModuleDiagnostic(result, "experiments", codes.SHAPE_CONTRACT_INVALID, ".als/modules/experiments/v2/shape.yaml");
+    expectModuleDiagnostic(result, "experiments", codes.SHAPE_CONTRACT_INVALID, ".als/modules/experiments/v2/module.ts");
   });
 });
 
@@ -616,7 +616,7 @@ test.concurrent("cross-module ref lists must also have declared dependencies", a
 
     const result = validateFixture(root);
     expect(result.status).toBe("fail");
-    expectModuleDiagnostic(result, "backlog", codes.SHAPE_CONTRACT_INVALID, ".als/modules/backlog/v1/shape.yaml");
+    expectModuleDiagnostic(result, "backlog", codes.SHAPE_CONTRACT_INVALID, ".als/modules/backlog/v1/module.ts");
   });
 });
 
@@ -638,7 +638,7 @@ test.concurrent("variant-local ref fields must also have declared dependencies",
 
     const result = validateFixture(root);
     expect(result.status).toBe("fail");
-    expectModuleDiagnostic(result, "backlog", codes.SHAPE_CONTRACT_INVALID, ".als/modules/backlog/v1/shape.yaml");
+    expectModuleDiagnostic(result, "backlog", codes.SHAPE_CONTRACT_INVALID, ".als/modules/backlog/v1/module.ts");
   });
 });
 
@@ -657,7 +657,7 @@ test.concurrent("table blocks must use a supported syntax", async () => {
 
     const result = validateFixture(root);
     expect(result.status).toBe("fail");
-    expectModuleDiagnostic(result, "research", codes.SHAPE_INVALID, ".als/modules/research/v1/shape.yaml");
+    expectModuleDiagnostic(result, "research", codes.SHAPE_INVALID, ".als/modules/research/v1/module.ts");
   });
 });
 
@@ -676,6 +676,6 @@ test.concurrent("table blocks must declare syntax explicitly", async () => {
 
     const result = validateFixture(root);
     expect(result.status).toBe("fail");
-    expectModuleDiagnostic(result, "planning", codes.SHAPE_INVALID, ".als/modules/planning/v1/shape.yaml");
+    expectModuleDiagnostic(result, "planning", codes.SHAPE_INVALID, ".als/modules/planning/v1/module.ts");
   });
 });

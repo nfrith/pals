@@ -1,21 +1,20 @@
 import { existsSync, statSync, readdirSync } from "fs";
 import { readFile } from "fs/promises";
 import { join, dirname } from "path";
-import { parse as parseYaml } from "yaml";
 import { query } from "@anthropic-ai/claude-agent-sdk";
 
 // -------------------------------------------------------------------
-// System root discovery — walk up from this file to find .als/system.yaml
+// System root discovery — walk up from this file to find .als/system.ts
 // -------------------------------------------------------------------
 
 function findSystemRoot(start: string): string {
   if (process.env.ALS_SYSTEM_ROOT) return process.env.ALS_SYSTEM_ROOT;
   let dir = start;
   while (dir !== dirname(dir)) {
-    if (existsSync(join(dir, ".als", "system.yaml"))) return dir;
+    if (existsSync(join(dir, ".als", "system.ts"))) return dir;
     dir = dirname(dir);
   }
-  throw new Error("No .als/system.yaml found in parent directories — set ALS_SYSTEM_ROOT");
+  throw new Error("No .als/system.ts found in parent directories — set ALS_SYSTEM_ROOT");
 }
 
 const SYSTEM_ROOT = findSystemRoot(import.meta.dir);
@@ -37,7 +36,7 @@ function findCompilerPath(): string {
 const COMPILER_PATH = findCompilerPath();
 
 // -------------------------------------------------------------------
-// Delamain discovery — crawl system.yaml → shape.yaml → delamain.yaml
+// Delamain discovery — crawl system.ts → module.ts → delamain.ts
 // -------------------------------------------------------------------
 
 // Recursively resolve a path template like "regions/{region}/clusters/{cluster}/releases"
@@ -71,7 +70,7 @@ function findConcreteDirs(base: string, template: string): string[] {
 interface DelamainTarget {
   moduleId: string;
   delamainName: string;
-  shapeContent: string;
+  moduleContent: string;
   entityPathTemplate: string;
   concreteDirs: string[];
   moduleMount: string;
@@ -79,30 +78,58 @@ interface DelamainTarget {
   initialAgentState: string;
 }
 
+function describeError(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function loadAuthoredExport<T>(filePath: string, exportName: string): T {
+  try {
+    const requireFn = require as NodeJS.Require;
+    const resolvedPath = requireFn.resolve(filePath);
+    delete requireFn.cache?.[resolvedPath];
+    const loaded = requireFn(resolvedPath);
+    const candidate = loaded?.[exportName] ?? loaded?.default;
+    if (candidate === undefined) {
+      throw new Error(`expected export '${exportName}' or a default export`);
+    }
+    return candidate as T;
+  } catch (error) {
+    throw new Error(`Could not load ${filePath}: ${describeError(error)}`);
+  }
+}
+
 async function discoverDelamains(): Promise<DelamainTarget[]> {
-  const system = parseYaml(
-    await readFile(join(SYSTEM_ROOT, ".als", "system.yaml"), "utf-8"),
-  ) as { modules: Record<string, { path: string; version: number }> };
+  let system: { modules: Record<string, { path: string; version: number }> };
+  try {
+    system = loadAuthoredExport<{ modules: Record<string, { path: string; version: number }> }>(
+      join(SYSTEM_ROOT, ".als", "system.ts"),
+      "system",
+    );
+  } catch (error) {
+    console.error(`run-demo: ${describeError(error)}`);
+    return [];
+  }
 
   const results: DelamainTarget[] = [];
 
   for (const [moduleId, mod] of Object.entries(system.modules)) {
     const mDir = join(SYSTEM_ROOT, ".als", "modules", moduleId, `v${mod.version}`);
 
-    let shape: any;
-    let shapeRaw: string;
+    let moduleShape: any;
+    let moduleRaw: string;
     try {
-      shapeRaw = await readFile(join(mDir, "shape.yaml"), "utf-8");
-      shape = parseYaml(shapeRaw);
-    } catch {
+      moduleRaw = await readFile(join(mDir, "module.ts"), "utf-8");
+      moduleShape = loadAuthoredExport(join(mDir, "module.ts"), "module");
+    } catch (error) {
+      console.error(`run-demo: ${describeError(error)}`);
       continue;
     }
 
-    if (!shape.delamains) continue;
+    if (!moduleShape?.delamains) continue;
 
-    for (const [delamainName, delamainRef] of Object.entries(shape.delamains) as [string, { path: string }][]) {
+    for (const [delamainName, delamainRef] of Object.entries(moduleShape.delamains) as [string, { path: string }][]) {
       let entityPath: string | undefined;
-      for (const [, entity] of Object.entries(shape.entities) as [string, any][]) {
+      for (const [, entity] of Object.entries(moduleShape.entities) as [string, any][]) {
         for (const [, field] of Object.entries(entity.fields) as [string, any][]) {
           if (field.type === "delamain" && field.delamain === delamainName) {
             entityPath = entity.path;
@@ -116,8 +143,9 @@ async function discoverDelamains(): Promise<DelamainTarget[]> {
       const delamainPath = join(mDir, delamainRef.path);
       let delamain: any;
       try {
-        delamain = parseYaml(await readFile(delamainPath, "utf-8"));
-      } catch {
+        delamain = loadAuthoredExport(delamainPath, "delamain");
+      } catch (error) {
+        console.error(`run-demo: ${describeError(error)}`);
         continue;
       }
 
@@ -153,7 +181,7 @@ async function discoverDelamains(): Promise<DelamainTarget[]> {
       results.push({
         moduleId,
         delamainName,
-        shapeContent: shapeRaw,
+        moduleContent: moduleRaw,
         entityPathTemplate: entityPath,
         concreteDirs,
         moduleMount,
@@ -248,10 +276,10 @@ async function seedItem(target: DelamainTarget): Promise<void> {
 
   const prompt = `Create a demo work item for the ${target.moduleId} module.
 
-## Shape schema
+## Module definition
 
-\`\`\`yaml
-${target.shapeContent}
+\`\`\`ts
+${target.moduleContent}
 \`\`\`
 
 ## Pre-computed values

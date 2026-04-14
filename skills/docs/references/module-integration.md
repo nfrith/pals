@@ -119,36 +119,45 @@ At startup, dispatchers compare their local `dispatcher/VERSION` with `${CLAUDE_
 | run-lifecycle (module source) | `reference-system/.als/modules/experiments/v2/delamains/run-lifecycle/dispatcher/` |
 | development-pipeline (module source) | `reference-system/.als/modules/factory/v1/delamains/development-pipeline/dispatcher/` |
 
-## system.yaml Registration
+## system.ts Registration
 
-Skills are registered in `system.yaml` under the module:
+Skills are registered in `system.ts` under the module:
 
-```yaml
-modules:
-  backlog:
-    path: backlog
-    version: 2
-    skills:
-      - backlog-manage
-      - backlog-inspect
-      - backlog-app-development-pipeline
+```ts
+modules: {
+  backlog: {
+    path: "backlog",
+    version: 2,
+    skills: [
+      "backlog-manage",
+      "backlog-inspect",
+      "backlog-app-development-pipeline",
+    ],
+  },
+}
 ```
 
-Delamains are registered in `shape.yaml`:
+Delamains are registered in `module.ts`:
 
-```yaml
-delamains:
-  development-pipeline:
-    path: delamains/development-pipeline/delamain.yaml
+```ts
+delamains: {
+  "development-pipeline": {
+    path: "delamains/development-pipeline/delamain.ts",
+  },
+}
 ```
 
 The entity (or variant) references the delamain via the status field:
 
-```yaml
-variants:
-  app:
-    fields:
-      status:
-        type: delamain
-        delamain: development-pipeline
+```ts
+variants: {
+  app: {
+    fields: {
+      status: {
+        type: "delamain",
+        delamain: "development-pipeline",
+      },
+    },
+  },
+}
 ```

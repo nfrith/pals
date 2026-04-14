@@ -29,7 +29,7 @@ The dispatcher is supported from deployed `.claude/delamains/<name>/` bundles. R
 
 Entry point. Handles:
 
-- **System root discovery**: walks up directories from its own location looking for `.als/system.yaml`. Also respects the `SYSTEM_ROOT` environment variable.
+- **System root discovery**: walks up directories from its own location looking for `.als/system.ts`. Also respects the `SYSTEM_ROOT` environment variable.
 - **Template version check**: reads local `dispatcher/VERSION` and canonical `${CLAUDE_PLUGIN_ROOT}/skills/new/references/dispatcher/VERSION`, logs the current/latest versions, and fails before polling when either source is missing or malformed.
 - **Startup**: calls `resolve()` once to load `runtime-manifest.json`, local `delamain.yaml`, and state-agent files, then enters the poll loop.
 - **Poll loop**: scans items at a configurable interval (`POLL_MS`, default 30s). Tracks active dispatches and releases items when their status changes.
@@ -111,7 +111,7 @@ The `findSystemRoot` walk-up in `index.ts` makes the dispatcher work at any nest
 
 ## Session Handling
 
-Session fields are implicit — they are declared in `delamain.yaml`, not in `shape.yaml`.
+Session fields are implicit — they originate in authored `delamain.ts` and are projected into runtime `delamain.yaml`, not declared in `module.ts`.
 
 ### Direct resumable dispatch
 

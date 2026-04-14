@@ -1,29 +1,30 @@
-phases: [deployment, steady-state, closed]
-
+phases:
+  - deployment
+  - steady-state
+  - closed
 states:
   pending:
     initial: true
     phase: deployment
     actor: agent
-    resumable: false
     path: agents/pending.md
+    resumable: false
   rolling-out:
     phase: deployment
     actor: agent
-    resumable: false
     path: agents/rolling-out.md
+    resumable: false
   active:
     phase: steady-state
     actor: agent
-    resumable: false
     path: agents/active.md
+    resumable: false
   rolled-back:
-    phase: closed
     terminal: true
+    phase: closed
   superseded:
-    phase: closed
     terminal: true
-
+    phase: closed
 transitions:
   - class: advance
     from: pending

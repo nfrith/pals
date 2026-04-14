@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import matter from "gray-matter";
-import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
+import { join } from "node:path";
+import { loadAuthoredSourceExport } from "../src/authored-load.ts";
 import { codes } from "../src/diagnostics.ts";
 import {
   expectModuleDiagnostic,
@@ -34,7 +35,7 @@ test.concurrent("plain entities reject multiple Delamain-bound fields in the sam
 
     const result = validateFixture(root);
     expect(result.status).toBe("fail");
-    expectModuleDiagnostic(result, "factory", codes.DELAMAIN_CONTRACT_INVALID, ".als/modules/factory/v1/shape.yaml");
+    expectModuleDiagnostic(result, "factory", codes.DELAMAIN_CONTRACT_INVALID, ".als/modules/factory/v1/module.ts");
   });
 });
 
@@ -42,7 +43,7 @@ test.concurrent("Delamain prompt assets must stay inside the active module versi
   await withFixtureSandbox("delamain-path-escape", async ({ root }) => {
     await updateYamlTextFile(
       root,
-      ".als/modules/factory/v1/delamains/development-pipeline/delamain.yaml",
+      ".als/modules/factory/v1/delamains/development-pipeline/delamain.ts",
       (current) => {
         const states = current.states as Record<string, Record<string, unknown>>;
         states.planning.path = "../../../../../../../../tmp/planning.md";
@@ -51,7 +52,7 @@ test.concurrent("Delamain prompt assets must stay inside the active module versi
 
     const result = validateFixture(root);
     expect(result.status).toBe("fail");
-    expectModuleDiagnostic(result, "factory", codes.DELAMAIN_FILE_INVALID, "development-pipeline/delamain.yaml");
+    expectModuleDiagnostic(result, "factory", codes.DELAMAIN_FILE_INVALID, "development-pipeline/delamain.ts");
   });
 });
 
@@ -89,7 +90,7 @@ test.concurrent("delegated is rejected on operator-owned states during bundle va
   await withFixtureSandbox("delamain-delegated-operator-state", async ({ root }) => {
     await updateYamlTextFile(
       root,
-      ".als/modules/factory/v1/delamains/development-pipeline/delamain.yaml",
+      ".als/modules/factory/v1/delamains/development-pipeline/delamain.ts",
       (current) => {
         const states = current.states as Record<string, Record<string, unknown>>;
         states["plan-input"].delegated = true;
@@ -98,7 +99,7 @@ test.concurrent("delegated is rejected on operator-owned states during bundle va
 
     const result = validateFixture(root);
     expect(result.status).toBe("fail");
-    expectModuleDiagnostic(result, "factory", codes.DELAMAIN_INVALID, "development-pipeline/delamain.yaml");
+    expectModuleDiagnostic(result, "factory", codes.DELAMAIN_INVALID, "development-pipeline/delamain.ts");
   });
 });
 
@@ -115,7 +116,7 @@ test.concurrent("Delamain session fields cannot collide with explicit fields on 
 
     const result = validateFixture(root);
     expect(result.status).toBe("fail");
-    expectModuleDiagnostic(result, "factory", codes.DELAMAIN_CONTRACT_INVALID, ".als/modules/factory/v1/shape.yaml");
+    expectModuleDiagnostic(result, "factory", codes.DELAMAIN_CONTRACT_INVALID, ".als/modules/factory/v1/module.ts");
   });
 });
 
@@ -140,13 +141,13 @@ test.concurrent("missing Delamain bundles fail closed during record validation w
     );
     await updateTextFile(
       root,
-      ".als/modules/factory/v1/delamains/development-pipeline/delamain.yaml",
+      ".als/modules/factory/v1/delamains/development-pipeline/delamain.ts",
       () => "",
     );
 
     const result = validateFixture(root);
     expect(result.status).toBe("fail");
-    expectModuleDiagnostic(result, "factory", codes.DELAMAIN_INVALID, "development-pipeline/delamain.yaml");
+    expectModuleDiagnostic(result, "factory", codes.DELAMAIN_INVALID, "development-pipeline/delamain.ts");
     expectModuleDiagnostic(result, "factory", codes.DELAMAIN_CONTRACT_INVALID, "workspace/factory/items/SWF-001.md");
     expectNoModuleDiagnostic(result, "factory", codes.FM_UNKNOWN_FIELD, "workspace/factory/items/SWF-001.md");
   });
@@ -172,7 +173,7 @@ test.concurrent("variant entities reject base and variant Delamain bindings in t
 
     const result = validateFixture(root);
     expect(result.status).toBe("fail");
-    expectModuleDiagnostic(result, "delamain-variants", codes.DELAMAIN_CONTRACT_INVALID, ".als/modules/delamain-variants/v1/shape.yaml");
+    expectModuleDiagnostic(result, "delamain-variants", codes.DELAMAIN_CONTRACT_INVALID, ".als/modules/delamain-variants/v1/module.ts");
   });
 });
 
@@ -220,15 +221,15 @@ async function installVariantDelamainModule(root: string): Promise<void> {
 
   await writePath(
     root,
-    ".als/modules/delamain-variants/v1/shape.yaml",
-    stringifyYaml({
+    ".als/modules/delamain-variants/v1/module.ts",
+    serializeAuthoredDefinition("module", {
       dependencies: [],
       delamains: {
         "alpha-flow": {
-          path: "delamains/alpha-flow/delamain.yaml",
+          path: "delamains/alpha-flow/delamain.ts",
         },
         "beta-flow": {
-          path: "delamains/beta-flow/delamain.yaml",
+          path: "delamains/beta-flow/delamain.ts",
         },
       },
       entities: {
@@ -302,13 +303,13 @@ async function installVariantDelamainModule(root: string): Promise<void> {
 
   await writePath(
     root,
-    ".als/modules/delamain-variants/v1/delamains/alpha-flow/delamain.yaml",
-    stringifyYaml(delamainShape),
+    ".als/modules/delamain-variants/v1/delamains/alpha-flow/delamain.ts",
+    serializeAuthoredDefinition("delamain", delamainShape),
   );
   await writePath(
     root,
-    ".als/modules/delamain-variants/v1/delamains/beta-flow/delamain.yaml",
-    stringifyYaml(delamainShape),
+    ".als/modules/delamain-variants/v1/delamains/beta-flow/delamain.ts",
+    serializeAuthoredDefinition("delamain", delamainShape),
   );
   await writePath(
     root,
@@ -331,9 +332,15 @@ async function updateYamlTextFile(
   transform: (current: Record<string, unknown>) => void | Promise<void>,
 ): Promise<void> {
   await updateTextFile(root, relativePath, async (current) => {
-    const parsed = parseYaml(current) as Record<string, unknown>;
+    const exportName = relativePath.endsWith("/delamain.ts") ? "delamain" : "module";
+    const loaded = loadAuthoredSourceExport(join(root, relativePath), exportName, "module_shape", "fixture", null);
+    if (!loaded.success || typeof loaded.data !== "object" || loaded.data === null || Array.isArray(loaded.data)) {
+      throw new Error(`Expected authored object at '${relativePath}'`);
+    }
+
+    const parsed = structuredClone(loaded.data as Record<string, unknown>);
     await transform(parsed);
-    return stringifyYaml(parsed);
+    return serializeAuthoredDefinition(exportName, parsed);
   });
 }
 
@@ -348,4 +355,13 @@ async function updateMarkdownFrontmatterFile(
     await transform(data);
     return matter.stringify(parsed.content, data);
   });
+}
+
+function serializeAuthoredDefinition(
+  exportName: "module" | "delamain",
+  value: Record<string, unknown>,
+): string {
+  const helperName = exportName === "module" ? "defineModule" : "defineDelamain";
+  const importPath = exportName === "module" ? "../../../authoring.ts" : "../../../../../authoring.ts";
+  return `import { ${helperName} } from ${JSON.stringify(importPath)};\n\nexport const ${exportName} = ${helperName}(${JSON.stringify(value, null, 2)} as const);\n\nexport default ${exportName};\n`;
 }

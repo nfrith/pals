@@ -36,7 +36,7 @@ When invoked through the plugin, skills call these via `bun ${CLAUDE_PLUGIN_ROOT
 The validator emits JSON shaped as `als-validation-output@1`. Claude deploy emits JSON shaped as `als-claude-deploy-output@4`.
 
 - `schema` identifies the output contract version.
-- `als_version` is the active ALS language version declared by `.als/system.yaml`.
+- `als_version` is the active ALS language version declared by `.als/system.ts`.
 - `module_filter` is `null` for full-system validation and the selected module id for filtered runs.
 - `compiler_contract.supported_als_versions` lists the ALS language versions this compiler accepts today.
 - `compiler_contract.upgrade_mode` is currently `whole-system-cutover`.

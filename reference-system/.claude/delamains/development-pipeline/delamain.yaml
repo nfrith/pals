@@ -1,5 +1,9 @@
-phases: [intake, planning, implementation, deployment, closed]
-
+phases:
+  - intake
+  - planning
+  - implementation
+  - deployment
+  - closed
 states:
   draft:
     initial: true
@@ -8,15 +12,15 @@ states:
   queued:
     phase: intake
     actor: agent
-    resumable: false
     path: agents/queued.md
+    resumable: false
   planning:
     phase: planning
     actor: agent
+    path: agents/planning.md
     resumable: true
     delegated: true
     session-field: planner_session
-    path: agents/planning.md
   plan-input:
     phase: planning
     actor: operator
@@ -26,51 +30,50 @@ states:
   ready:
     phase: implementation
     actor: agent
-    resumable: false
     path: agents/ready.md
+    resumable: false
   in-dev:
     phase: implementation
     actor: agent
+    path: agents/in-dev.md
     resumable: true
     session-field: dev_session
-    path: agents/in-dev.md
     sub-agent: sub-agents/developer.md
   in-review:
     phase: implementation
     actor: agent
-    resumable: false
     path: agents/in-review.md
+    resumable: false
   uat-test:
     phase: implementation
     actor: operator
   deployment-ready:
     phase: deployment
     actor: agent
-    resumable: false
     path: agents/deployment-ready.md
+    resumable: false
   deploying:
     phase: deployment
     actor: agent
-    resumable: false
     path: agents/deploying.md
+    resumable: false
   deployment-testing:
     phase: deployment
     actor: agent
-    resumable: false
     path: agents/deployment-testing.md
+    resumable: false
   deployment-failure:
     phase: deployment
     actor: operator
   completed:
-    phase: closed
     terminal: true
+    phase: closed
   deferred:
-    phase: closed
     terminal: true
+    phase: closed
   cancelled:
-    phase: closed
     terminal: true
-
+    phase: closed
 transitions:
   - class: advance
     from: draft

@@ -1,8 +1,8 @@
 import { basename, dirname, isAbsolute, join, parse, relative, resolve } from "node:path";
 import { readFileSync, readdirSync, statSync, type Dirent } from "node:fs";
 import matter from "gray-matter";
-import { parse as parseYaml, YAMLParseError } from "yaml";
 import { ZodError } from "zod";
+import { loadAuthoredSourceExport } from "./authored-load.ts";
 import {
   ALS_UPGRADE_ASSISTANCE,
   ALS_UPGRADE_MODE,
@@ -51,7 +51,8 @@ import {
 import {
   inferredMigrationsPath,
   inferredModuleBundlePath,
-  inferredShapePath,
+  inferredModuleEntryPath,
+  inferredSystemPath,
   inferredSkillEntryPath,
   inferredSkillsPath,
   toRepoRelative,
@@ -180,8 +181,15 @@ export function validateSystem(systemRootInput: string, moduleFilter?: string): 
 export function loadSystemValidationContext(systemRootInput: string): LoadedSystemValidationContext {
   const systemRootAbs = resolve(systemRootInput);
   const systemRootRel = toRepoRelative(systemRootAbs);
-  const systemConfigPathAbs = resolve(systemRootAbs, ".als/system.yaml");
-  const parsedSystem = parseYamlFile<SystemConfig>(systemConfigPathAbs, systemConfigSchema, "system_config", codes.SYSTEM_INVALID, null);
+  const systemConfigPathAbs = resolve(systemRootAbs, inferredSystemPath());
+  const parsedSystem = parseAuthoredSourceFile<SystemConfig>(
+    systemConfigPathAbs,
+    "system",
+    systemConfigSchema,
+    "system_config",
+    codes.SYSTEM_INVALID,
+    null,
+  );
 
   if (!parsedSystem.success) {
     return {
@@ -363,10 +371,17 @@ function loadModuleState(systemRootAbs: string, systemConfig: SystemConfig, modu
   const modulePathRel = toRepoRelative(modulePathAbs);
   const moduleBundleAbs = resolve(systemRootAbs, inferredModuleBundlePath(moduleId, registryEntry.version));
   const moduleBundleRel = toRepoRelative(moduleBundleAbs);
-  const shapePathAbs = resolve(systemRootAbs, inferredShapePath(moduleId, registryEntry.version));
+  const shapePathAbs = resolve(systemRootAbs, inferredModuleEntryPath(moduleId, registryEntry.version));
   const shapePathRel = toRepoRelative(shapePathAbs);
 
-  const shapeResult = parseYamlFile<ModuleShape>(shapePathAbs, moduleShapeSchema, "module_shape", codes.SHAPE_INVALID, moduleId);
+  const shapeResult = parseAuthoredSourceFile<ModuleShape>(
+    shapePathAbs,
+    "module",
+    moduleShapeSchema,
+    "module_shape",
+    codes.SHAPE_INVALID,
+    moduleId,
+  );
   if (!shapeResult.success) {
     return {
       module_id: moduleId,
@@ -493,8 +508,9 @@ function loadDelamainBundles(
       continue;
     }
 
-    const parsedDelamain = parseYamlFile<DelamainShape>(
+    const parsedDelamain = parseAuthoredSourceFile<DelamainShape>(
       primaryPathAbs,
+      "delamain",
       delamainShapeSchema,
       "module_shape",
       codes.DELAMAIN_INVALID,
@@ -2636,7 +2652,7 @@ function validateShapeContracts(
   for (const dependency of context.shape.dependencies) {
     if (!systemConfig.modules[dependency.module]) {
       diagnostics.push(
-        diag(codes.SHAPE_CONTRACT_INVALID, "error", "module_shape", context.shape_path_rel, `Dependency '${dependency.module}' is not declared in system.yaml`, {
+        diag(codes.SHAPE_CONTRACT_INVALID, "error", "module_shape", context.shape_path_rel, `Dependency '${dependency.module}' is not declared in system.ts`, {
           module_id: context.module_id,
           field: "dependencies",
           expected: Object.keys(systemConfig.modules).sort(),
@@ -3020,13 +3036,13 @@ function validateRequiredModuleBundles(systemRootAbs: string, moduleId: string, 
           reason: reasons.SYSTEM_MODULE_BUNDLE_NOT_DIRECTORY,
           expected: "directory",
           actual: "file",
-          hint: "Store each module version as a directory bundle containing shape.yaml and related assets.",
+          hint: "Store each module version as a directory bundle containing module.ts and related assets.",
         }),
       );
       continue;
     }
 
-    diagnostics.push(...validateShapeFilePresence(systemRootAbs, moduleId, version));
+    diagnostics.push(...validateModuleEntryPresence(systemRootAbs, moduleId, version));
 
     if (version > 1) {
       diagnostics.push(...validateMigrationAssets(systemRootAbs, moduleId, version));
@@ -3036,32 +3052,32 @@ function validateRequiredModuleBundles(systemRootAbs: string, moduleId: string, 
   return diagnostics;
 }
 
-function validateShapeFilePresence(systemRootAbs: string, moduleId: string, version: number): CompilerDiagnostic[] {
-  const shapePath = inferredShapePath(moduleId, version);
+function validateModuleEntryPresence(systemRootAbs: string, moduleId: string, version: number): CompilerDiagnostic[] {
+  const shapePath = inferredModuleEntryPath(moduleId, version);
   const shapePathAbs = resolve(systemRootAbs, shapePath);
   const shapePathRel = toRepoRelative(shapePathAbs);
   const shapeStat = safeStat(shapePathAbs);
 
   if (!shapeStat) {
     return [
-      diag(codes.SHAPE_FILE_MISSING, "error", "module_shape", shapePathRel, `Inferred shape file for module '${moduleId}' does not exist`, {
+      diag(codes.SHAPE_FILE_MISSING, "error", "module_shape", shapePathRel, `Inferred module entrypoint for module '${moduleId}' does not exist`, {
         module_id: moduleId,
         reason: reasons.SYSTEM_SHAPE_FILE_MISSING,
         expected: shapePath,
         actual: "missing",
-        hint: "Add shape.yaml to the required module version bundle.",
+        hint: "Add module.ts to the required module version bundle.",
       }),
     ];
   }
 
   if (!shapeStat.isFile()) {
     return [
-      diag(codes.SHAPE_FILE_MISSING, "error", "module_shape", shapePathRel, `Inferred shape path for module '${moduleId}' is not a file`, {
+      diag(codes.SHAPE_FILE_MISSING, "error", "module_shape", shapePathRel, `Inferred module entrypoint for module '${moduleId}' is not a file`, {
         module_id: moduleId,
         reason: reasons.SYSTEM_SHAPE_FILE_NOT_FILE,
         expected: "file",
         actual: "directory",
-        hint: "Store the module shape at shape.yaml inside the version bundle.",
+        hint: "Store the module entrypoint at module.ts inside the version bundle.",
       }),
     ];
   }
@@ -3202,7 +3218,7 @@ function validateActiveModuleSkills(
           reason: reasons.SYSTEM_SKILLS_UNLISTED_DIRECTORY,
           expected: [...expectedSkillIds],
           actual: entry.name,
-          hint: "List the skill in .als/system.yaml or remove it from the active bundle.",
+          hint: "List the skill in .als/system.ts or remove it from the active bundle.",
         }),
       );
     }
@@ -3626,54 +3642,21 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function parseYamlFile<T>(
+function parseAuthoredSourceFile<T>(
   fileAbs: string,
+  exportName: "system" | "module" | "delamain",
   schema: { safeParse: (value: unknown) => { success: true; data: T } | { success: false; error: ZodError } },
   phase: "system_config" | "module_shape",
   code: string,
   module_id: string | null,
 ): { success: true; data: T; diagnostics: CompilerDiagnostic[] } | { success: false; diagnostics: CompilerDiagnostic[] } {
-  let raw: unknown;
   const fileRel = toRepoRelative(fileAbs);
-  const fileRead = safeReadTextFile(fileAbs);
-  if (fileRead.error) {
-    return {
-      success: false,
-      diagnostics: [
-        diag(code, "error", phase, fileRel, "Could not read YAML file", {
-          module_id: module_id ?? undefined,
-          reason: reasons.YAML_READ_FAILED,
-          expected: "readable YAML file",
-          actual: {
-            code: fileRead.error.code ?? null,
-            message: fileRead.error.message,
-          },
-          hint: "Check file permissions and rerun validation.",
-        }),
-      ],
-    };
+  const loadedSource = loadAuthoredSourceExport(fileAbs, exportName, phase, code, module_id);
+  if (!loadedSource.success) {
+    return loadedSource;
   }
 
-  const fileContents = fileRead.contents;
-
-  try {
-    raw = parseYaml(fileContents);
-  } catch (error) {
-    if (!(error instanceof YAMLParseError)) {
-      throw error;
-    }
-
-    return {
-      success: false,
-      diagnostics: [
-        diag(code, "error", phase, fileRel, "Failed to parse YAML", {
-          module_id: module_id ?? undefined,
-          reason: reasons.YAML_PARSE_FAILED,
-          actual: error instanceof Error ? error.message : String(error),
-        }),
-      ],
-    };
-  }
+  const raw = loadedSource.data;
 
   const rawDiagnostics = phase === "module_shape"
     ? collectRemovedSourceSchemaDiagnostics(raw, phase, fileRel, module_id).concat(
@@ -3861,7 +3844,7 @@ function collectRemovedSourceSchemaDiagnostics(
       "error",
       phase,
       fileRel,
-      "Top-level source field 'schema' has been removed from ALS v1 authored YAML",
+      "Top-level source field 'schema' has been removed from ALS v1 authored source",
       {
         module_id: module_id ?? undefined,
         field: "schema",
