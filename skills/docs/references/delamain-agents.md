@@ -38,7 +38,7 @@ One sentence describing what this agent does.
 |-------|----------|-------------|
 | `name` | Yes | Agent identifier. Convention: `{delamain-name}--{state}` |
 | `description` | Yes | One-line description for the dispatcher log |
-| `tools` | No | Comma-separated tool list. Default: `Read, Edit` |
+| `tools` | No | Comma-separated tool list. Default: `Read, Edit`. Supports all Claude Code tools including `Skill` (for `/commit` and other skills), `Agent`, `Bash`, etc. |
 | `model` | No | `sonnet`, `opus`, or `haiku`. Default: `sonnet` |
 | `color` | No | Display color hint |
 
