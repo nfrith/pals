@@ -1,12 +1,13 @@
 #!/bin/bash
-# Scan delamain status for /bootup
-# Reports all delamains with their status (running or offline).
+# Fast scan: find offline delamains for /reboot
+# Outputs only what's needed — no config, no formatting frills
 
 # Derive plugin root from this script's own path.
-plugin_root="${0%/skills/bootup/scan.sh}"
+# This script is invoked via <bash>bash ${CLAUDE_PLUGIN_ROOT}/skills/reboot/scan.sh</bash>
+# so $0 resolves to the full substituted path at skill load time.
+plugin_root="${0%/skills/reboot/scan.sh}"
 echo "PLUGIN_ROOT: $plugin_root"
 
-# Walk up from cwd to find system root
 sys_root="$(pwd)"
 while [[ "$sys_root" != "/" ]]; do
     [[ -f "$sys_root/.als/system.ts" ]] && break
@@ -25,8 +26,8 @@ if [[ ! -d "$sys_root/.claude/delamains" ]]; then
     exit 0
 fi
 
-all_names=()
-running_pids=()
+offline_names=()
+running_names=()
 
 for dy in "$sys_root"/.claude/delamains/*/delamain.yaml; do
     [[ -f "$dy" ]] || continue
@@ -36,23 +37,23 @@ for dy in "$sys_root"/.claude/delamains/*/delamain.yaml; do
 
     [[ -d "$d_dir/dispatcher" ]] || continue
 
-    all_names+=("$d_name")
-
     if [[ -f "$sf" ]]; then
         d_pid=$(jq -r '.pid // empty' "$sf" 2>/dev/null)
         if [[ -n "$d_pid" ]] && kill -0 "$d_pid" 2>/dev/null; then
-            running_pids+=("$d_pid")
+            running_names+=("$d_name")
+            continue
         fi
     fi
+
+    offline_names+=("$d_name")
 done
 
-if (( ${#all_names[@]} == 0 )); then
-    echo "NO_DELAMAINS"
-    exit 0
+if (( ${#running_names[@]} > 0 )); then
+    echo "RUNNING: ${running_names[*]}"
 fi
 
-echo "ALL_DELAMAINS: ${all_names[*]}"
-
-if (( ${#running_pids[@]} > 0 )); then
-    echo "RUNNING_PIDS: ${running_pids[*]}"
+if (( ${#offline_names[@]} == 0 )); then
+    echo "ALL_RUNNING"
+else
+    echo "OFFLINE: ${offline_names[*]}"
 fi

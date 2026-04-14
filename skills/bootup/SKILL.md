@@ -1,14 +1,12 @@
 ---
 name: bootup
-description: Boot an ALS system — start delamain dispatchers and runtime services using operator-configured preferences or interactive setup.
+description: The power button. Kill all running dispatchers, start everything fresh as background shells. Always produces the same state.
 allowed-tools: Bash(bash *)
 ---
 
 # bootup
 
-Boot an ALS system's runtime services. Reads the operator's boot configuration if one exists, otherwise guides interactive setup.
-
-For the `.als/config.md` format specification, see [`../docs/references/bootup-config.md`](../docs/references/bootup-config.md).
+The power button. Kills all running dispatchers, clears all state, starts everything fresh. Idempotent — always produces the same result.
 
 ## Scan results
 
@@ -16,44 +14,45 @@ For the `.als/config.md` format specification, see [`../docs/references/bootup-c
 
 ## Procedure
 
-### Step 1 — Check for boot configuration
+### 1. Parse scan results
 
-Parse the scan results above.
+Extract `PLUGIN_ROOT`, `SYSTEM_ROOT`, and delamain names from the scan output.
 
-**If `CONFIG: found`:**
-- Read the `Operator's Preferences` section from the scan output
-- These are the operator's instructions for how to start delamains
-- Proceed to Step 2 using those instructions
+- `NO_SYSTEM` → "Not an ALS system." Exit.
+- `NO_DELAMAINS` → "No delamains found." Exit.
 
-**If `CONFIG: none`:**
-- No boot configuration exists yet
-- Tell the operator: "No boot config found. Run `/init` to set one up."
-- Exit.
+### 2. Kill running dispatchers
 
-### Step 2 — Start offline delamains per operator preferences
-
-If the scan shows `All dispatchers are running. Nothing to do.` — report this and exit.
-
-Otherwise, for each delamain listed in `OFFLINE_DELAMAINS`:
-
-1. Read the operator's preferences to determine HOW to start the dispatcher
-2. Ensure `bun install` has been run in the dispatcher directory before starting
-3. Follow the operator's config commands **exactly as written** — copy-paste, substitute names, execute. Do not improvise alternative approaches.
-4. Start all offline dispatchers in parallel when possible
-
-After starting, verify with:
+If `RUNNING_PIDS` is present in the scan output, kill them all:
 
 ```bash
-sleep 3 && for sf in {system-root}/.claude/delamains/*/status.json; do [ -f "$sf" ] && echo "=== $(jq -r .name "$sf") ===" && jq '{name, pid, items_scanned, active_dispatches}' "$sf"; done
+kill {pid1} {pid2} {pid3} 2>/dev/null; rm -f {SYSTEM_ROOT}/.claude/delamains/*/status.json
 ```
 
-Report results to the operator in a single table.
+If no running PIDs, still clear stale status files.
+
+### 3. Start all dispatchers
+
+For every delamain in `ALL_DELAMAINS`, in parallel:
+
+```bash
+CLAUDE_PLUGIN_ROOT={PLUGIN_ROOT} bun run {SYSTEM_ROOT}/.claude/delamains/{NAME}/dispatcher/src/index.ts 2>&1
+```
+
+Use the Bash tool with `run_in_background: true`. One call per dispatcher, all in the same message.
+
+### 4. Verify
+
+```bash
+sleep 2 && for name in {all_names}; do sf="{SYSTEM_ROOT}/.claude/delamains/$name/status.json"; [ -f "$sf" ] && echo "$name: ✓" || echo "$name: ✗"; done
+```
+
+### 5. Report
+
+One line per dispatcher. State the count: "{N} dispatchers running."
 
 ## Notes
 
-- This skill replaces the former `/run-delamains`
-- When Claude exits, dispatchers started as Claude background shells die. Dispatchers started in tmux windows survive.
-- If all dispatchers are already running, nothing to do.
-- The boot configuration is operator-local — it is not managed by `/change` or `/migrate`.
-- If no config exists, use `/init` to create one first.
-- **This skill must be run from the operator's session** (e.g., [OPERATOR] window), not from the cyber-brain or other Agent SDK processes. The Agent SDK cleans up tmux windows created during its query — dispatchers will die when the brain's turn ends. If the brain needs delamains started, it should message the operator to run `/bootup`.
+- Delamains run as background shells managed by this Claude session. They die when the session ends.
+- This is the power button — it always kills everything and restarts. For bringing back only crashed dispatchers, use `/reboot`.
+- `PLUGIN_ROOT` is derived from the scan script's own path — works regardless of whether `CLAUDE_PLUGIN_ROOT` is in the shell environment.
