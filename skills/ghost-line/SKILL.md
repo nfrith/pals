@@ -1,12 +1,12 @@
 ---
-name: support
-description: File a support issue on the ALS GitHub repo. Walks the user through a guided flow — scans conversation context for clues, collects structured details, and submits via gh CLI.
+name: ghost-line
+description: File an issue on the ALS GitHub repo. Walks the user through a guided flow — scans conversation context for clues, collects structured details, and submits via gh CLI.
 allowed-tools: Bash(bash *)
 ---
 
-# support
+# ghost-line
 
-Guided issue filing for the ALS repo (`nfrith/als`). Scans the conversation for context, walks the user through structured collection, and submits via `gh`.
+The hotline. Guided issue filing for the ALS repo (`nfrith/als`). Scans the conversation for context, walks the user through structured collection, and submits via `gh`.
 
 ## Prerequisites
 
@@ -33,7 +33,7 @@ Synthesize what you find into 2-3 candidate one-line summaries. Each should read
 - `"/validate — compiler error on module.ts"`
 - `"/new — module creation failed, missing system.ts"`
 
-If the conversation has no error context (user invoked `/support` cold), skip to freeform.
+If the conversation has no error context (user invoked `/ghost-line` cold), skip to freeform.
 
 ### 2. What is this about?
 
@@ -154,7 +154,7 @@ Assemble the issue body using this structure:
 - Shell: {shell}
 
 ---
-*Filed via `/support`*
+*Filed via `/ghost-line`*
 ```
 
 Omit sections that don't apply to the category.
