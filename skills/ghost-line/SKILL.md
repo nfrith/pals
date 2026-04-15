@@ -92,14 +92,7 @@ Pre-fill a suggestion from conversation context if available (e.g., "I ran `/boo
 - **Header**: `Steps`
 - **Options**: 1-2 inferred reproduction paths from context + freeform
 
-**Step B — Expected vs actual**
-
-Ask: "What should have happened instead?"
-
-- **Header**: `Expected`
-- **Options**: 1-2 inferred expectations from context + freeform
-
-**Step C — Error output**
+**Step B — Error output**
 
 If the conversation contains error output (stack traces, error messages), extract the relevant snippet (max ~50 lines). Ask: "Include this error output in the issue?"
 
@@ -131,12 +124,6 @@ Assemble the issue body using this structure:
 
 ## Steps to Reproduce
 {reproduction steps — bug only}
-
-## Expected / Actual
-- **Expected:** {what should happen}
-- **Actual:** {what happened instead}
-
-{bug only}
 
 ## Error Output
 ```
