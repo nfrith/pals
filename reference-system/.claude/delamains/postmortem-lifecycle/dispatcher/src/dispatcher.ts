@@ -4,6 +4,11 @@ import { parse as parseYaml } from "yaml";
 import { query } from "@anthropic-ai/claude-agent-sdk";
 import { buildSessionRuntimeState, shouldPersistDispatcherSession } from "./session-runtime.js";
 import { loadRuntimeManifest } from "./runtime-manifest.js";
+import {
+  appendTelemetryEvent,
+  DISPATCH_TELEMETRY_SCHEMA,
+  type DispatchTelemetryEvent,
+} from "./telemetry.js";
 
 interface Transition {
   class: string;
@@ -245,6 +250,7 @@ export async function resolve(
 
 const sdkEnv: Record<string, string | undefined> = { ...process.env };
 delete sdkEnv["ANTHROPIC_API_KEY"];
+sdkEnv["DELAMAIN_SESSION"] = "1";
 
 const today = () => new Date().toISOString().slice(0, 10);
 
@@ -265,7 +271,8 @@ export async function dispatch(
   itemFile: string,
   entry: DispatchEntry,
   agents: Record<string, AgentDef>,
-  systemRoot: string,
+  config: Pick<ResolvedConfig, "systemRoot" | "moduleId" | "delamainName">,
+  bundleRoot: string,
 ): Promise<{ success: boolean; sessionId?: string }> {
   const agent = agents[entry.agentName]!;
 
@@ -333,12 +340,47 @@ export async function dispatch(
   );
 
   let sessionId: string | undefined;
+  let resultSummary:
+    | {
+      subtype: string;
+      totalCostUsd: number | null;
+      durationMs: number;
+      numTurns: number;
+    }
+    | null = null;
+  const startedAt = Date.now();
 
   try {
+    await writeTelemetry({
+      schema: DISPATCH_TELEMETRY_SCHEMA,
+      event_id: crypto.randomUUID(),
+      event_type: "dispatch_start",
+      timestamp: new Date(startedAt).toISOString(),
+      dispatcher_name: config.delamainName,
+      module_id: config.moduleId,
+      item_id: itemId,
+      item_file: itemFile,
+      state: entry.state,
+      agent_name: entry.agentName,
+      sub_agent_name: entry.subAgentName ?? null,
+      delegated: entry.delegated,
+      resumable: entry.resumable,
+      resume_requested: sessionState.resume === "yes",
+      session_field: entry.sessionField ?? null,
+      runtime_session_id: sessionState.runtimeSessionId ?? null,
+      resume_session_id: sessionState.resumeSessionId ?? null,
+      worker_session_id: null,
+      transition_targets: entry.transitions.map((transition) => transition.to),
+      duration_ms: null,
+      num_turns: null,
+      cost_usd: null,
+      error: null,
+    });
+
     for await (const message of query({
       prompt,
       options: {
-        cwd: systemRoot,
+        cwd: config.systemRoot,
         model: agent.model ?? "sonnet",
         allowedTools: tools,
         ...(subAgents ? { agents: subAgents } : {}),
@@ -361,6 +403,13 @@ export async function dispatch(
         }
       }
       if (message.type === "result") {
+        resultSummary = {
+          subtype: message.subtype,
+          totalCostUsd:
+            typeof message.total_cost_usd === "number" ? message.total_cost_usd : null,
+          durationMs: message.duration_ms,
+          numTurns: message.num_turns,
+        };
         const cost =
           message.subtype === "success"
             ? `$${message.total_cost_usd.toFixed(4)}`
@@ -369,6 +418,39 @@ export async function dispatch(
         console.log(`[dispatcher] ${itemId} done (${cost}, ${secs}s, ${message.num_turns} turns)`);
       }
     }
+
+    const dispatchSucceeded = resultSummary
+      ? resultSummary.subtype === "success"
+      : true;
+
+    await writeTelemetry({
+      schema: DISPATCH_TELEMETRY_SCHEMA,
+      event_id: crypto.randomUUID(),
+      event_type: dispatchSucceeded ? "dispatch_finish" : "dispatch_failure",
+      timestamp: new Date().toISOString(),
+      dispatcher_name: config.delamainName,
+      module_id: config.moduleId,
+      item_id: itemId,
+      item_file: itemFile,
+      state: entry.state,
+      agent_name: entry.agentName,
+      sub_agent_name: entry.subAgentName ?? null,
+      delegated: entry.delegated,
+      resumable: entry.resumable,
+      resume_requested: sessionState.resume === "yes",
+      session_field: entry.sessionField ?? null,
+      runtime_session_id: sessionState.runtimeSessionId ?? null,
+      resume_session_id: sessionState.resumeSessionId ?? null,
+      worker_session_id: sessionId ?? null,
+      transition_targets: entry.transitions.map((transition) => transition.to),
+      duration_ms: resultSummary?.durationMs ?? Date.now() - startedAt,
+      num_turns: resultSummary?.numTurns ?? null,
+      cost_usd: resultSummary?.totalCostUsd ?? null,
+      error:
+        dispatchSucceeded
+          ? null
+          : `result:${resultSummary?.subtype ?? "unknown"}`,
+    });
 
     if (
       !entry.delegated
@@ -391,12 +473,47 @@ export async function dispatch(
       }
     }
 
-    return { success: true, sessionId };
+    return { success: dispatchSucceeded, sessionId };
   } catch (error) {
+    await writeTelemetry({
+      schema: DISPATCH_TELEMETRY_SCHEMA,
+      event_id: crypto.randomUUID(),
+      event_type: "dispatch_failure",
+      timestamp: new Date().toISOString(),
+      dispatcher_name: config.delamainName,
+      module_id: config.moduleId,
+      item_id: itemId,
+      item_file: itemFile,
+      state: entry.state,
+      agent_name: entry.agentName,
+      sub_agent_name: entry.subAgentName ?? null,
+      delegated: entry.delegated,
+      resumable: entry.resumable,
+      resume_requested: sessionState.resume === "yes",
+      session_field: entry.sessionField ?? null,
+      runtime_session_id: sessionState.runtimeSessionId ?? null,
+      resume_session_id: sessionState.resumeSessionId ?? null,
+      worker_session_id: sessionId ?? null,
+      transition_targets: entry.transitions.map((transition) => transition.to),
+      duration_ms: Date.now() - startedAt,
+      num_turns: resultSummary?.numTurns ?? null,
+      cost_usd: resultSummary?.totalCostUsd ?? null,
+      error: error instanceof Error ? error.message : String(error),
+    });
     console.error(
       `[dispatcher] ${itemId} failed:`,
       error instanceof Error ? error.message : error,
     );
     return { success: false };
+  }
+
+  async function writeTelemetry(event: DispatchTelemetryEvent): Promise<void> {
+    try {
+      await appendTelemetryEvent(bundleRoot, event);
+    } catch (error) {
+      console.warn(
+        `[dispatcher] ${itemId} telemetry write failed: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
   }
 }

@@ -89,6 +89,20 @@ The Delamain bundle is self-contained. It lives in `.als/modules/{module}/v{N}/d
 
 The operator interacts with items in operator-owned states through the pipeline console skill.
 
+## Monitoring Model
+
+Delamain runtime monitoring now has two layers:
+
+- **Statusline** — compact badge surface for quick liveness checks
+- **Delamain Dashboard** — canonical monitoring surface for current queue state, recent runs, and recent failures
+
+Dispatchers remain the producers of runtime truth. They emit:
+
+- `status.json` for compatibility-oriented liveness
+- `telemetry/events.jsonl` for bounded recent dispatch history
+
+The dashboard service reads those runtime files plus bundle metadata and current item files, then serves one normalized snapshot to both the localhost web UI and the OpenTUI client.
+
 ## Event-Driven, Not Polling
 
 While the dispatcher technically polls the filesystem, the system is event-driven from the operator's perspective. Agents run when work exists. No heartbeat daemon burns tokens in the background. The operator is the heartbeat.

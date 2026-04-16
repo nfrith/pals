@@ -23,6 +23,25 @@ The deployed bundle root also receives `runtime-manifest.json`. That manifest is
 
 The dispatcher is supported from deployed `.claude/delamains/<name>/` bundles. Running it directly from authored `.als/modules/.../delamains/.../dispatcher` is not part of the runtime contract because authored bundles do not carry the generated manifest.
 
+## Telemetry Files
+
+The dispatcher now emits two runtime surfaces per deployed Delamain bundle:
+
+- `status.json` — the small compatibility heartbeat for liveness, PID checks, poll cadence, active dispatch count, and scanned item count
+- `telemetry/events.jsonl` — the bounded recent activity log for dashboard history
+
+`telemetry/events.jsonl` is append-only at the contract level, but the writer keeps only the most recent bounded window of events so the file does not grow without limit. Each event is a single JSON object using schema `als-delamain-telemetry-event@1`.
+
+Recent telemetry events include:
+
+- dispatch start
+- dispatch finish
+- dispatch failure
+
+Each event records the Delamain name, module id, item id, current state, agent identity, resume metadata, transition targets, duration, turn count, cost, and error text when present.
+
+Older dispatcher copies that only emit `status.json` remain valid. Consumers must degrade to heartbeat-only mode instead of failing when `telemetry/events.jsonl` is absent.
+
 ## Source Files
 
 ### `src/index.ts`
@@ -82,6 +101,16 @@ Pure helper logic for session handling:
 - Distinguishes direct SDK-resumable states from delegated externally managed worker sessions
 - Centralizes the rule for whether the dispatcher should persist its own SDK session id
 
+### `src/telemetry.ts`
+
+Structured telemetry writer and reader.
+
+- Resolves the deployed telemetry path at `telemetry/events.jsonl`
+- Normalizes telemetry events under schema `als-delamain-telemetry-event@1`
+- Serializes concurrent writes inside the dispatcher process
+- Enforces bounded retention so only the most recent events remain on disk
+- Lets downstream consumers detect heartbeat-only legacy dispatchers when the file is absent
+
 ## How Configuration Is Derived
 
 The dispatcher reads one generated runtime manifest plus the local Delamain bundle:
@@ -108,6 +137,20 @@ Hosts generate `runtime-manifest.json` during Claude projection. One deployed De
 Agent paths in `delamain.yaml` resolve relative to the directory containing the Delamain primary definition file (the deployed bundle root), not relative to the module bundle root.
 
 The `findSystemRoot` walk-up in `index.ts` makes the dispatcher work at any nesting depth under a deployed `.claude/delamains/<name>/` bundle.
+
+## Dashboard Contract
+
+`nfrith-repos/als/delamain-dashboard/` is the canonical monitoring consumer for dispatcher runtime state.
+
+The dashboard service reads:
+
+- `status.json` for liveness
+- `telemetry/events.jsonl` for recent run history and failures
+- `runtime-manifest.json` for bundle identity and item binding
+- `delamain.yaml` for phase and actor context
+- current item files for queue state
+
+The localhost web UI and the OpenTUI client both consume the same service snapshot. They do not each re-implement discovery or scan the filesystem independently.
 
 ## Session Handling
 

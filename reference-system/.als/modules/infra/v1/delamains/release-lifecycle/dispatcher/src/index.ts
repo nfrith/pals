@@ -4,6 +4,7 @@ import { resolve as resolvePath, dirname, join } from "path";
 import { scan } from "./watcher.js";
 import { resolve, dispatch, type DispatchEntry } from "./dispatcher.js";
 import { formatDispatcherVersionLine, loadDispatcherVersionInfo } from "./dispatcher-version.js";
+import { resolveTelemetryPaths } from "./telemetry.js";
 
 // -------------------------------------------------------------------
 // The only input: system root. Bundle-local runtime identity comes
@@ -69,6 +70,7 @@ const STATUS_FILE = join(
   config.delamainName,
   "status.json",
 );
+const { directory: TELEMETRY_DIR } = resolveTelemetryPaths(BUNDLE_ROOT);
 
 function writeHeartbeat(itemsScanned: number) {
   try {
@@ -93,6 +95,14 @@ function clearHeartbeat() {
     unlinkSync(STATUS_FILE);
   } catch {
     // Already gone
+  }
+}
+
+function ensureTelemetryDir() {
+  try {
+    Bun.mkdirSync(TELEMETRY_DIR, { recursive: true });
+  } catch {
+    // Non-fatal — telemetry stays unavailable
   }
 }
 
@@ -128,7 +138,7 @@ async function tick() {
     if (!rule) continue;
 
     active.add(item.id);
-    dispatch(item.id, item.filePath, rule, config.agents, config.systemRoot)
+    dispatch(item.id, item.filePath, rule, config.agents, config, BUNDLE_ROOT)
       .then((r) => {
         if (!r.success) active.delete(item.id);
       })
@@ -139,6 +149,7 @@ async function tick() {
 }
 
 await tick();
+ensureTelemetryDir();
 const interval = setInterval(tick, POLL_MS);
 
 const stop = () => {

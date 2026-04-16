@@ -2,6 +2,8 @@
 
 Canonical ALS statusline for Claude Code. Installed into operator projects via `/configure-statusline`.
 
+The statusline is the compact badge surface for Delamain health. It is not the canonical monitoring implementation. Rich dispatcher history, queue state, and failure context belong to `nfrith-repos/als/delamain-dashboard/`.
+
 ## Architecture: Two-process model
 
 The statusline is split into two independent pieces:
