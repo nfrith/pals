@@ -59,7 +59,7 @@ class DashboardTuiApp {
       exitOnCtrlC: true,
       openConsoleOnError: true,
       prependInputHandlers: [(sequence) => this.#handleInput(sequence)],
-      screenMode: this.#options.screenMode,
+      screenMode: this.#options.screenMode === "normal" ? "main-screen" : "alternate-screen",
       useMouse: false,
     });
 
@@ -87,6 +87,7 @@ class DashboardTuiApp {
     if (this.#pollTimer) clearInterval(this.#pollTimer);
     if (this.#exitTimer) clearTimeout(this.#exitTimer);
     this.#renderer?.destroy();
+    this.#renderer = null;
   }
 
   #buildLayout(renderer: CliRenderer): void {
@@ -118,7 +119,7 @@ class DashboardTuiApp {
       content: "Loading…",
       fg: "#eef7f2",
       width: "100%",
-      wrapMode: "wrap",
+      wrapMode: "word",
     });
     root.add(this.#body);
 
@@ -132,25 +133,28 @@ class DashboardTuiApp {
   }
 
   async #refresh(): Promise<void> {
-    if (!this.#renderer || this.#stopped) return;
+    let renderer = this.#getRenderer();
+    if (!renderer) return;
 
     try {
       const snapshot = await fetchSnapshot(this.#options.serviceUrl);
-      this.#render(snapshot);
+      renderer = this.#getRenderer();
+      if (!renderer) return;
+      this.#render(snapshot, renderer);
     } catch (error) {
-      this.#body.setContent(`Dashboard fetch failed\n\n${formatError(error)}`);
-      this.#footer.setContent(`q quit • r retry • ${this.#options.serviceUrl}`);
-      this.#renderer.requestRender();
+      renderer = this.#getRenderer();
+      if (!renderer) return;
+      this.#body.content = `Dashboard fetch failed\n\n${formatError(error)}`;
+      this.#footer.content = `q quit • r retry • ${this.#options.serviceUrl}`;
+      renderer.requestRender();
     }
   }
 
-  #render(snapshot: DashboardSnapshot): void {
-    if (!this.#renderer) return;
-
-    this.#header.setContent(`Delamain Dashboard • ${snapshot.dispatcherCount} dispatchers`);
-    this.#body.setContent(renderTuiDocument(snapshot));
-    this.#footer.setContent(`q quit • r refresh • ${this.#options.serviceUrl}`);
-    this.#renderer.requestRender();
+  #render(snapshot: DashboardSnapshot, renderer: CliRenderer): void {
+    this.#header.content = `Delamain Dashboard • ${snapshot.dispatcherCount} dispatchers`;
+    this.#body.content = renderTuiDocument(snapshot);
+    this.#footer.content = `q quit • r refresh • ${this.#options.serviceUrl}`;
+    renderer.requestRender();
   }
 
   #handleInput(sequence: string): boolean {
@@ -170,6 +174,13 @@ class DashboardTuiApp {
   #requestStop(): void {
     this.#resolveRun?.();
     this.#resolveRun = null;
+  }
+
+  #getRenderer(): CliRenderer | null {
+    if (this.#renderer === null || this.#renderer.isDestroyed || this.#stopped) {
+      return null;
+    }
+    return this.#renderer;
   }
 }
 

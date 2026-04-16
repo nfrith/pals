@@ -16,6 +16,22 @@ export interface RuntimeManifest {
 
 const DELAMAIN_RUNTIME_MANIFEST_SCHEMA = "als-delamain-runtime-manifest@1";
 
+function requireStringField(
+  manifest: Partial<RuntimeManifest>,
+  field: keyof Pick<
+    RuntimeManifest,
+    "schema"
+      | "delamain_name"
+      | "module_id"
+      | "module_mount_path"
+      | "entity_name"
+      | "entity_path"
+      | "status_field"
+  >,
+): string {
+  return manifest[field] as string;
+}
+
 export async function loadRuntimeManifest(bundleRoot: string): Promise<RuntimeManifest> {
   const manifestPath = join(bundleRoot, "runtime-manifest.json");
   let raw: string;
@@ -89,14 +105,14 @@ export async function loadRuntimeManifest(bundleRoot: string): Promise<RuntimeMa
   }
 
   return {
-    schema: manifest.schema,
-    delamain_name: manifest.delamain_name,
-    module_id: manifest.module_id,
+    schema: requireStringField(manifest, "schema"),
+    delamain_name: requireStringField(manifest, "delamain_name"),
+    module_id: requireStringField(manifest, "module_id"),
     module_version: manifest.module_version,
-    module_mount_path: manifest.module_mount_path,
-    entity_name: manifest.entity_name,
-    entity_path: manifest.entity_path,
-    status_field: manifest.status_field,
+    module_mount_path: requireStringField(manifest, "module_mount_path"),
+    entity_name: requireStringField(manifest, "entity_name"),
+    entity_path: requireStringField(manifest, "entity_path"),
+    status_field: requireStringField(manifest, "status_field"),
     discriminator_field: manifest.discriminator_field ?? null,
     discriminator_value: manifest.discriminator_value ?? null,
   };
