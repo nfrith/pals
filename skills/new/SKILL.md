@@ -1,11 +1,11 @@
 ---
 name: new
-description: Create a new ALS system or add a module to an existing one. Use this when the user wants to set up structured markdown storage, create a new module, organize or track something with ALS, or mentions wanting to store domain data as markdown files.
+description: Add a new module to an existing ALS system. Use this when the user wants to expand an ALS-aware project with another module, organize additional domain data, or store more structured markdown inside a system that already has `.als/system.ts`.
 ---
 
 # new
 
-You help operators design and create ALS modules — structured markdown storage with typed frontmatter, governed prose sections, and a skill-based interface for interacting with the module's data. Your job is to understand what someone needs to store, design the right data model and operational interface, and produce valid ALS authored definitions plus skill bundles.
+You help operators design and add ALS modules — structured markdown storage with typed frontmatter, governed prose sections, and a skill-based interface for interacting with the module's data. Your job is to understand what someone needs to store, design the right data model and operational interface, and produce valid ALS authored definitions plus skill bundles inside an existing ALS system.
 
 You are not a form. You are a domain modeler. The operator knows their domain but not the ALS format. You know the format but not their domain. The interview is where those meet.
 
@@ -27,7 +27,7 @@ Before doing anything else, verify the runtime environment.
 
 Check whether `.als/system.ts` exists in the working directory.
 
-- **If it does not exist**: this is a bootstrap. You will create the system from scratch. Proceed to Phase 2 — you need the interview before you can create anything.
+- **If it does not exist**: stop and tell the operator this project is not ALS-aware yet. Direct them to `/install`, which bootstraps `.als/`, creates the first module, validates the system, and deploys the Claude assets.
 - **If it exists**: read it. Understand the system_id and all existing modules, especially their mount paths. This context matters for the interview — the operator may want to reference entities from existing modules, and new modules must fit into the existing path layout without overlapping it. Proceed to Phase 2.
 
 ## Phase 2: The Interview
@@ -42,17 +42,11 @@ Use the AskUserQuestion tool at every decision point where there are enumerable 
 
 Start with one open question:
 
-> What do you need to track? Describe the domain in your own words — what are the things, how do they relate, and what matters about them?
+> What does this new module need to track? Describe the domain in your own words — what are the things, how do they relate, and what matters about them?
 
 Listen carefully. Do not interrupt with clarifications yet. Let them talk. The first answer contains most of what you need — entities are the nouns, relationships are the verbs, constraints are the adjectives.
 
-### If bootstrapping (no system.ts)
-
-You also need to establish:
-- **System identity**: what should the `system_id` be? This names the whole system. Help them pick something short and meaningful.
-- **Module mount path**: where should this module live relative to the system root? Examples: `backlog`, `workspace/people`, `section9/backlog`.
-
-For both bootstrap and existing systems, lock the new module's mount path before proposing YAML. It must be relative to the system root and must not overlap any existing module mount path.
+Before proposing YAML, lock the new module's mount path. It must be relative to the system root and must not overlap any existing module mount path.
 
 ### Decomposition
 
@@ -322,40 +316,7 @@ Iterate until the operator confirms. Do not move to Phase 4 until they explicitl
 
 ## Phase 4: Execution
 
-Once approved, create everything.
-
-### If bootstrapping (no .als yet)
-
-1. Create `.als/` directory
-2. Create `.als/modules/` directory
-3. Create `.als/system.ts` with the system_id and first module registration (use a `skills` array with skill ids)
-4. Create the module version bundle at `.als/modules/{module_id}/v1/`
-5. Create the module's authored bundle entrypoint at `.als/modules/{module_id}/v1/module.ts`
-6. If the module has skills, create `.als/modules/{module_id}/v1/skills/`
-7. Create a `SKILL.md` for each skill at `.als/modules/{module_id}/v1/skills/{skill_name}/SKILL.md`
-8. If a Delamain was designed, create the Delamain bundle (see "Delamain bundle authoring" below)
-9. Create the module's data directory at `{path}/`
-10. Create the subdirectory tree implied by the path templates (empty directories)
-11. Validate the live system:
-
-```bash
-bun ${CLAUDE_PLUGIN_ROOT}/alsc/compiler/src/cli.ts validate <system-root>
-```
-
-11. Preflight Claude projection with empty-target protection:
-
-```bash
-bun ${CLAUDE_PLUGIN_ROOT}/alsc/compiler/src/cli.ts deploy claude --dry-run --require-empty-targets <system-root> [module-id]
-```
-
-12. If the preflight reports target collisions or Delamain name conflicts under `.claude/`, stop and resolve them with the operator before live deploy.
-13. Project the active Claude assets into `.claude/`:
-
-```bash
-bun ${CLAUDE_PLUGIN_ROOT}/alsc/compiler/src/cli.ts deploy claude <system-root> [module-id]
-```
-
-### If adding to an existing system
+Create everything inside the existing system.
 
 1. Create the module version bundle at `.als/modules/{module_id}/v1/`
 2. Create the module's authored bundle entrypoint at `.als/modules/{module_id}/v1/module.ts`
@@ -371,14 +332,14 @@ bun ${CLAUDE_PLUGIN_ROOT}/alsc/compiler/src/cli.ts deploy claude <system-root> [
 bun ${CLAUDE_PLUGIN_ROOT}/alsc/compiler/src/cli.ts validate <system-root>
 ```
 
-9. Preflight Claude projection with empty-target protection:
+10. Preflight Claude projection with empty-target protection:
 
 ```bash
 bun ${CLAUDE_PLUGIN_ROOT}/alsc/compiler/src/cli.ts deploy claude --dry-run --require-empty-targets <system-root> [module-id]
 ```
 
-10. If the preflight reports target collisions or Delamain name conflicts under `.claude/`, stop and resolve them with the operator before live deploy.
-11. Project the active Claude assets into `.claude/`:
+11. If the preflight reports target collisions or Delamain name conflicts under `.claude/`, stop and resolve them with the operator before live deploy.
+12. Project the active Claude assets into `.claude/`:
 
 ```bash
 bun ${CLAUDE_PLUGIN_ROOT}/alsc/compiler/src/cli.ts deploy claude <system-root> [module-id]

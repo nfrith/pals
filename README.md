@@ -55,18 +55,26 @@ claude plugin install als@als-marketplace
 4. Go to the **Discover** tab, select **als**, press `Space` to toggle, then `i` to install
 5. Run `/reload-plugins` to activate
 
-Once installed, ALS skills (`/new`, `/validate`, `/change`, `/deploy`) are available inside Claude Code sessions.
+Once installed, ALS skills (`/install`, `/new`, `/validate`, `/change`, `/migrate`) are available inside Claude Code sessions.
 
 ## How to Use
 
 The ALS plugin adds skills to Claude Code — slash commands that guide Claude through structured workflows. Type the skill name in your Claude Code session to invoke it.
 
-### `/new` — Create a system or module
+### `/install` — Bootstrap a new ALS system
 
-Describe what you want to track. ALS interviews you to understand the domain — entities, fields, relationships, lifecycle — then produces the module entrypoint and skill definitions.
+Start here in a fresh project. ALS welcomes you, checks prerequisites, acknowledges the ALS platform code, interviews for the first module, bootstraps `.als/`, validates the authored system, and deploys the Claude assets into `.claude/`.
 
 ```
-/new I need to track client projects with status, owner, and deliverables
+/install Track client projects with status, owner, and deliverables
+```
+
+### `/new` — Add another module
+
+Once the project is already ALS-aware, use `/new` to add the next module. It reuses the same domain-modeling interview and authors another module bundle inside the existing system.
+
+```
+/new I also need a people directory for client contacts and owners
 ```
 
 ### `/validate` — Check your system

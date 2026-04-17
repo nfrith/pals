@@ -12,7 +12,7 @@ End user. Uses a Claude harness (Claude Code, Cowork) on a project that happens 
 
 ### ALS Developer
 
-End user. Builds ALS systems for operators. Knows the spec. Uses `/new`, `/change`, `/migrate` to create and evolve modules. May package and distribute modules for operators to install.
+End user. Builds ALS systems for operators. Knows the spec. Uses `/install`, `/new`, `/change`, `/migrate` to create and evolve modules. May package and distribute modules for operators to install.
 
 ### ALS Architect
 
