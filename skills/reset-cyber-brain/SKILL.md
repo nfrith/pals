@@ -19,11 +19,6 @@ The brain's poll loop stays running. The next time it wakes (on new mail or rest
 ```bash
 SESSION_FILE="${CLAUDE_PLUGIN_ROOT}/../../ghost-factory/constructs/cyber-brain/session.json"
 
-# Try direct path first, fall back to search
-if [ ! -f "$SESSION_FILE" ]; then
-  SESSION_FILE="$(find ~/worktrees/main/ghost-factory/constructs/cyber-brain -name session.json -maxdepth 1 2>/dev/null | head -1)"
-fi
-
 if [ -f "$SESSION_FILE" ]; then
   # Read current state before clearing
   WAKE_COUNT=$(cat "$SESSION_FILE" 2>/dev/null | jq -r '.wakeCount // "unknown"' 2>/dev/null)
