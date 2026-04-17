@@ -4,8 +4,8 @@ This is placeholder detection. The goal is to acknowledge one explicit ALS platf
 
 Choose in this order:
 
-1. If the operator or task context explicitly says Claude Code Desktop or CDSK, acknowledge [`ALS-PLAT-CDSK`](nfrith-repos/als/CLAUDE.md).
-2. If the operator or task context explicitly says Claude Code CLI or the install is clearly shell-first, acknowledge [`ALS-PLAT-CCLI`](nfrith-repos/als/CLAUDE.md).
+1. If the operator or task context explicitly says Claude Code Desktop or CDSK, acknowledge [`ALS-PLAT-CDSK`](nfrith-repos/als/skills/docs/references/platforms.md).
+2. If the operator or task context explicitly says Claude Code CLI or the install is clearly shell-first, acknowledge [`ALS-PLAT-CCLI`](nfrith-repos/als/skills/docs/references/platforms.md).
 3. If the platform is ambiguous, use AskUserQuestion:
    - Header: `Platform`
    - Question: `Which ALS platform are you using for this install?`

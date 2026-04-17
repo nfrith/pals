@@ -37,17 +37,18 @@ Do not ask the operator to open a terminal. Use Claude tools from inside the ses
 
 Before interviewing, verify the install can succeed.
 
-1. Confirm `CLAUDE_PLUGIN_ROOT` is set:
+1. Confirm the plugin root resolves via harness substitution of `${CLAUDE_PLUGIN_ROOT}`. The harness rewrites this placeholder to an absolute path before Bash executes the command. Do not use the `${VAR:-default}` fancy form — it may not be substituted by the harness on all platforms. Use the bare form:
 
 ```bash
-if [[ -n "${CLAUDE_PLUGIN_ROOT:-}" ]]; then
-  printf 'CLAUDE_PLUGIN_ROOT=%s\n' "$CLAUDE_PLUGIN_ROOT"
+PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT}"
+if [ -d "$PLUGIN_ROOT" ] && [ -f "$PLUGIN_ROOT/alsc/compiler/src/cli.ts" ]; then
+  printf 'PLUGIN_ROOT=%s\n' "$PLUGIN_ROOT"
 else
-  echo "CLAUDE_PLUGIN_ROOT_MISSING"
+  echo "PLUGIN_ROOT_INVALID: $PLUGIN_ROOT"
 fi
 ```
 
-If `CLAUDE_PLUGIN_ROOT` is missing, stop and tell the operator ALS install cannot resolve the compiler or bundled assets without the plugin root.
+If `PLUGIN_ROOT_INVALID` is reported, the harness did not substitute `${CLAUDE_PLUGIN_ROOT}` to a valid ALS plugin path. Stop and tell the operator install cannot proceed.
 
 2. Run `which bun` to check if Bun is on PATH.
    - If not found, tell the operator: "ALS requires Bun to run the compiler. You can install it by typing `! curl -fsSL https://bun.sh/install | bash` and then restarting your shell." Do not proceed until Bun is available.
@@ -63,7 +64,7 @@ Report the successful prerequisite check before continuing.
 
 Follow `references/platform-detection.md`.
 
-- Produce one explicit platform acknowledgement using [`ALS-PLAT-CCLI`](nfrith-repos/als/CLAUDE.md) or [`ALS-PLAT-CDSK`](nfrith-repos/als/CLAUDE.md).
+- Produce one explicit platform acknowledgement using [`ALS-PLAT-CCLI`](nfrith-repos/als/skills/docs/references/platforms.md) or [`ALS-PLAT-CDSK`](nfrith-repos/als/skills/docs/references/platforms.md).
 - If the platform is ambiguous, use AskUserQuestion to confirm.
 - Do not branch behavior yet beyond acknowledgement. Call out that platform-specific install behavior is future work.
 

@@ -2,10 +2,6 @@
 # Scan delamain status for /bootup
 # Reports all delamains with their status (running or offline).
 
-# Derive plugin root from this script's own path.
-plugin_root="${0%/skills/bootup/scan.sh}"
-echo "PLUGIN_ROOT: $plugin_root"
-
 # Walk up from cwd to find system root
 sys_root="$(pwd)"
 while [[ "$sys_root" != "/" ]]; do

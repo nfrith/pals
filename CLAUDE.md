@@ -29,18 +29,9 @@ End user. Present with all of the above. Enables each profile to do whatever the
 
 ## Platform Support
 
-We are building ALS to be supported on Claude platforms — Claude Code CLI, Claude Cowork, Claude Code Desktop, Claude Code Web, and others. We want to support all of these frames.
+ALS targets multiple Claude platforms (Claude Code CLI, Claude Cowork, Claude Code Desktop, Claude Code Web). The full matrix — codes, runtime entrypoint values, and current support status — lives in [`platforms.md`](skills/docs/references/platforms.md).
 
-> \* The goal is to DESIGN/BRAINSTORM as if we were assuming support for every platform, but when implementation hits reality, we go by implementation. The support matrix below reflects the current implementation state.
-
-| Code | Platform | Status |
-|------|----------|--------|
-| `ALS-PLAT-CCLI` | Claude Code CLI | Supported |
-| `ALS-PLAT-CCWK` | Claude Cowork | Planned |
-| `ALS-PLAT-CDSK` | Claude Code Desktop | Planned |
-| `ALS-PLAT-CWEB` | Claude Code Web | Planned |
-
-> \*\* When referencing a platform anywhere in the codebase, use the CODE column with a formal markdown link back to this file: [`ALS-PLAT-XXXX`](nfrith-repos/als/CLAUDE.md). Never use bare platform codes without a link.
+When referencing a platform anywhere in the codebase, use its `ALS-PLAT-XXXX` code with a formal markdown link back to that reference file. Never use bare platform codes without a link.
 
 ## Current Focus
 

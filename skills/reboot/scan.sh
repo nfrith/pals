@@ -2,12 +2,6 @@
 # Fast scan: find offline delamains for /reboot
 # Outputs only what's needed — no config, no formatting frills
 
-# Derive plugin root from this script's own path.
-# This script is invoked via <bash>bash ${CLAUDE_PLUGIN_ROOT}/skills/reboot/scan.sh</bash>
-# so $0 resolves to the full substituted path at skill load time.
-plugin_root="${0%/skills/reboot/scan.sh}"
-echo "PLUGIN_ROOT: $plugin_root"
-
 sys_root="$(pwd)"
 while [[ "$sys_root" != "/" ]]; do
     [[ -f "$sys_root/.als/system.ts" ]] && break
