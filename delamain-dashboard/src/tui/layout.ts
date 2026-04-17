@@ -24,6 +24,21 @@ export function compactText(value: string, width: number): string {
   return `${value.slice(0, width - 1)}…`;
 }
 
+export function fitLine(value: string, width: number): string {
+  return compactText(value.replace(/\s+/gu, " ").trim(), Math.max(1, width));
+}
+
+export function detailContentWidth(viewport: ViewportSize): number {
+  return Math.max(16, viewport.width - 4);
+}
+
+export function overviewCardContentWidth(viewport: ViewportSize, layoutMode: LayoutMode): number {
+  const cardWidth = layoutMode === "wide"
+    ? Math.floor((viewport.width - 1) / 2)
+    : viewport.width;
+  return Math.max(16, cardWidth - 4);
+}
+
 export function renderSeparator(width: number): string {
   return "─".repeat(Math.max(12, width));
 }

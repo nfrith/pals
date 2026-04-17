@@ -5,7 +5,7 @@ import {
   type CliRenderer,
 } from "@opentui/core";
 import type { DispatcherViewModel } from "../view-model.ts";
-import type { LayoutMode } from "./layout.ts";
+import { detailContentWidth, fitLine, type LayoutMode, type ViewportSize } from "./layout.ts";
 import { TUI_THEME } from "./theme.ts";
 
 export interface DetailRenderResult {
@@ -17,14 +17,16 @@ export function mountDetailView(
   parent: BoxRenderable,
   dispatcher: DispatcherViewModel,
   layoutMode: LayoutMode,
+  viewport: ViewportSize,
   selectedItemIndex: number,
 ): DetailRenderResult {
+  const lineWidth = detailContentWidth(viewport);
   const root = new BoxRenderable(renderer, {
     backgroundColor: TUI_THEME.background,
     columnGap: 1,
     flexDirection: "column",
     flexGrow: 1,
-    rowGap: 1,
+    rowGap: 0,
     width: "100%",
   });
   parent.add(root);
@@ -34,14 +36,15 @@ export function mountDetailView(
       dispatcher.moduleLine,
       `HB ${dispatcher.heartbeat.ageLabel} • ${dispatcher.spend.line}`,
       dispatcher.recentHistory.length > 0 ? `Recent ${dispatcher.recentHistory[0]!.compactLine}` : "Recent n/a",
-    ]));
-    root.add(buildInfoBox(renderer, "Pipeline", dispatcher.pipeline.verticalLines.slice(0, 4)));
+    ], lineWidth));
+    root.add(buildInfoBox(renderer, "Pipeline", dispatcher.pipeline.verticalLines.slice(0, 4), lineWidth));
     root.add(buildInfoBox(
       renderer,
       "Active",
       dispatcher.activeDispatches.length > 0
         ? [dispatcher.activeDispatches[0]!.summaryLine]
         : ["Idle • no active dispatch inferred"],
+      lineWidth,
     ));
   } else {
     root.add(buildInfoBox(renderer, "Meta", [
@@ -49,7 +52,7 @@ export function mountDetailView(
       `Mount ${dispatcher.module.moduleMountPath ?? "unknown"} • v${dispatcher.module.moduleVersion ?? "?"}`,
       `HB ${dispatcher.heartbeat.ageLabel} • poll ${dispatcher.heartbeat.pollLabel}`,
       dispatcher.spend.line,
-    ]));
+    ], lineWidth));
 
     root.add(buildInfoBox(
       renderer,
@@ -57,12 +60,14 @@ export function mountDetailView(
       dispatcher.recentHistory.length > 0
         ? dispatcher.recentHistory.slice(0, 3).map((entry) => entry.summaryLine)
         : ["No recent runs"],
+      lineWidth,
     ));
 
     root.add(buildInfoBox(
       renderer,
       "Pipeline",
       [dispatcher.pipeline.horizontalLine],
+      lineWidth,
     ));
 
     root.add(buildInfoBox(
@@ -71,6 +76,7 @@ export function mountDetailView(
       dispatcher.activeDispatches.length > 0
         ? dispatcher.activeDispatches.map((entry) => entry.summaryLine)
         : ["Idle • no active dispatch inferred"],
+      lineWidth,
     ));
   }
 
@@ -114,6 +120,7 @@ function buildInfoBox(
   renderer: CliRenderer,
   title: string,
   lines: string[],
+  lineWidth: number,
   width: number | `${number}%` | "auto" = "100%",
 ): BoxRenderable {
   const box = new BoxRenderable(renderer, {
@@ -121,8 +128,9 @@ function buildInfoBox(
     border: true,
     borderColor: TUI_THEME.border,
     flexDirection: "column",
-    minHeight: Math.max(4, lines.length + 4),
-    padding: 1,
+    minHeight: Math.max(3, lines.length + 2),
+    paddingLeft: 1,
+    paddingRight: 1,
     rowGap: 0,
     title,
     width,
@@ -130,11 +138,11 @@ function buildInfoBox(
 
   for (const line of lines) {
     box.add(new TextRenderable(renderer, {
-      content: line,
+      content: fitLine(line, lineWidth),
       fg: TUI_THEME.text,
       height: 1,
       width: "100%",
-      wrapMode: "word",
+      wrapMode: "none",
     }));
   }
 

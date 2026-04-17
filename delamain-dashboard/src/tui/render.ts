@@ -6,7 +6,7 @@ import {
 } from "@opentui/core";
 import type { DashboardViewModel, DispatcherViewModel } from "../view-model.ts";
 import { mountDetailView } from "./detail.ts";
-import { clearChildren, renderSeparator, resolveLayoutMode, viewportOf, type LayoutMode } from "./layout.ts";
+import { clearChildren, fitLine, renderSeparator, resolveLayoutMode, viewportOf, type LayoutMode } from "./layout.ts";
 import { mountOverviewView } from "./overview.ts";
 import { TUI_THEME } from "./theme.ts";
 
@@ -47,7 +47,7 @@ export function renderDashboardTuiScene(
   const effectiveViewMode = sceneState.viewMode === "detail" && selectedDispatcher ? "detail" : "overview";
 
   root.add(new TextRenderable(renderer, {
-    content: buildHeader(view, selectedDispatcher, effectiveViewMode),
+    content: buildHeader(view, selectedDispatcher, effectiveViewMode, viewport.width),
     fg: TUI_THEME.accent,
     height: 1,
     width: "100%",
@@ -55,7 +55,7 @@ export function renderDashboardTuiScene(
   }));
 
   root.add(new TextRenderable(renderer, {
-    content: buildSubheader(view, selectedDispatcher, effectiveViewMode, sceneState.errorMessage, layoutMode),
+    content: buildSubheader(view, selectedDispatcher, effectiveViewMode, sceneState.errorMessage, layoutMode, viewport.width),
     fg: TUI_THEME.muted,
     height: 1,
     width: "100%",
@@ -88,13 +88,14 @@ export function renderDashboardTuiScene(
       wrapMode: "word",
     }));
   } else if (effectiveViewMode === "overview") {
-    mountOverviewView(renderer, contentHost, view, layoutMode, sceneState.selectedDispatcherIndex);
+    mountOverviewView(renderer, contentHost, view, layoutMode, viewport, sceneState.selectedDispatcherIndex);
   } else if (selectedDispatcher) {
     detailList = mountDetailView(
       renderer,
       contentHost,
       selectedDispatcher,
       layoutMode,
+      viewport,
       sceneState.detailItemIndex,
     ).itemList;
   }
@@ -108,11 +109,11 @@ export function renderDashboardTuiScene(
   }));
 
   root.add(new TextRenderable(renderer, {
-    content: buildFooter(effectiveViewMode, sceneState.serviceUrl, layoutMode),
+    content: buildFooter(effectiveViewMode, sceneState.serviceUrl, layoutMode, viewport.width),
     fg: TUI_THEME.muted,
     height: 1,
     width: "100%",
-    wrapMode: "word",
+    wrapMode: "none",
   }));
 
   return {
@@ -121,29 +122,35 @@ export function renderDashboardTuiScene(
   };
 }
 
-function buildFooter(viewMode: DashboardTuiViewMode, serviceUrl: string, layoutMode: LayoutMode): string {
+function buildFooter(
+  viewMode: DashboardTuiViewMode,
+  serviceUrl: string,
+  layoutMode: LayoutMode,
+  viewportWidth: number,
+): string {
   const suffix = layoutMode === "compact" ? "" : ` • ${serviceUrl}`;
   if (viewMode === "detail") {
-    return `j/k items • Esc back • r refresh • q quit${suffix}`;
+    return fitLine(`j/k items • Esc back • r refresh • q quit${suffix}`, viewportWidth);
   }
 
-  return `j/k move • Enter detail • r refresh • q quit${suffix}`;
+  return fitLine(`j/k move • Enter detail • r refresh • q quit${suffix}`, viewportWidth);
 }
 
 function buildHeader(
   view: DashboardViewModel | null,
   dispatcher: DispatcherViewModel | null,
   viewMode: DashboardTuiViewMode,
+  viewportWidth: number,
 ): string {
   if (!view) {
-    return "Delamain Dashboard";
+    return fitLine("Delamain Dashboard", viewportWidth);
   }
 
   if (viewMode === "detail" && dispatcher) {
-    return `Delamain Dashboard • ${dispatcher.name}`;
+    return fitLine(`Delamain Dashboard • ${dispatcher.name}`, viewportWidth);
   }
 
-  return `Delamain Dashboard • overview • ${view.dispatcherCount} dispatchers`;
+  return fitLine(`Delamain Dashboard • overview • ${view.dispatcherCount} dispatchers`, viewportWidth);
 }
 
 function buildSubheader(
@@ -152,9 +159,10 @@ function buildSubheader(
   viewMode: DashboardTuiViewMode,
   errorMessage: string | null,
   layoutMode: LayoutMode,
+  viewportWidth: number,
 ): string {
   if (!view) {
-    return errorMessage ?? "Waiting for snapshot";
+    return fitLine(errorMessage ?? "Waiting for snapshot", viewportWidth);
   }
 
   const base = viewMode === "detail" && dispatcher
@@ -165,5 +173,5 @@ function buildSubheader(
       ? `${view.summary.stateSummaryLine} • ${view.summary.totalSpendLabel}`
       : `${view.summary.stateSummaryLine} • spend ${view.summary.totalSpendLabel} • ${view.summary.activeDispatchCount} active • updated ${view.generatedAtLabel}`;
 
-  return errorMessage ? `${base} • ERR ${errorMessage}` : base;
+  return fitLine(errorMessage ? `${base} • ERR ${errorMessage}` : base, viewportWidth);
 }

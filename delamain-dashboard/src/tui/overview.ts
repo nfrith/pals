@@ -1,7 +1,6 @@
 import { BoxRenderable, ScrollBoxRenderable, TextRenderable, bold, fg, t, type CliRenderer } from "@opentui/core";
 import type { DashboardViewModel, DispatcherViewModel } from "../view-model.ts";
-import { compactText } from "./layout.ts";
-import type { LayoutMode } from "./layout.ts";
+import { fitLine, overviewCardContentWidth, type LayoutMode, type ViewportSize } from "./layout.ts";
 import { TUI_THEME, badgeText, stateBorderColor, stateColor } from "./theme.ts";
 
 export interface OverviewRenderResult {
@@ -14,8 +13,10 @@ export function mountOverviewView(
   parent: BoxRenderable,
   view: DashboardViewModel,
   layoutMode: LayoutMode,
+  viewport: ViewportSize,
   selectedDispatcherIndex: number,
 ): OverviewRenderResult {
+  const lineWidth = overviewCardContentWidth(viewport, layoutMode);
   const scrollBox = new ScrollBoxRenderable(renderer, {
     flexGrow: 1,
     height: "100%",
@@ -33,13 +34,13 @@ export function mountOverviewView(
         columnGap: 1,
         flexDirection: "row",
         flexWrap: "wrap",
-        rowGap: 1,
+        rowGap: 0,
         width: "100%",
       }
       : {
         backgroundColor: TUI_THEME.background,
         flexDirection: "column",
-        rowGap: 1,
+        rowGap: 0,
         width: "100%",
       },
   });
@@ -64,43 +65,49 @@ export function mountOverviewView(
       border: true,
       borderColor: selected ? TUI_THEME.accent : stateBorderColor(dispatcher.state),
       flexDirection: "column",
-      minHeight: layoutMode === "compact" ? 6 : 7,
-      padding: 1,
+      minHeight: 7,
+      paddingLeft: 1,
+      paddingRight: 1,
       width: layoutMode === "wide" ? "49%" : "100%",
     });
     scrollBox.content.add(card);
 
     card.add(new TextRenderable(renderer, {
-      content: buildTitleLine(dispatcher, selected),
+      content: buildTitleLine(dispatcher, selected, lineWidth),
       fg: TUI_THEME.text,
+      height: 1,
       width: "100%",
-      wrapMode: "word",
+      wrapMode: "none",
     }));
     card.add(new TextRenderable(renderer, {
-      content: buildMetaLine(dispatcher, layoutMode),
+      content: buildMetaLine(dispatcher, layoutMode, lineWidth),
       fg: TUI_THEME.muted,
+      height: 1,
       width: "100%",
-      wrapMode: "word",
+      wrapMode: "none",
     }));
     card.add(new TextRenderable(renderer, {
-      content: buildQueueLine(dispatcher, layoutMode),
+      content: buildQueueLine(dispatcher, layoutMode, lineWidth),
       fg: TUI_THEME.text,
+      height: 1,
       width: "100%",
-      wrapMode: "word",
+      wrapMode: "none",
     }));
     card.add(new TextRenderable(renderer, {
       content: dispatcher.activeDispatches.length > 0
-        ? buildActiveLine(dispatcher, layoutMode)
-        : buildPipelineLine(dispatcher, layoutMode),
+        ? buildActiveLine(dispatcher, layoutMode, lineWidth)
+        : buildPipelineLine(dispatcher, layoutMode, lineWidth),
       fg: dispatcher.activeDispatches.length > 0 ? TUI_THEME.live : TUI_THEME.text,
+      height: 1,
       width: "100%",
-      wrapMode: "word",
+      wrapMode: "none",
     }));
     card.add(new TextRenderable(renderer, {
-      content: buildSpendLine(dispatcher, layoutMode),
+      content: buildSpendLine(dispatcher, layoutMode, lineWidth),
       fg: TUI_THEME.muted,
+      height: 1,
       width: "100%",
-      wrapMode: "word",
+      wrapMode: "none",
     }));
   });
 
@@ -114,42 +121,41 @@ export function mountOverviewView(
   };
 }
 
-function buildActiveLine(dispatcher: DispatcherViewModel, layoutMode: LayoutMode): string {
+function buildActiveLine(dispatcher: DispatcherViewModel, layoutMode: LayoutMode, lineWidth: number): string {
   if (layoutMode === "compact") {
-    return dispatcher.activeDispatches[0]?.compactLine ?? dispatcher.activeLine;
+    return fitLine(dispatcher.activeDispatches[0]?.compactLine ?? dispatcher.activeLine, lineWidth);
   }
 
-  return dispatcher.activeLine;
+  return fitLine(dispatcher.activeLine, lineWidth);
 }
 
-function buildMetaLine(dispatcher: DispatcherViewModel, layoutMode: LayoutMode): string {
+function buildMetaLine(dispatcher: DispatcherViewModel, layoutMode: LayoutMode, lineWidth: number): string {
   if (layoutMode === "compact") {
-    return compactText(`${dispatcher.module.moduleId ?? "module?"} • ${dispatcher.heartbeat.ageLabel} hb`, 40);
+    return fitLine(`${dispatcher.module.moduleId ?? "module?"} • ${dispatcher.heartbeat.ageLabel} hb`, lineWidth);
   }
 
-  return `${dispatcher.module.moduleId ?? "module?"} • ${dispatcher.heartbeat.tickLine}`;
+  return fitLine(`${dispatcher.module.moduleId ?? "module?"} • ${dispatcher.heartbeat.tickLine}`, lineWidth);
 }
 
-function buildPipelineLine(dispatcher: DispatcherViewModel, layoutMode: LayoutMode): string {
-  return layoutMode === "compact" ? dispatcher.pipelineCompactLine : dispatcher.pipelineLine;
+function buildPipelineLine(dispatcher: DispatcherViewModel, layoutMode: LayoutMode, lineWidth: number): string {
+  return fitLine(layoutMode === "compact" ? dispatcher.pipelineCompactLine : dispatcher.pipelineLine, lineWidth);
 }
 
-function buildQueueLine(dispatcher: DispatcherViewModel, layoutMode: LayoutMode): string {
+function buildQueueLine(dispatcher: DispatcherViewModel, layoutMode: LayoutMode, lineWidth: number): string {
   if (layoutMode === "compact") {
-    return `${dispatcher.queue.trackedCount} tracked • ${dispatcher.queue.activeCount} active`;
+    return fitLine(`${dispatcher.queue.trackedCount} tracked • ${dispatcher.queue.activeCount} active`, lineWidth);
   }
 
-  return dispatcher.queueLine;
+  return fitLine(dispatcher.queueLine, lineWidth);
 }
 
-function buildSpendLine(dispatcher: DispatcherViewModel, layoutMode: LayoutMode): string {
-  if (layoutMode === "compact") {
-    return `${dispatcher.spend.line} • ${dispatcher.detail}`;
-  }
-
-  return `${dispatcher.spend.line} • ${dispatcher.detail}`;
+function buildSpendLine(dispatcher: DispatcherViewModel, _layoutMode: LayoutMode, lineWidth: number): string {
+  return fitLine(`${dispatcher.spend.line} • ${dispatcher.detail}`, lineWidth);
 }
 
-function buildTitleLine(dispatcher: DispatcherViewModel, selected: boolean) {
-  return t`${fg(stateColor(dispatcher.state))(bold(`[${badgeText(dispatcher.state)}]`))} ${selected ? fg(TUI_THEME.accent)(bold(dispatcher.name)) : fg(TUI_THEME.text)(bold(dispatcher.name))}`;
+function buildTitleLine(dispatcher: DispatcherViewModel, selected: boolean, lineWidth: number) {
+  const badge = `[${badgeText(dispatcher.state)}]`;
+  const nameWidth = Math.max(4, lineWidth - badge.length - 1);
+  const name = fitLine(dispatcher.name, nameWidth);
+  return t`${fg(stateColor(dispatcher.state))(bold(badge))} ${selected ? fg(TUI_THEME.accent)(bold(name)) : fg(TUI_THEME.text)(bold(name))}`;
 }

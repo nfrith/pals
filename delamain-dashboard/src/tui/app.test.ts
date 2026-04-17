@@ -83,3 +83,66 @@ test("scene renderer builds overview and detail frames from the design fixture",
     renderer.destroy();
   }
 });
+
+test("scene renderer truncates long overview and detail lines instead of wrapping them", async () => {
+  const snapshot = createDesignDashboardSnapshot();
+  snapshot.dispatchers[1] = {
+    ...snapshot.dispatchers[1]!,
+    detail: "Dispatcher is idle with an intentionally long operator-facing summary that must be truncated cleanly in the card renderer",
+    moduleId: "ghost-factory-super-long-module-name",
+  };
+  const dispatcher = snapshot.dispatchers[0]!;
+  snapshot.dispatchers[0] = {
+    ...dispatcher,
+    moduleMountPath: "workspace/factory/jobs/with/a/very/long/mount/path/that/should/not-wrap",
+    phaseOrder: ["draft", "research", "planning", "implementation", "deployment", "verification", "closed"],
+    states: {
+      drafted: { actor: "agent", phase: "draft", initial: true, terminal: false },
+      research: { actor: "agent", phase: "research", initial: false, terminal: false },
+      planning: { actor: "agent", phase: "planning", initial: false, terminal: false },
+      "in-dev": { actor: "agent", phase: "implementation", initial: false, terminal: false },
+      "in-review": { actor: "agent", phase: "verification", initial: false, terminal: false },
+      uat: { actor: "operator", phase: "deployment", initial: false, terminal: false },
+      completed: { actor: null, phase: "closed", initial: false, terminal: true },
+    },
+  };
+
+  const view = buildDashboardViewModel(snapshot);
+  const { renderer, renderOnce, captureCharFrame } = await createTestRenderer({
+    width: 72,
+    height: 32,
+  });
+
+  try {
+    renderDashboardTuiScene(renderer, view, {
+      detailItemIndex: 0,
+      errorMessage: null,
+      selectedDispatcherIndex: 1,
+      serviceUrl: "http://127.0.0.1:4646",
+      viewMode: "overview",
+    });
+    renderer.requestRender();
+    await renderOnce();
+
+    const overviewFrame = captureCharFrame();
+    expect(overviewFrame).toContain("Dispatcher is idle with an intentiona…");
+    expect(overviewFrame).not.toContain("must be truncated cleanly in the card renderer");
+
+    renderDashboardTuiScene(renderer, view, {
+      detailItemIndex: 0,
+      errorMessage: null,
+      selectedDispatcherIndex: 0,
+      serviceUrl: "http://127.0.0.1:4646",
+      viewMode: "detail",
+    });
+    renderer.requestRender();
+    await renderOnce();
+
+    const detailFrame = captureCharFrame();
+    expect(detailFrame).toContain("workspace/factory/jobs/with/a/very/long/mount/path/that/shoul…");
+    expect(detailFrame).toContain("draft(3) → research(1) → planning(0) → implementation(1) → deployme…");
+    expect(detailFrame).not.toContain("verification");
+  } finally {
+    renderer.destroy();
+  }
+});
