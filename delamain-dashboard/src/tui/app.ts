@@ -1,12 +1,14 @@
 import {
-  BoxRenderable,
-  TextRenderable,
+  CliRenderEvents,
+  SelectRenderableEvents,
   createCliRenderer,
   type CliRenderer,
 } from "@opentui/core";
 import type { DashboardSnapshot } from "../feed/types.ts";
-import { renderTuiDocument } from "./document.ts";
+import { buildDashboardViewModel } from "../view-model.ts";
+import { clampIndex } from "./layout.ts";
 import { configureOpenTui } from "./open-tui.ts";
+import { renderDashboardTuiScene, type DashboardTuiSceneState, type DashboardTuiViewMode } from "./render.ts";
 
 export interface TuiOptions {
   serviceUrl: string;
@@ -15,14 +17,28 @@ export interface TuiOptions {
   exitAfterMs?: number | null;
 }
 
+export interface DashboardTuiState {
+  detailItemIndex: number;
+  selectedDispatcherIndex: number;
+  viewMode: DashboardTuiViewMode;
+}
+
+export type DashboardTuiCommand = "noop" | "quit" | "refresh" | "render";
+
+export interface DashboardTuiInputResult {
+  command: DashboardTuiCommand;
+  handled: boolean;
+  state: DashboardTuiState;
+}
+
 export async function runDashboardTui(options: TuiOptions): Promise<void> {
   await configureOpenTui();
 
   const app = new DashboardTuiApp({
-    serviceUrl: options.serviceUrl,
+    exitAfterMs: options.exitAfterMs ?? null,
     refreshMs: options.refreshMs ?? 1000,
     screenMode: options.screenMode ?? "alternate",
-    exitAfterMs: options.exitAfterMs ?? null,
+    serviceUrl: options.serviceUrl,
   });
 
   try {
@@ -32,16 +48,107 @@ export async function runDashboardTui(options: TuiOptions): Promise<void> {
   }
 }
 
+export function reduceDashboardTuiState(
+  state: DashboardTuiState,
+  sequence: string,
+  dispatcherCount: number,
+): DashboardTuiInputResult {
+  if (sequence === "q") {
+    return { command: "quit", handled: true, state };
+  }
+
+  if (sequence === "r") {
+    return { command: "refresh", handled: true, state };
+  }
+
+  if (state.viewMode === "overview") {
+    if (sequence === "j") {
+      return {
+        command: "render",
+        handled: true,
+        state: {
+          ...state,
+          selectedDispatcherIndex: clampIndex(state.selectedDispatcherIndex + 1, dispatcherCount),
+        },
+      };
+    }
+
+    if (sequence === "k") {
+      return {
+        command: "render",
+        handled: true,
+        state: {
+          ...state,
+          selectedDispatcherIndex: clampIndex(state.selectedDispatcherIndex - 1, dispatcherCount),
+        },
+      };
+    }
+
+    if (sequence === "g") {
+      return {
+        command: "render",
+        handled: true,
+        state: {
+          ...state,
+          selectedDispatcherIndex: 0,
+        },
+      };
+    }
+
+    if (sequence === "G") {
+      return {
+        command: "render",
+        handled: true,
+        state: {
+          ...state,
+          selectedDispatcherIndex: clampIndex(dispatcherCount - 1, dispatcherCount),
+        },
+      };
+    }
+
+    if ((sequence === "\r" || sequence === "\n") && dispatcherCount > 0) {
+      return {
+        command: "render",
+        handled: true,
+        state: {
+          ...state,
+          detailItemIndex: 0,
+          viewMode: "detail",
+        },
+      };
+    }
+
+    return { command: "noop", handled: false, state };
+  }
+
+  if (sequence === "\u001b") {
+    return {
+      command: "render",
+      handled: true,
+      state: {
+        ...state,
+        viewMode: "overview",
+      },
+    };
+  }
+
+  return { command: "noop", handled: false, state };
+}
+
 class DashboardTuiApp {
   readonly #options: Required<TuiOptions>;
   #renderer: CliRenderer | null = null;
-  #header!: TextRenderable;
-  #separator!: TextRenderable;
-  #body!: TextRenderable;
-  #footer!: TextRenderable;
   #resolveRun: (() => void) | null = null;
   #pollTimer: ReturnType<typeof setInterval> | null = null;
   #exitTimer: ReturnType<typeof setTimeout> | null = null;
+  #latestSnapshot: DashboardSnapshot | null = null;
+  #lastError: string | null = null;
+  #detailSelectionListenerBoundToId: string | null = null;
+  #state: DashboardTuiState = {
+    detailItemIndex: 0,
+    selectedDispatcherIndex: 0,
+    viewMode: "overview",
+  };
   #stopped = false;
 
   constructor(options: Required<TuiOptions>) {
@@ -63,7 +170,10 @@ class DashboardTuiApp {
       useMouse: false,
     });
 
-    this.#buildLayout(this.#renderer);
+    this.#renderer.on(CliRenderEvents.RESIZE, () => {
+      this.#render();
+    });
+
     await this.#refresh();
 
     this.#pollTimer = setInterval(() => {
@@ -90,85 +200,95 @@ class DashboardTuiApp {
     this.#renderer = null;
   }
 
-  #buildLayout(renderer: CliRenderer): void {
-    const root = new BoxRenderable(renderer, {
-      backgroundColor: "#081117",
-      flexDirection: "column",
-      width: "100%",
-      height: "100%",
-    });
-    renderer.root.add(root);
-
-    this.#header = new TextRenderable(renderer, {
-      content: "Delamain Dashboard",
-      fg: "#f7b267",
-      width: "100%",
-      wrapMode: "none",
-    });
-    root.add(this.#header);
-
-    this.#separator = new TextRenderable(renderer, {
-      content: "──────────────────────────────────────────────────────────────────────────────",
-      fg: "#9db3aa",
-      width: "100%",
-      wrapMode: "none",
-    });
-    root.add(this.#separator);
-
-    this.#body = new TextRenderable(renderer, {
-      content: "Loading…",
-      fg: "#eef7f2",
-      width: "100%",
-      wrapMode: "word",
-    });
-    root.add(this.#body);
-
-    this.#footer = new TextRenderable(renderer, {
-      content: "",
-      fg: "#9db3aa",
-      width: "100%",
-      wrapMode: "none",
-    });
-    root.add(this.#footer);
-  }
-
   async #refresh(): Promise<void> {
-    let renderer = this.#getRenderer();
-    if (!renderer) return;
-
     try {
       const snapshot = await fetchSnapshot(this.#options.serviceUrl);
-      renderer = this.#getRenderer();
-      if (!renderer) return;
-      this.#render(snapshot, renderer);
+      this.#latestSnapshot = snapshot;
+      this.#lastError = null;
+      this.#state.selectedDispatcherIndex = clampIndex(
+        this.#state.selectedDispatcherIndex,
+        snapshot.dispatchers.length,
+      );
+      if (snapshot.dispatchers.length === 0) {
+        this.#state.viewMode = "overview";
+      }
+      this.#render();
     } catch (error) {
-      renderer = this.#getRenderer();
-      if (!renderer) return;
-      this.#body.content = `Dashboard fetch failed\n\n${formatError(error)}`;
-      this.#footer.content = `q quit • r retry • ${this.#options.serviceUrl}`;
-      renderer.requestRender();
+      this.#lastError = formatError(error);
+      this.#render();
     }
   }
 
-  #render(snapshot: DashboardSnapshot, renderer: CliRenderer): void {
-    this.#header.content = `Delamain Dashboard • ${snapshot.dispatcherCount} dispatchers`;
-    this.#body.content = renderTuiDocument(snapshot);
-    this.#footer.content = `q quit • r refresh • ${this.#options.serviceUrl}`;
-    renderer.requestRender();
-  }
-
   #handleInput(sequence: string): boolean {
-    if (sequence === "q") {
+    const dispatcherCount = this.#latestSnapshot?.dispatchers.length ?? 0;
+    const next = reduceDashboardTuiState(this.#state, sequence, dispatcherCount);
+    if (!next.handled) {
+      return false;
+    }
+
+    this.#state = next.state;
+
+    if (next.command === "quit") {
       this.#requestStop();
       return true;
     }
 
-    if (sequence === "r") {
+    if (next.command === "refresh") {
       void this.#refresh();
       return true;
     }
 
-    return false;
+    if (next.command === "render") {
+      this.#render();
+    }
+
+    return true;
+  }
+
+  #render(): void {
+    const renderer = this.#getRenderer();
+    if (!renderer) return;
+
+    const view = this.#latestSnapshot ? buildDashboardViewModel(this.#latestSnapshot) : null;
+    this.#state.selectedDispatcherIndex = clampIndex(
+      this.#state.selectedDispatcherIndex,
+      view?.dispatchers.length ?? 0,
+    );
+
+    const sceneState: DashboardTuiSceneState = {
+      detailItemIndex: this.#state.detailItemIndex,
+      errorMessage: this.#lastError,
+      selectedDispatcherIndex: this.#state.selectedDispatcherIndex,
+      serviceUrl: this.#options.serviceUrl,
+      viewMode: this.#state.viewMode,
+    };
+    const result = renderDashboardTuiScene(renderer, view, sceneState);
+
+    if (result.detailList) {
+      this.#bindDetailList(result.detailList);
+      process.nextTick(() => {
+        result.detailList?.focus();
+      });
+    } else {
+      this.#detailSelectionListenerBoundToId = null;
+      this.#state.detailItemIndex = 0;
+    }
+
+    renderer.requestRender();
+  }
+
+  #bindDetailList(detailList: { id: string; getSelectedIndex(): number; options: unknown[]; on: (event: string, listener: () => void) => void; setSelectedIndex(index: number): void }): void {
+    this.#state.detailItemIndex = clampIndex(this.#state.detailItemIndex, detailList.options.length);
+    detailList.setSelectedIndex(this.#state.detailItemIndex);
+
+    if (this.#detailSelectionListenerBoundToId === detailList.id) {
+      return;
+    }
+
+    this.#detailSelectionListenerBoundToId = detailList.id;
+    detailList.on(SelectRenderableEvents.SELECTION_CHANGED, () => {
+      this.#state.detailItemIndex = detailList.getSelectedIndex();
+    });
   }
 
   #requestStop(): void {

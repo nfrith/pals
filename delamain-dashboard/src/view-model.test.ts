@@ -1,34 +1,95 @@
 import { expect, test } from "bun:test";
-import { createDashboardFixture } from "./test-fixtures.ts";
-import { collectSystemSnapshot } from "./feed/collector.ts";
-import { renderDispatcherCardsHtml } from "./server/html.ts";
-import { buildDashboardViewModel } from "./view-model.ts";
-import { renderTuiDocument } from "./tui/document.ts";
+import { createDesignDashboardSnapshot } from "./test-fixtures.ts";
+import {
+  buildDashboardViewModel,
+  buildDispatcherViewModel,
+  buildRecentHistory,
+  compactPhaseLabel,
+  inferActiveDispatches,
+} from "./view-model.ts";
 
-test("web and tui views are derived from the same dispatcher summary lines", async () => {
-  const fixture = await createDashboardFixture("view-model");
+test("dashboard view model derives pipeline, active dispatch, and spend summaries", () => {
+  const snapshot = createDesignDashboardSnapshot();
+  const view = buildDashboardViewModel(snapshot);
+  const liveDispatcher = view.dispatchers.find((dispatcher) => dispatcher.name === "als-factory-jobs");
 
-  try {
-    await fixture.appendFailure("ALS-002", "Shared failure message");
-    const snapshot = await collectSystemSnapshot({
-      systemRoot: fixture.root,
-      telemetryLimit: 10,
-    });
+  expect(view.summary.totalSpendUsd).toBeCloseTo(1.20, 2);
+  expect(view.summary.activeDispatchCount).toBe(1);
+  expect(view.summary.stateSummaryLine).toContain("LIVE 1");
+  expect(view.summary.stateSummaryLine).toContain("ERROR 1");
 
-    const view = buildDashboardViewModel(snapshot);
-    const card = view.dispatchers[0]!;
-    const html = renderDispatcherCardsHtml(view);
-    const tui = renderTuiDocument(snapshot);
+  expect(liveDispatcher).toBeDefined();
+  expect(liveDispatcher?.activeDispatches).toHaveLength(1);
+  expect(liveDispatcher?.activeDispatches[0]?.itemId).toBe("ALS-006");
+  expect(liveDispatcher?.activeDispatches[0]?.summaryLine).toContain("cost pending");
+  expect(liveDispatcher?.pipeline.bottleneckPhase).toBe("draft");
+  expect(liveDispatcher?.pipeline.horizontalLine).toContain("draft(3)");
+  expect(liveDispatcher?.pipeline.compactLine).toContain("dft(3)");
+  expect(liveDispatcher?.spend.sessionUsd).toBeCloseTo(0.55, 2);
+  expect(liveDispatcher?.itemGroups.map((group) => group.state)).toEqual([
+    "drafted",
+    "research",
+    "in-dev",
+    "uat",
+    "completed",
+  ]);
+});
 
-    expect(html).toContain(card.name);
-    expect(tui).toContain(card.name);
-    expect(html).toContain(card.countsLine);
-    expect(tui).toContain(card.countsLine);
-    expect(html).toContain(card.recentLine);
-    expect(tui).toContain(card.recentLine);
-    expect(html).toContain(card.errorLine!);
-    expect(tui).toContain(card.errorLine!);
-  } finally {
-    await fixture.cleanup();
-  }
+test("inferActiveDispatches leaves only unmatched start events", () => {
+  const snapshot = createDesignDashboardSnapshot();
+  const dispatcher = snapshot.dispatchers[0]!;
+  const active = inferActiveDispatches(dispatcher, new Date(snapshot.generatedAt));
+
+  expect(active).toHaveLength(1);
+  expect(active[0]?.itemId).toBe("ALS-006");
+  expect(active[0]?.phase).toBe("research");
+  expect(active[0]?.elapsedMs).toBe(45_000);
+});
+
+test("recent history is truncated to the most recent five terminal events", () => {
+  const snapshot = createDesignDashboardSnapshot();
+  const dispatcher = {
+    ...snapshot.dispatchers[1]!,
+    recentEvents: Array.from({ length: 7 }, (_, index) => ({
+      schema: "als-delamain-telemetry-event@1" as const,
+      event_id: `evt-${index}`,
+      event_type: "dispatch_finish" as const,
+      timestamp: `2026-04-17T10:${String(index).padStart(2, "0")}:00.000Z`,
+      dispatcher_name: "ghost-factory-jobs",
+      module_id: "ghost-factory",
+      item_id: `GHOST-${100 + index}`,
+      item_file: `/tmp/GHOST-${100 + index}.md`,
+      state: "in-dev",
+      agent_name: "in-dev",
+      sub_agent_name: null,
+      delegated: false,
+      resumable: false,
+      resume_requested: false,
+      session_field: null,
+      runtime_session_id: null,
+      resume_session_id: null,
+      worker_session_id: `sess-${index}`,
+      transition_targets: ["in-review"],
+      duration_ms: 1_000 + index,
+      num_turns: 3 + index,
+      cost_usd: 0.1 + index / 100,
+      error: null,
+    })),
+  };
+
+  const history = buildRecentHistory(dispatcher.recentEvents);
+
+  expect(history).toHaveLength(5);
+  expect(history[0]?.itemId).toBe("GHOST-106");
+  expect(history[4]?.itemId).toBe("GHOST-102");
+});
+
+test("dispatcher-level model keeps compact labels deterministic", () => {
+  const snapshot = createDesignDashboardSnapshot();
+  const dispatcher = buildDispatcherViewModel(snapshot.dispatchers[2]!, new Date(snapshot.generatedAt));
+
+  expect(compactPhaseLabel("planning")).toBe("pln");
+  expect(compactPhaseLabel("implementation")).toBe("impl");
+  expect(dispatcher.pipeline.verticalLines[0]).toContain("dft");
+  expect(dispatcher.recentLine).toBe("Legacy dispatcher — recent history unavailable");
 });

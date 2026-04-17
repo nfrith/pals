@@ -4,6 +4,8 @@
   "type": "module",
   "module": "src/index.ts",
   "scripts": {
+    "smoke:design": "bun run src/smoke-design.ts",
+    "smoke:design:compact": "bun run src/smoke-design.ts --compact",
     "start": "bun run src/index.ts service",
     "service": "bun run src/index.ts service",
     "tui": "bun run src/index.ts tui",
