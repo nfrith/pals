@@ -40,7 +40,9 @@ export class RepoMutationLock {
   ) {
     this.pollMs = options.pollMs ?? 250;
     this.staleMs = options.staleMs ?? 5 * 60_000;
-    this.timeoutMs = options.timeoutMs ?? 2 * 60_000;
+    // The lease wait must outlive stale detection so metadata-less crash windows
+    // can self-heal without a guaranteed timeout on the first waiter.
+    this.timeoutMs = Math.max(options.timeoutMs ?? 2 * 60_000, this.staleMs + this.pollMs);
   }
 
   async withLease<T>(

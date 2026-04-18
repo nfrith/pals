@@ -165,6 +165,22 @@ test("orphan sweeper preserves pristine records when cleanup fails", async () =>
   });
 });
 
+test("orphan sweeper prunes missing pristine worktrees and deletes their branch refs", async () => {
+  await withWorktreeSandbox("orphan-missing-worktree", async ({ runtime, bundleRoot, systemRoot, itemFile }) => {
+    const prepared = await runtime.prepareDispatch("ALS-001", itemFile, ENTRY);
+    expect(prepared).not.toBeNull();
+    await markRecordDead(bundleRoot, "ALS-001");
+    await rm(prepared!.worktreePath, { recursive: true, force: true });
+
+    expect(await runGit(systemRoot, ["branch", "--list", prepared!.branchName])).toContain(prepared!.branchName);
+
+    const summary = await runtime.sweepOrphans();
+    expect(summary.pristineOrphansPruned).toBe(1);
+    expect(await runtime.hasOpenRecord("ALS-001")).toBe(false);
+    expect(await runGit(systemRoot, ["branch", "--list", prepared!.branchName])).toBe("");
+  });
+});
+
 test("orphan sweeper prunes pristine worktrees and preserves dirty ones", async () => {
   await withWorktreeSandbox("orphan-sweep", async ({ runtime, bundleRoot, itemFile }) => {
     const pristine = await runtime.prepareDispatch("ALS-001", itemFile, ENTRY);
@@ -236,6 +252,44 @@ test("repo mutation lease sweeps stale metadata-less lock directories", async ()
     expect(summary.stale).toBe(true);
     expect(summary.metadata).toBeNull();
     expect(existsSync(lockDir)).toBe(false);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("repo mutation lease preserves fresh metadata-less lock directories", async () => {
+  const root = await mkdtemp(join(tmpdir(), "als-delamain-lock-fresh-"));
+  const systemRoot = join(root, "system");
+  await mkdir(systemRoot, { recursive: true });
+
+  const lock = new RepoMutationLock(systemRoot, { staleMs: 60_000 });
+  const lockDir = join(systemRoot, ".claude", "delamains", ".runtime", "repo-mutation.lock");
+  await mkdir(lockDir, { recursive: true });
+
+  try {
+    const summary = await lock.sweepStaleLease(new Date());
+    expect(summary.released).toBe(false);
+    expect(summary.stale).toBe(false);
+    expect(summary.metadata).toBeNull();
+    expect(existsSync(lockDir)).toBe(true);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("repo mutation lease timeout always outlives stale detection", async () => {
+  const root = await mkdtemp(join(tmpdir(), "als-delamain-lock-timeout-"));
+  const systemRoot = join(root, "system");
+  await mkdir(systemRoot, { recursive: true });
+
+  try {
+    const lock = new RepoMutationLock(systemRoot, {
+      pollMs: 250,
+      staleMs: 5 * 60_000,
+      timeoutMs: 2 * 60_000,
+    });
+
+    expect(Reflect.get(lock as object, "timeoutMs")).toBe(5 * 60_000 + 250);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

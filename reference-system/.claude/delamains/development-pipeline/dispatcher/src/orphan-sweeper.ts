@@ -54,30 +54,28 @@ export class OrphanSweeper {
       });
 
       if (!inspection.exists || inspection.pristine) {
-        if (inspection.exists) {
-          try {
-            await this.isolation.cleanupDispatch({
-              worktreePath: record.worktree_path,
-              branchName: record.branch_name,
-            });
-          } catch (error) {
-            const incidentMessage = error instanceof Error ? error.message : String(error);
-            console.warn(
-              `[dispatcher] orphan cleanup failed for ${record.item_id}: ${incidentMessage}`,
-            );
-            await this.registry.updateByItemId(record.item_id, (existing) => ({
-              ...existing,
-              status: "orphaned",
-              updated_at: now.toISOString(),
-              latest_error: incidentMessage,
-              incident: {
-                kind: "orphan_cleanup_failed",
-                message: `Pristine orphan cleanup failed for worktree '${existing.worktree_path ?? "<missing>"}': ${incidentMessage}`,
-                detected_at: now.toISOString(),
-              },
-            }));
-            continue;
-          }
+        try {
+          await this.isolation.cleanupDispatch({
+            worktreePath: record.worktree_path,
+            branchName: record.branch_name,
+          });
+        } catch (error) {
+          const incidentMessage = error instanceof Error ? error.message : String(error);
+          console.warn(
+            `[dispatcher] orphan cleanup failed for ${record.item_id}: ${incidentMessage}`,
+          );
+          await this.registry.updateByItemId(record.item_id, (existing) => ({
+            ...existing,
+            status: "orphaned",
+            updated_at: now.toISOString(),
+            latest_error: incidentMessage,
+            incident: {
+              kind: "orphan_cleanup_failed",
+              message: `Pristine orphan cleanup failed for worktree '${existing.worktree_path ?? "<missing>"}': ${incidentMessage}`,
+              detected_at: now.toISOString(),
+            },
+          }));
+          continue;
         }
 
         await this.registry.removeByItemId(record.item_id);

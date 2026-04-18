@@ -193,6 +193,9 @@ export class GitWorktreeIsolationStrategy {
   async cleanupDispatch(input: { worktreePath: string | null; branchName: string | null }): Promise<void> {
     if (input.worktreePath && existsSync(input.worktreePath)) {
       await runGit(this.systemRoot, ["worktree", "remove", "--force", input.worktreePath]);
+    }
+
+    if (input.worktreePath || input.branchName) {
       await runGit(this.systemRoot, ["worktree", "prune"]);
     }
 
