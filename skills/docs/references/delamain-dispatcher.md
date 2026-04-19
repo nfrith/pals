@@ -62,7 +62,7 @@ Entry point. Handles:
 - **Template version check**: reads local `dispatcher/VERSION` and canonical `${CLAUDE_PLUGIN_ROOT}/skills/new/references/dispatcher/VERSION`, logs the current/latest versions, and fails before polling when either source is missing or malformed.
 - **Startup**: calls `resolve()` once to load `runtime-manifest.json`, local `delamain.yaml`, and state-agent files, then enters the poll loop.
 - **Runtime boot**: creates one `DispatcherRuntime`, runs orphan sweep at startup, and keeps the persisted dispatch registry as the source of truth for active, blocked, orphaned, guarded, and delegated ownership.
-- **Poll loop**: scans items at a configurable interval (`POLL_MS`, default 30s). Reconciles registry records against current item status, suppresses redispatch for unresolved incidents, runs periodic orphan sweeping, and refreshes the heartbeat after dispatch completions.
+- **Poll loop**: scans items at a configurable interval (`POLL_MS`, default 30s). Reads committed `HEAD` state only, warns when a status transition exists in the checkout but not in `HEAD`, reconciles registry records against current item status, suppresses redispatch for unresolved incidents, runs periodic orphan sweeping, and refreshes the heartbeat after dispatch completions.
 - **Runtime hardening**: keeps the event loop alive with an internal keepalive server, logs tick and process lifecycle events, and ignores stray `SIGTERM` so dispatcher children do not accidentally kill the parent runtime.
 
 ### `src/preflight.ts`

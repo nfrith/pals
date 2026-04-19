@@ -52,12 +52,74 @@ export async function gitHeadCommit(cwd: string): Promise<string> {
   return runGit(cwd, ["rev-parse", "HEAD"]);
 }
 
+export async function gitRepoRoot(cwd: string): Promise<string> {
+  return runGit(cwd, ["rev-parse", "--show-toplevel"]);
+}
+
+export async function gitRepoPrefix(cwd: string): Promise<string> {
+  return runGit(cwd, ["rev-parse", "--show-prefix"]);
+}
+
 export async function gitCurrentBranch(cwd: string): Promise<string> {
   return runGit(cwd, ["rev-parse", "--abbrev-ref", "HEAD"]);
 }
 
 export async function gitStatusPorcelain(cwd: string): Promise<string> {
   return runGit(cwd, ["status", "--porcelain"]);
+}
+
+export async function gitListTrackedFilesAtHead(
+  cwd: string,
+  pathspec?: string,
+): Promise<string[]> {
+  const args = ["ls-tree", "-r", "--name-only", "HEAD"];
+  if (pathspec) {
+    args.push("--", pathspec);
+  }
+
+  const output = await runGit(cwd, args);
+  if (output.length === 0) return [];
+  return output.split("\n").filter(Boolean);
+}
+
+export async function gitChangedFilesAgainstHead(
+  cwd: string,
+  pathspec?: string,
+): Promise<string[]> {
+  const args = ["diff", "--name-only", "HEAD"];
+  if (pathspec) {
+    args.push("--", pathspec);
+  }
+
+  const output = await runGit(cwd, args);
+  if (output.length === 0) return [];
+  return output.split("\n").filter(Boolean);
+}
+
+async function readGitObject(
+  cwd: string,
+  objectSpec: string,
+): Promise<string | null> {
+  const result = await runCommand(["git", "show", objectSpec], { cwd });
+  if (result.exitCode !== 0) {
+    return null;
+  }
+
+  return result.stdout;
+}
+
+export async function readGitFileAtHead(
+  cwd: string,
+  repoRelativePath: string,
+): Promise<string | null> {
+  return readGitObject(cwd, `HEAD:${repoRelativePath}`);
+}
+
+export async function readGitFileFromIndex(
+  cwd: string,
+  repoRelativePath: string,
+): Promise<string | null> {
+  return readGitObject(cwd, `:${repoRelativePath}`);
 }
 
 export async function gitHasChanges(cwd: string, baseCommit: string): Promise<boolean> {

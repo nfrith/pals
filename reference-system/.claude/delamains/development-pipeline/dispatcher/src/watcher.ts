@@ -1,5 +1,11 @@
-import { readdir, readFile } from "fs/promises";
-import { join, relative } from "path";
+import { readFile } from "fs/promises";
+import { join, resolve } from "path";
+import {
+  gitListTrackedFilesAtHead,
+  gitRepoPrefix,
+  readGitFileAtHead,
+  readGitFileFromIndex,
+} from "./git.js";
 
 interface PathSegment {
   kind: "literal" | "placeholder";
@@ -11,6 +17,11 @@ interface ParsedPathTemplate {
   segments: PathSegment[];
 }
 
+interface PendingStatusChange {
+  source: "working tree" | "index";
+  status: string;
+}
+
 export interface WorkItem {
   id: string;
   status: string;
@@ -18,11 +29,13 @@ export interface WorkItem {
   filePath: string;
 }
 
+const warnedUncommittedTransitions = new Map<string, string>();
+
 function parseFrontmatter(raw: string): Record<string, string> {
   const lines = raw.split("\n");
   if (lines[0]?.trim() !== "---") return {};
   const fields: Record<string, string> = {};
-  for (let i = 1; i < lines.length; i++) {
+  for (let i = 1; i < lines.length; i += 1) {
     const line = lines[i]!;
     if (line.trim() === "---") break;
     const colon = line.indexOf(":");
@@ -30,8 +43,8 @@ function parseFrontmatter(raw: string): Record<string, string> {
     const key = line.slice(0, colon).trim();
     let value = line.slice(colon + 1).trim();
     if (
-      (value.startsWith('"') && value.endsWith('"')) ||
-      (value.startsWith("'") && value.endsWith("'"))
+      (value.startsWith('"') && value.endsWith('"'))
+      || (value.startsWith("'") && value.endsWith("'"))
     ) {
       value = value.slice(1, -1);
     }
@@ -100,27 +113,77 @@ function matchesPathTemplate(concretePath: string, template: ParsedPathTemplate)
   return true;
 }
 
-async function collectMarkdownFiles(root: string): Promise<string[]> {
-  const files: string[] = [];
-  const queue = [root];
+function normalizePath(value: string): string {
+  return value.replace(/\\/g, "/");
+}
 
-  while (queue.length > 0) {
-    const current = queue.shift()!;
-    const entries = await readdir(current, { withFileTypes: true }).catch(() => []);
+function trimTrailingSlash(value: string): string {
+  return value.endsWith("/") ? value.slice(0, -1) : value;
+}
 
-    for (const entry of entries) {
-      const entryPath = join(current, entry.name);
-      if (entry.isDirectory()) {
-        queue.push(entryPath);
-        continue;
-      }
-      if (entry.isFile() && entry.name.endsWith(".md")) {
-        files.push(entryPath);
-      }
+async function readPendingStatusChange(
+  moduleRoot: string,
+  absolutePath: string,
+  repoRelativePath: string,
+  statusField: string,
+  headStatus: string,
+): Promise<PendingStatusChange | null> {
+  try {
+    const workingTreeFrontmatter = parseFrontmatter(await readFile(absolutePath, "utf-8"));
+    const workingTreeStatus = workingTreeFrontmatter[statusField];
+    if (workingTreeStatus && workingTreeStatus !== headStatus) {
+      return {
+        source: "working tree",
+        status: workingTreeStatus,
+      };
     }
+  } catch {
+    // Deleted or unreadable working-tree files stay invisible under HEAD polling.
   }
 
-  return files;
+  const indexRaw = await readGitFileFromIndex(moduleRoot, repoRelativePath);
+  if (!indexRaw) {
+    return null;
+  }
+
+  const indexFrontmatter = parseFrontmatter(indexRaw);
+  const indexStatus = indexFrontmatter[statusField];
+  if (!indexStatus || indexStatus === headStatus) {
+    return null;
+  }
+
+  return {
+    source: "index",
+    status: indexStatus,
+  };
+}
+
+function warnOnUncommittedTransition(
+  itemId: string,
+  filePath: string,
+  headStatus: string,
+  pendingStatus: string,
+  source: PendingStatusChange["source"],
+): void {
+  const signature = `${source}:${headStatus}->${pendingStatus}`;
+  if (warnedUncommittedTransitions.get(filePath) === signature) {
+    return;
+  }
+
+  console.log(
+    `[dispatcher] ALS-018: ${itemId} has an uncommitted status transition ${headStatus} -> ${pendingStatus} in the ${source}; continuing to read HEAD state`,
+  );
+  console.warn(
+    `[dispatcher] ALS-018: status transition is not committed; dispatcher only reads HEAD — commit the transition to proceed (${itemId}: ${headStatus} -> ${pendingStatus})`,
+  );
+  warnedUncommittedTransitions.set(filePath, signature);
+}
+
+function pruneResolvedWarnings(activeWarnings: Set<string>): void {
+  for (const filePath of warnedUncommittedTransitions.keys()) {
+    if (activeWarnings.has(filePath)) continue;
+    warnedUncommittedTransitions.delete(filePath);
+  }
 }
 
 export async function scan(
@@ -130,20 +193,52 @@ export async function scan(
   discriminatorField?: string,
   discriminatorValue?: string,
 ): Promise<WorkItem[]> {
+  const requestedModuleRoot = resolve(moduleRoot);
+  const moduleRootFromRepo = trimTrailingSlash(
+    normalizePath(await gitRepoPrefix(requestedModuleRoot)),
+  );
   const template = parsePathTemplate(entityPath);
-  const candidates = await collectMarkdownFiles(moduleRoot);
+  const trackedFiles = await gitListTrackedFilesAtHead(requestedModuleRoot, ".");
   const items: WorkItem[] = [];
+  const activeWarnings = new Set<string>();
 
-  for (const filePath of candidates) {
-    const relativePath = relative(moduleRoot, filePath).replace(/\\/g, "/");
-    if (!matchesPathTemplate(relativePath, template)) continue;
+  for (const moduleRelativePath of trackedFiles) {
+    if (!moduleRelativePath.endsWith(".md")) continue;
+
+    if (!matchesPathTemplate(moduleRelativePath, template)) continue;
+
+    const repoRelativePath = moduleRootFromRepo === ""
+      ? moduleRelativePath
+      : `${moduleRootFromRepo}/${moduleRelativePath}`;
+    const filePath = join(requestedModuleRoot, moduleRelativePath);
 
     try {
-      const frontmatter = parseFrontmatter(await readFile(filePath, "utf-8"));
+      const headRaw = await readGitFileAtHead(requestedModuleRoot, repoRelativePath);
+      if (!headRaw) continue;
+
+      const frontmatter = parseFrontmatter(headRaw);
       if (!frontmatter["id"] || !frontmatter[statusField]) continue;
 
       if (discriminatorField && discriminatorValue) {
         if (frontmatter[discriminatorField] !== discriminatorValue) continue;
+      }
+
+      const pending = await readPendingStatusChange(
+        requestedModuleRoot,
+        filePath,
+        repoRelativePath,
+        statusField,
+        frontmatter[statusField]!,
+      );
+      if (pending) {
+        warnOnUncommittedTransition(
+          frontmatter["id"]!,
+          filePath,
+          frontmatter[statusField]!,
+          pending.status,
+          pending.source,
+        );
+        activeWarnings.add(filePath);
       }
 
       items.push({
@@ -157,5 +252,6 @@ export async function scan(
     }
   }
 
+  pruneResolvedWarnings(activeWarnings);
   return items;
 }

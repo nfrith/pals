@@ -143,11 +143,11 @@ The interactive TUI mode (`codex --no-alt-screen`) can also be used for debuggin
 
 ### 3. Status Change Last
 
-When an agent or skill edits an ALS record, the status field must be the **last** field changed. All other edits (activity log entries, field updates, section rewrites) must complete before the status transition is written.
+When an agent or skill edits an ALS record, the status field must be the **last** field changed before the transition commit. All other edits (activity log entries, field updates, section rewrites) must complete before the status transition is written.
 
-**Why:** Delamain dispatchers poll on status. If the status changes before other edits are complete, the dispatcher may pick up the item and dispatch the next agent while the record is still mid-edit. This causes race conditions — the next agent reads a partially updated record.
+**Why:** Delamain dispatchers poll committed `HEAD` state. If the status changes before other edits are complete, the transition commit can publish a partially updated record and the next agent will read that incomplete snapshot.
 
-**Rule:** In any Edit sequence that includes a status change, the status change is a separate Edit call issued after all other edits succeed.
+**Rule:** In any Edit sequence that includes a status change, the status change is a separate Edit call issued after all other edits succeed, and the resulting transition is committed as its own dedicated commit before the dispatcher can act on it.
 
 ### 4. One Job Per Agent
 

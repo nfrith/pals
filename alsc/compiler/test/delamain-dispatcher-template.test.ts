@@ -9,6 +9,7 @@ import {
   loadDispatcherVersionInfo,
   parseDispatcherVersion,
 } from "../../../skills/new/references/dispatcher/src/dispatcher-version.ts";
+import { runGit } from "../../../skills/new/references/dispatcher/src/git.ts";
 import { loadRuntimeManifest } from "../../../skills/new/references/dispatcher/src/runtime-manifest.ts";
 import { scan } from "../../../skills/new/references/dispatcher/src/watcher.ts";
 import { withFixtureSandbox, writePath } from "./helpers/fixture.ts";
@@ -250,6 +251,7 @@ test("dispatcher scan discovers nested entity paths from runtime manifest bindin
       module_filter: "experiments",
     });
     expect(output.status).toBe("pass");
+    await initFixtureRepo(root);
 
     const bundleRoot = join(root, ".claude/delamains/run-lifecycle");
     const manifest = await loadRuntimeManifest(bundleRoot);
@@ -362,6 +364,7 @@ test("dispatcher scan honors non-status field names and discriminator filtering"
         "",
       ].join("\n"),
     );
+    await initFixtureRepo(root);
 
     const manifest = await loadRuntimeManifest(bundleRoot);
     const items = await scan(
@@ -378,3 +381,22 @@ test("dispatcher scan honors non-status field names and discriminator filtering"
     expect(items[0]?.filePath).toContain("runtime-module/items/APP-001.md");
   });
 });
+
+async function initFixtureRepo(root: string): Promise<void> {
+  await runGit(root, ["init"]);
+  await runGit(root, ["branch", "-M", "main"]);
+  await runGit(root, ["add", "."]);
+  await runGit(
+    root,
+    [
+      "-c",
+      "user.name=Fixture",
+      "-c",
+      "user.email=fixture@local",
+      "commit",
+      "--no-gpg-sign",
+      "-m",
+      "fixture: initial commit",
+    ],
+  );
+}

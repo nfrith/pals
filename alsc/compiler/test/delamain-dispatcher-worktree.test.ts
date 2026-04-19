@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DispatcherRuntime } from "../../../skills/new/references/dispatcher/src/dispatcher-runtime.ts";
 import { RepoMutationLock } from "../../../skills/new/references/dispatcher/src/repo-mutation-lock.ts";
+import { scan } from "../../../skills/new/references/dispatcher/src/watcher.ts";
 import {
   readRuntimeState,
   writeRuntimeState,
@@ -70,6 +71,53 @@ test("runtime merges clean dispatch edits back into the integration checkout", a
     expect(lastCommitMessage).toContain("delamain: ALS-001 in-dev → in-review [factory-jobs]");
     expect(lastCommitMessage).toContain("Dispatch-Id:");
     expect(lastCommitMessage).toContain("Cost-Usd: 0.4200");
+  });
+});
+
+test("dispatcher scan ignores unstaged status transitions until they are committed", async () => {
+  await withWorktreeSandbox("head-scan-unstaged", async ({ systemRoot, itemFile }) => {
+    await replaceStatus(itemFile, "in-review");
+
+    const firstCapture = await captureConsole(async () => (
+      scan(join(systemRoot, "als-factory"), "jobs/{id}.md", "status")
+    ));
+    expect(firstCapture.result).toHaveLength(1);
+    expect(firstCapture.result[0]?.status).toBe("in-dev");
+    expect(firstCapture.logs).toEqual([
+      "[dispatcher] ALS-018: ALS-001 has an uncommitted status transition in-dev -> in-review in the working tree; continuing to read HEAD state",
+    ]);
+    expect(firstCapture.warnings).toEqual([
+      "[dispatcher] ALS-018: status transition is not committed; dispatcher only reads HEAD — commit the transition to proceed (ALS-001: in-dev -> in-review)",
+    ]);
+
+    await gitCommit(systemRoot, "operator: commit status transition");
+
+    const secondCapture = await captureConsole(async () => (
+      scan(join(systemRoot, "als-factory"), "jobs/{id}.md", "status")
+    ));
+    expect(secondCapture.result).toHaveLength(1);
+    expect(secondCapture.result[0]?.status).toBe("in-review");
+    expect(secondCapture.logs).toEqual([]);
+    expect(secondCapture.warnings).toEqual([]);
+  });
+});
+
+test("dispatcher scan ignores staged status transitions until they are committed", async () => {
+  await withWorktreeSandbox("head-scan-staged", async ({ systemRoot, itemFile }) => {
+    await replaceStatus(itemFile, "in-review");
+    await runGit(systemRoot, ["add", "."]);
+
+    const capture = await captureConsole(async () => (
+      scan(join(systemRoot, "als-factory"), "jobs/{id}.md", "status")
+    ));
+    expect(capture.result).toHaveLength(1);
+    expect(capture.result[0]?.status).toBe("in-dev");
+    expect(capture.logs).toEqual([
+      "[dispatcher] ALS-018: ALS-001 has an uncommitted status transition in-dev -> in-review in the working tree; continuing to read HEAD state",
+    ]);
+    expect(capture.warnings).toEqual([
+      "[dispatcher] ALS-018: status transition is not committed; dispatcher only reads HEAD — commit the transition to proceed (ALS-001: in-dev -> in-review)",
+    ]);
   });
 });
 
@@ -403,6 +451,33 @@ async function gitCommit(cwd: string, message: string): Promise<void> {
       message,
     ],
   );
+}
+
+async function captureConsole<T>(
+  run: () => Promise<T>,
+): Promise<{ result: T; logs: string[]; warnings: string[] }> {
+  const logs: string[] = [];
+  const warnings: string[] = [];
+  const originalLog = console.log;
+  const originalWarn = console.warn;
+
+  console.log = (...args: unknown[]) => {
+    logs.push(args.map(String).join(" "));
+  };
+  console.warn = (...args: unknown[]) => {
+    warnings.push(args.map(String).join(" "));
+  };
+
+  try {
+    return {
+      result: await run(),
+      logs,
+      warnings,
+    };
+  } finally {
+    console.log = originalLog;
+    console.warn = originalWarn;
+  }
 }
 
 async function markRecordDead(bundleRoot: string, itemId: string): Promise<void> {

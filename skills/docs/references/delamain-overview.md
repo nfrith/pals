@@ -82,10 +82,10 @@ The Delamain bundle is self-contained. It lives in `.als/modules/{module}/v{N}/d
 ## How It Runs
 
 1. The operator starts the dispatcher (via `/run-delamains` or manually).
-2. The dispatcher polls the items directory for entities in agent-owned states.
+2. The dispatcher polls committed `HEAD` state for entities in agent-owned states.
 3. When an item is found, the dispatcher reads the state's agent file and invokes it via the Agent SDK.
 4. The agent performs its work and transitions the item to the next state.
-5. On the next tick, the dispatcher sees the new state and dispatches the appropriate agent — or stops if the state is operator-owned or terminal.
+5. On the next tick after that transition is committed, the dispatcher sees the new state and dispatches the appropriate agent — or stops if the state is operator-owned or terminal.
 
 The operator interacts with items in operator-owned states through the pipeline console skill.
 
@@ -105,7 +105,7 @@ The dashboard service reads those runtime files plus bundle metadata and current
 
 ## Event-Driven, Not Polling
 
-While the dispatcher technically polls the filesystem, the system is event-driven from the operator's perspective. Agents run when work exists. No heartbeat daemon burns tokens in the background. The operator is the heartbeat.
+While the dispatcher technically polls the filesystem, the system is event-driven from the operator's perspective. The commit is the event boundary: agents run when committed work exists in `HEAD`. No heartbeat daemon burns tokens in the background. The operator is the heartbeat.
 
 ## Discriminated Variants
 

@@ -11,6 +11,7 @@ import {
   type RuntimeDispatchRecord,
   writeRuntimeState,
 } from "../../skills/new/references/dispatcher/src/runtime-state.ts";
+import { runGit } from "../../skills/new/references/dispatcher/src/git.ts";
 import type { DashboardSnapshot, DispatcherSnapshot } from "./feed/types.ts";
 
 export interface DashboardFixture {
@@ -136,6 +137,23 @@ export async function createDashboardFixture(label: string): Promise<DashboardFi
       "Dashboard fixture item two.",
     ].join("\n") + "\n",
     "utf-8",
+  );
+
+  await runGit(root, ["init"]);
+  await runGit(root, ["branch", "-M", "main"]);
+  await runGit(root, ["add", "."]);
+  await runGit(
+    root,
+    [
+      "-c",
+      "user.name=Fixture",
+      "-c",
+      "user.email=fixture@local",
+      "commit",
+      "--no-gpg-sign",
+      "-m",
+      "fixture: initial commit",
+    ],
   );
 
   const fixture: DashboardFixture = {

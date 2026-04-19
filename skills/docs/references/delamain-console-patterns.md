@@ -52,7 +52,13 @@ The operator chooses the direction *after* doing the work, not before. This matt
 
 ### After every transition
 
-Update the delamain's state as the last edit. Always.
+Update the delamain's state as the last edit before the transition commit. Always.
+
+Commit every transition as its own dedicated commit. Use the subject:
+
+`delamain: <id> <from> → <to> [operator]`
+
+The dispatcher only reads committed `HEAD` state. Unstaged or staged status edits do nothing until that transition commit exists.
 
 ### Review
 
