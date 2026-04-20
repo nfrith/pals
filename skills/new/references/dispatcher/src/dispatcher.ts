@@ -61,6 +61,7 @@ export interface ResolvedConfig {
   entityPath: string;
   statusField: string;
   delamainName: string;
+  submodules: string[];
   discriminatorField?: string;
   discriminatorValue?: string;
   agents: Record<string, AgentDef>;
@@ -154,6 +155,7 @@ export async function resolve(
     entityPath: manifest.entity_path,
     statusField: manifest.status_field,
     delamainName: manifest.delamain_name,
+    submodules: manifest.submodules,
     discriminatorField: manifest.discriminator_field ?? undefined,
     discriminatorValue: manifest.discriminator_value ?? undefined,
     agents,
@@ -301,6 +303,15 @@ export async function dispatch(
     resume_session_id: sessionState.resumeSessionId ?? null,
     worktree_path: prepared.worktreePath,
     branch_name: prepared.branchName,
+    mounted_submodules: prepared.mountedSubmodules.map((entry) => ({
+      repo_path: entry.repoPath,
+      primary_repo_path: entry.primaryRepoPath,
+      worktree_path: entry.worktreePath,
+      branch_name: entry.branchName,
+      base_commit: entry.baseCommit,
+      worktree_commit: null,
+      integrated_commit: null,
+    })),
     worktree_commit: null,
     integrated_commit: null,
     merge_outcome: null,
@@ -437,6 +448,7 @@ export async function dispatch(
         event_type: "dispatch_merge_success",
         timestamp: new Date().toISOString(),
         worker_session_id: sessionId ?? null,
+        mounted_submodules: finalized.mountedSubmodules,
         worktree_commit: finalized.worktreeCommit,
         integrated_commit: finalized.integratedCommit,
         merge_outcome: finalized.mergeOutcome,
@@ -453,6 +465,7 @@ export async function dispatch(
         event_type: "dispatch_merge_blocked",
         timestamp: new Date().toISOString(),
         worker_session_id: sessionId ?? null,
+        mounted_submodules: finalized.mountedSubmodules,
         worktree_commit: finalized.worktreeCommit,
         integrated_commit: finalized.integratedCommit,
         merge_outcome: finalized.mergeOutcome,
@@ -471,6 +484,7 @@ export async function dispatch(
         event_type: "dispatch_cleanup",
         timestamp: new Date().toISOString(),
         worker_session_id: sessionId ?? null,
+        mounted_submodules: finalized.mountedSubmodules,
         worktree_commit: finalized.worktreeCommit,
         integrated_commit: finalized.integratedCommit,
         merge_outcome: finalized.mergeOutcome,
@@ -489,6 +503,7 @@ export async function dispatch(
       event_type: overallSuccess ? "dispatch_finish" : "dispatch_failure",
       timestamp: new Date().toISOString(),
       worker_session_id: sessionId ?? null,
+      mounted_submodules: finalized.mountedSubmodules,
       worktree_commit: finalized.worktreeCommit,
       integrated_commit: finalized.integratedCommit,
       merge_outcome: finalized.mergeOutcome,
@@ -524,6 +539,7 @@ export async function dispatch(
       event_type: "dispatch_failure",
       timestamp: new Date().toISOString(),
       worker_session_id: sessionId ?? null,
+      mounted_submodules: finalized.mountedSubmodules,
       worktree_commit: finalized.worktreeCommit,
       integrated_commit: finalized.integratedCommit,
       merge_outcome: finalized.mergeOutcome,

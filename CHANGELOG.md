@@ -4,6 +4,7 @@ All notable changes to ALS preview releases should be recorded here.
 
 ## Unreleased
 
+- Added manifest-driven mounted submodule worktrees to the Delamain dispatcher runtime, including dual-repo audit trailers and atomic rollback on multi-repo merge-back failure.
 - Added a new `/foundry` skill plus an empty `foundry/` ALS mini-system as the curated bundled source for end-user module installs.
 - Retargeted `/install` to hand first-touch operators to `/foundry`.
 - **Removed the `/install-reference` skill.** `reference-system/` remains in the repo as the ALS Architect's painting/fixture space but is no longer exposed as an installable shelf via a skill. End users use `/foundry`; the reference system is now authoring-space-only.

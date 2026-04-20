@@ -16,7 +16,7 @@ The canonical template exposes its latest template version in `${CLAUDE_PLUGIN_R
 
 Every dispatcher entrypoint begins with `import "./preflight.js";`. That sibling module deletes `process.env.ANTHROPIC_API_KEY` before the Claude Agent SDK loads, which keeps plain `bun run src/index.ts` on Max-subscription routing instead of cached API-key billing.
 
-When a Delamain bundle is deployed to `.claude/delamains/<name>/`, later `alsc deploy claude` runs preserve an existing `dispatcher/node_modules/` directory. Deploy itself does not install packages. If dependencies have never been installed in the deployed target, deploy warns and leaves installation as an explicit `bun install` step.
+When a Delamain bundle is deployed to `.claude/delamains/<name>/`, later `alsc deploy claude` runs refresh `dispatcher/` from the canonical dispatcher template while preserving an existing `dispatcher/node_modules/` directory. Deploy itself does not install packages. If dependencies have never been installed in the deployed target, deploy warns and leaves installation as an explicit `bun install` step.
 
 The deployed bundle root also receives `runtime-manifest.json`. That manifest is the authoritative binding contract for the runtime:
 
@@ -24,6 +24,13 @@ The deployed bundle root also receives `runtime-manifest.json`. That manifest is
 - which entity path template to match
 - which frontmatter field is the Delamain-bound status field
 - which discriminator field/value, if any, constrain the binding
+- which repo-relative submodules, if any, should be mounted as nested worktrees inside the host worktree
+
+Submodule declarations come from an optional authored sidecar at the Delamain bundle root:
+
+- `runtime-manifest.config.json`
+- current supported field: `submodules: string[]`
+- values are repo-relative paths such as `nfrith-repos/als`
 
 The dispatcher is supported from deployed `.claude/delamains/<name>/` bundles. Running it directly from authored `.als/modules/.../delamains/.../dispatcher` is not part of the runtime contract because authored bundles do not carry the generated manifest.
 
@@ -48,6 +55,7 @@ Recent telemetry events include:
 - cleanup
 
 Each event records the Delamain name, module id, dispatch id, item id, current state, agent identity, resume metadata, worktree path and branch, merge outcome, transition targets, duration, turn count, cost, and error text when present.
+Submodule-targeting events also carry `mounted_submodules`, which records each mounted repo path plus its mounted worktree path and any worktree/integrated commit SHAs known at that point in the lifecycle.
 
 Older dispatcher copies that only emit `status.json` remain valid. Consumers must degrade to heartbeat-only mode instead of failing when `telemetry/events.jsonl` is absent.
 
@@ -91,15 +99,18 @@ Persistent registry over `runtime/worktree-state.json`.
 - Survives dispatcher restarts
 - Suppresses redispatch for blocked or orphaned incidents
 - Releases guards when an item's status changes
+- Preserves mounted submodule worktree metadata for active, blocked, and orphaned dispatches
 
 ### `src/git-worktree-isolation.ts`
 
 Git-backed isolation strategy.
 
 - Creates per-dispatch branches named `delamain/<dispatcher>/<item>/<dispatch-id>`
-- Creates worktrees under `~/.worktrees/delamain/<dispatcher>/<item>/<dispatch-id>/`
+- Creates host worktrees under `~/.worktrees/delamain/<dispatcher>/<item>/<dispatch-id>/`
+- Mounts any declared `runtime-manifest.json.submodules` as nested git worktrees at the same repo-relative paths inside that host worktree
 - Rewrites bound item paths into the isolated workspace
-- Auto-commits successful worktree changes and cherry-picks them back into the integration checkout
+- Auto-commits mounted submodule worktrees first, cherry-picks them into their primary clones, repoints the mounted checkout to the integrated SHA, then commits and cherry-picks the host worktree
+- Rolls back already-integrated primary clones if a later repo in the merge transaction fails, leaving the host worktree and mounted submodule worktrees preserved for inspection
 
 ### `src/repo-mutation-lock.ts`
 
@@ -149,6 +160,7 @@ Runtime manifest loader and validator.
 
 - Reads `runtime-manifest.json` from the deployed bundle root
 - Validates the manifest schema and required binding fields
+- Normalizes the optional `submodules` list to `[]` when absent
 - Fails closed with a redeploy message when the manifest is missing or malformed
 
 ### `src/dispatcher-version.ts`
@@ -196,6 +208,7 @@ The dispatcher reads one generated runtime manifest plus the local Delamain bund
 | Entity path template | `runtime-manifest.json` → `entity_path` |
 | Status field | `runtime-manifest.json` → `status_field` |
 | Variant discriminator | `runtime-manifest.json` → `discriminator_field` + `discriminator_value` |
+| Mounted nested repos | `runtime-manifest.json` → `submodules[]` |
 | Legal states | Delamain primary definition → `states` |
 | Dispatch rules | States where `actor: agent` and `path` is declared |
 | Agent prompts | Markdown files at delamain-relative `path` |
@@ -220,7 +233,7 @@ The `findSystemRoot` walk-up in `index.ts` makes the dispatcher work at any nest
 The dashboard service reads:
 
 - `status.json` for liveness and current delegated handoffs
-- `runtime/worktree-state.json` for active worktree ownership plus blocked/orphaned incidents
+- `runtime/worktree-state.json` for active worktree ownership plus blocked/orphaned incidents, including any mounted submodule worktrees
 - `telemetry/events.jsonl` for recent run history and failures
 - `runtime-manifest.json` for bundle identity and item binding
 - `delamain.yaml` for phase and actor context

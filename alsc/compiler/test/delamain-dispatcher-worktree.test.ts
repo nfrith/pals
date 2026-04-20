@@ -74,6 +74,100 @@ test("runtime merges clean dispatch edits back into the integration checkout", a
   });
 });
 
+test("runtime mounts declared submodule worktrees and merges dual-repo dispatch edits", async () => {
+  await withSubmoduleWorktreeSandbox("submodule-merge", async ({
+    runtime,
+    systemRoot,
+    itemFile,
+    primarySubmoduleRoot,
+  }) => {
+    const prepared = await runtime.prepareDispatch("ALS-001", itemFile, ENTRY);
+    expect(prepared).not.toBeNull();
+    expect(prepared?.mountedSubmodules).toHaveLength(1);
+
+    const mounted = prepared!.mountedSubmodules[0]!;
+    expect(existsSync(mounted.worktreePath)).toBe(true);
+    expect(
+      await runGit(mounted.worktreePath, ["rev-parse", "--git-common-dir"]),
+    ).toContain(".git/modules/nfrith-repos/als");
+
+    await replaceStatus(prepared!.isolatedItemFile, "in-review");
+    await appendBody(join(mounted.worktreePath, "CHANGELOG.md"), "Mounted submodule note.");
+
+    const result = await runtime.finalizeDispatch({
+      prepared: prepared!,
+      entry: ENTRY,
+      sessionId: "33333333-3333-4333-8333-333333333333",
+      durationMs: 2_800,
+      numTurns: 5,
+      costUsd: 0.28,
+      success: true,
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.blocked).toBe(false);
+    expect(result.mergeOutcome).toBe("merged");
+    expect(await readFrontmatterStatus(itemFile)).toBe("in-review");
+    expect(await readFile(join(primarySubmoduleRoot, "CHANGELOG.md"), "utf-8")).toContain(
+      "Mounted submodule note.",
+    );
+    expect(await runGit(systemRoot, ["rev-parse", "HEAD:nfrith-repos/als"])).toBe(
+      await runGit(primarySubmoduleRoot, ["rev-parse", "HEAD"]),
+    );
+
+    const hostCommitMessage = await runGit(systemRoot, ["log", "-1", "--pretty=%B"]);
+    const submoduleCommitMessage = await runGit(primarySubmoduleRoot, ["log", "-1", "--pretty=%B"]);
+    const hostDispatchId = hostCommitMessage.match(/^Dispatch-Id:\s+(.*)$/m)?.[1];
+    const submoduleDispatchId = submoduleCommitMessage.match(/^Dispatch-Id:\s+(.*)$/m)?.[1];
+
+    expect(hostDispatchId).toBeDefined();
+    expect(submoduleDispatchId).toBe(hostDispatchId);
+    expect(existsSync(prepared!.worktreePath)).toBe(false);
+  });
+});
+
+test("runtime blocks submodule dispatch merge-back when the primary clone is dirty", async () => {
+  await withSubmoduleWorktreeSandbox("submodule-dirty-primary", async ({
+    runtime,
+    bundleRoot,
+    itemFile,
+    primarySubmoduleRoot,
+  }) => {
+    const prepared = await runtime.prepareDispatch("ALS-001", itemFile, ENTRY);
+    expect(prepared).not.toBeNull();
+
+    await replaceStatus(prepared!.isolatedItemFile, "in-review");
+    await appendBody(
+      join(prepared!.mountedSubmodules[0]!.worktreePath, "CHANGELOG.md"),
+      "Mounted submodule conflict note.",
+    );
+    await appendBody(join(primarySubmoduleRoot, "CHANGELOG.md"), "Dirty primary clone marker.");
+
+    const result = await runtime.finalizeDispatch({
+      prepared: prepared!,
+      entry: ENTRY,
+      sessionId: null,
+      durationMs: 1_200,
+      numTurns: 2,
+      costUsd: 0.05,
+      success: true,
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.blocked).toBe(true);
+    expect(result.incidentKind).toBe("dirty_integration_checkout");
+    expect(existsSync(prepared!.worktreePath)).toBe(true);
+    expect(existsSync(prepared!.mountedSubmodules[0]!.worktreePath)).toBe(true);
+
+    const state = await readRuntimeState(bundleRoot);
+    expect(state.records[0]?.status).toBe("blocked");
+    expect(state.records[0]?.mounted_submodules).toHaveLength(1);
+    expect(state.records[0]?.mounted_submodules[0]?.worktree_path).toBe(
+      prepared!.mountedSubmodules[0]!.worktreePath,
+    );
+  });
+});
+
 test("dispatcher scan ignores unstaged status transitions until they are committed", async () => {
   await withWorktreeSandbox("head-scan-unstaged", async ({ systemRoot, itemFile }) => {
     await replaceStatus(itemFile, "in-review");
@@ -409,6 +503,107 @@ async function withWorktreeSandbox(
       bundleRoot,
       itemFile,
       worktreeRoot,
+      runtime,
+    });
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+}
+
+async function withSubmoduleWorktreeSandbox(
+  label: string,
+  run: (input: {
+    root: string;
+    systemRoot: string;
+    bundleRoot: string;
+    itemFile: string;
+    worktreeRoot: string;
+    primarySubmoduleRoot: string;
+    runtime: DispatcherRuntime;
+  }) => Promise<void>,
+): Promise<void> {
+  const root = await mkdtemp(join(tmpdir(), `als-delamain-submodule-worktree-${label}-`));
+  const systemRoot = join(root, "system");
+  const bundleRoot = join(root, ".claude", "delamains", "factory-jobs");
+  const worktreeRoot = join(root, ".worktrees");
+  const submoduleOrigin = join(root, "als-origin");
+  const itemFile = join(systemRoot, "als-factory", "jobs", "ALS-001.md");
+  const primarySubmoduleRoot = join(systemRoot, "nfrith-repos", "als");
+
+  try {
+    await mkdir(join(systemRoot, "als-factory", "jobs"), { recursive: true });
+    await mkdir(bundleRoot, { recursive: true });
+    await mkdir(submoduleOrigin, { recursive: true });
+    await writeFile(
+      itemFile,
+      [
+        "---",
+        "id: ALS-001",
+        "status: in-dev",
+        "title: Worktree runtime",
+        "---",
+        "",
+        "Dispatcher runtime fixture.",
+      ].join("\n") + "\n",
+      "utf-8",
+    );
+    await writeFile(join(submoduleOrigin, "CHANGELOG.md"), "# Changelog\n\n", "utf-8");
+
+    await runGit(submoduleOrigin, ["init"]);
+    await runGit(submoduleOrigin, ["branch", "-M", "main"]);
+    await runGit(submoduleOrigin, ["add", "."]);
+    await runGit(
+      submoduleOrigin,
+      [
+        "-c",
+        "user.name=Fixture",
+        "-c",
+        "user.email=fixture@local",
+        "commit",
+        "--no-gpg-sign",
+        "-m",
+        "fixture: initial submodule commit",
+      ],
+    );
+
+    await runGit(systemRoot, ["init"]);
+    await runGit(systemRoot, ["branch", "-M", "main"]);
+    await runGit(
+      systemRoot,
+      ["-c", "protocol.file.allow=always", "submodule", "add", submoduleOrigin, "nfrith-repos/als"],
+    );
+    await runGit(systemRoot, ["add", "."]);
+    await runGit(
+      systemRoot,
+      [
+        "-c",
+        "user.name=Fixture",
+        "-c",
+        "user.email=fixture@local",
+        "commit",
+        "--no-gpg-sign",
+        "-m",
+        "fixture: initial commit",
+      ],
+    );
+
+    const runtime = new DispatcherRuntime({
+      bundleRoot,
+      systemRoot,
+      delamainName: "factory-jobs",
+      statusField: "status",
+      pollMs: 1000,
+      worktreeRoot,
+      submodules: ["nfrith-repos/als"],
+    });
+
+    await run({
+      root,
+      systemRoot,
+      bundleRoot,
+      itemFile,
+      worktreeRoot,
+      primarySubmoduleRoot,
       runtime,
     });
   } finally {

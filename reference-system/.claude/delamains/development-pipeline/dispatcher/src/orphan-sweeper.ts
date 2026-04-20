@@ -51,6 +51,11 @@ export class OrphanSweeper {
       const inspection = await this.isolation.inspectWorktree({
         worktreePath: record.worktree_path,
         baseCommit: record.base_commit,
+        mountedSubmodules: record.mounted_submodules.map((entry) => ({
+          repo_path: entry.repo_path,
+          worktree_path: entry.worktree_path,
+          base_commit: entry.base_commit,
+        })),
       });
 
       if (!inspection.exists || inspection.pristine) {
@@ -58,6 +63,7 @@ export class OrphanSweeper {
           await this.isolation.cleanupDispatch({
             worktreePath: record.worktree_path,
             branchName: record.branch_name,
+            mountedSubmodules: record.mounted_submodules,
           });
         } catch (error) {
           const incidentMessage = error instanceof Error ? error.message : String(error);

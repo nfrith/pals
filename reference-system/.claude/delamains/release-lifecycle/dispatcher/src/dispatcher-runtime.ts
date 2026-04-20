@@ -7,7 +7,10 @@ import {
 } from "./git-worktree-isolation.js";
 import { OrphanSweeper, type OrphanSweepSummary } from "./orphan-sweeper.js";
 import { RepoMutationLock } from "./repo-mutation-lock.js";
-import type { RuntimeDispatchRecord } from "./runtime-state.js";
+import type {
+  RuntimeDispatchRecord,
+  RuntimeMountedSubmoduleRecord,
+} from "./runtime-state.js";
 import type { DispatchEntry } from "./dispatcher.js";
 
 export interface DispatcherRuntimeConfig {
@@ -17,6 +20,7 @@ export interface DispatcherRuntimeConfig {
   statusField: string;
   pollMs: number;
   worktreeRoot?: string;
+  submodules?: string[];
 }
 
 export interface PreparedDispatch extends IsolatedDispatch {
@@ -40,6 +44,7 @@ export interface FinalizeDispatchResult {
   mergeOutcome: "merged" | "blocked" | "no_changes" | "skipped";
   worktreeCommit: string | null;
   integratedCommit: string | null;
+  mountedSubmodules: RuntimeMountedSubmoduleRecord[];
   incidentKind: string | null;
   incidentMessage: string | null;
 }
@@ -71,6 +76,7 @@ export class DispatcherRuntime {
       systemRoot: config.systemRoot,
       delamainName: config.delamainName,
       worktreeRoot: config.worktreeRoot,
+      submodules: config.submodules ?? [],
     });
     this.repoMutationLock = new RepoMutationLock(config.systemRoot, {
       staleMs: Math.max(config.pollMs * 4, 60_000),
@@ -109,6 +115,7 @@ export class DispatcherRuntime {
       await this.isolation.cleanupDispatch({
         worktreePath: prepared.worktreePath,
         branchName: prepared.branchName,
+        mountedSubmodules: buildCleanupMountedSubmodules(prepared.mountedSubmodules),
       });
       return null;
     }
@@ -131,6 +138,11 @@ export class DispatcherRuntime {
     const inspection = await this.isolation.inspectWorktree({
       worktreePath: input.prepared.worktreePath,
       baseCommit: input.prepared.baseCommit,
+      mountedSubmodules: input.prepared.mountedSubmodules.map((entry) => ({
+        repo_path: entry.repoPath,
+        worktree_path: entry.worktreePath,
+        base_commit: entry.baseCommit,
+      })),
     });
 
     if (!input.success) {
@@ -138,6 +150,7 @@ export class DispatcherRuntime {
         await this.isolation.cleanupDispatch({
           worktreePath: input.prepared.worktreePath,
           branchName: input.prepared.branchName,
+          mountedSubmodules: buildCleanupMountedSubmodules(input.prepared.mountedSubmodules),
         });
         await this.registry.removeByItemId(input.prepared.itemId);
         return {
@@ -147,12 +160,21 @@ export class DispatcherRuntime {
           mergeOutcome: "skipped",
           worktreeCommit: null,
           integratedCommit: null,
+          mountedSubmodules: [],
           incidentKind: null,
           incidentMessage: null,
         };
       }
 
       const incidentMessage = "Agent run failed after mutating the isolated worktree";
+      const mountedSubmodules = mergeMountedSubmoduleMetadata(
+        input.prepared.mountedSubmodules,
+        inspection.mountedSubmodules.map((entry) => ({
+          repoPath: entry.repoPath,
+          worktreeCommit: entry.headCommit,
+          integratedCommit: null,
+        })),
+      );
       await this.registry.updateByItemId(input.prepared.itemId, (record) => ({
         ...record,
         status: "blocked",
@@ -163,6 +185,7 @@ export class DispatcherRuntime {
         latest_num_turns: input.numTurns,
         latest_cost_usd: input.costUsd,
         merge_outcome: "blocked",
+        mounted_submodules: mountedSubmodules,
         incident: {
           kind: "dispatch_failed_dirty",
           message: incidentMessage,
@@ -177,6 +200,7 @@ export class DispatcherRuntime {
         mergeOutcome: "blocked",
         worktreeCommit: inspection.headCommit,
         integratedCommit: null,
+        mountedSubmodules,
         incidentKind: "dispatch_failed_dirty",
         incidentMessage,
       };
@@ -186,8 +210,9 @@ export class DispatcherRuntime {
       await this.isolation.cleanupDispatch({
         worktreePath: input.prepared.worktreePath,
         branchName: input.prepared.branchName,
+        mountedSubmodules: buildCleanupMountedSubmodules(input.prepared.mountedSubmodules),
       });
-      await this.completeSuccessfulGuard(input, finalState, null, null, "no_changes");
+      await this.completeSuccessfulGuard(input, finalState, null, null, [], "no_changes");
       return {
         success: true,
         blocked: false,
@@ -195,6 +220,7 @@ export class DispatcherRuntime {
         mergeOutcome: "no_changes",
         worktreeCommit: null,
         integratedCommit: null,
+        mountedSubmodules: [],
         incidentKind: null,
         incidentMessage: null,
       };
@@ -212,28 +238,20 @@ export class DispatcherRuntime {
       costUsd: input.costUsd,
       sessionId: input.sessionId,
     });
-    const worktreeCommit = await this.isolation.commitDispatch(
-      input.prepared.worktreePath,
-      input.prepared.baseCommit,
-      commitMessage,
-    );
 
-    if (!worktreeCommit) {
-      await this.isolation.cleanupDispatch({
-        worktreePath: input.prepared.worktreePath,
-        branchName: input.prepared.branchName,
-      });
-      await this.completeSuccessfulGuard(input, finalState, null, null, "no_changes");
-      return {
-        success: true,
-        blocked: false,
-        finalState,
-        mergeOutcome: "no_changes",
-        worktreeCommit: null,
-        integratedCommit: null,
-        incidentKind: null,
-        incidentMessage: null,
-      };
+    const mountedSubmoduleCommits = [];
+    for (const entry of input.prepared.mountedSubmodules) {
+      const worktreeCommit = await this.isolation.commitDispatch(
+        entry.worktreePath,
+        entry.baseCommit,
+        commitMessage,
+      );
+      if (worktreeCommit) {
+        mountedSubmoduleCommits.push({
+          repoPath: entry.repoPath,
+          worktreeCommit,
+        });
+      }
     }
 
     const mergeResult = await this.repoMutationLock.withLease(
@@ -243,7 +261,16 @@ export class DispatcherRuntime {
         item_id: input.prepared.itemId,
         worktree_path: input.prepared.worktreePath,
       },
-      () => this.isolation.mergeBack(worktreeCommit),
+      () => this.isolation.mergeBack({
+        prepared: input.prepared,
+        hostCommitMessage: commitMessage,
+        mountedSubmoduleCommits,
+      }),
+    );
+
+    const mergedMountedSubmodules = mergeMountedSubmoduleMetadata(
+      input.prepared.mountedSubmodules,
+      mergeResult.mountedSubmodules,
     );
 
     if (mergeResult.status !== "merged") {
@@ -257,7 +284,8 @@ export class DispatcherRuntime {
         latest_duration_ms: input.durationMs,
         latest_num_turns: input.numTurns,
         latest_cost_usd: input.costUsd,
-        worktree_commit: worktreeCommit,
+        worktree_commit: mergeResult.worktreeCommit,
+        mounted_submodules: mergedMountedSubmodules,
         merge_outcome: "blocked",
         merge_attempted_at: incidentDetectedAt,
         merge_message: commitMessage,
@@ -273,8 +301,9 @@ export class DispatcherRuntime {
         blocked: true,
         finalState,
         mergeOutcome: "blocked",
-        worktreeCommit,
+        worktreeCommit: mergeResult.worktreeCommit,
         integratedCommit: null,
+        mountedSubmodules: mergedMountedSubmodules,
         incidentKind: mergeResult.incidentKind,
         incidentMessage: mergeResult.error,
       };
@@ -284,6 +313,7 @@ export class DispatcherRuntime {
       await this.isolation.cleanupDispatch({
         worktreePath: input.prepared.worktreePath,
         branchName: input.prepared.branchName,
+        mountedSubmodules: buildCleanupMountedSubmodules(input.prepared.mountedSubmodules),
       });
     } catch (error) {
       const incidentMessage = error instanceof Error ? error.message : String(error);
@@ -296,8 +326,9 @@ export class DispatcherRuntime {
         latest_duration_ms: input.durationMs,
         latest_num_turns: input.numTurns,
         latest_cost_usd: input.costUsd,
-        worktree_commit: worktreeCommit,
+        worktree_commit: mergeResult.worktreeCommit,
         integrated_commit: mergeResult.integratedCommit,
+        mounted_submodules: mergedMountedSubmodules,
         merge_outcome: "merged",
         merge_attempted_at: new Date().toISOString(),
         merge_message: commitMessage,
@@ -313,8 +344,9 @@ export class DispatcherRuntime {
         blocked: true,
         finalState,
         mergeOutcome: "merged",
-        worktreeCommit,
+        worktreeCommit: mergeResult.worktreeCommit,
         integratedCommit: mergeResult.integratedCommit,
+        mountedSubmodules: mergedMountedSubmodules,
         incidentKind: "cleanup_failed",
         incidentMessage,
       };
@@ -323,8 +355,9 @@ export class DispatcherRuntime {
     await this.completeSuccessfulGuard(
       input,
       finalState,
-      worktreeCommit,
+      mergeResult.worktreeCommit,
       mergeResult.integratedCommit,
+      mergedMountedSubmodules,
       "merged",
     );
 
@@ -333,8 +366,9 @@ export class DispatcherRuntime {
       blocked: false,
       finalState,
       mergeOutcome: "merged",
-      worktreeCommit,
+      worktreeCommit: mergeResult.worktreeCommit,
       integratedCommit: mergeResult.integratedCommit,
+      mountedSubmodules: mergedMountedSubmodules,
       incidentKind: null,
       incidentMessage: null,
     };
@@ -379,6 +413,7 @@ export class DispatcherRuntime {
     finalState: string,
     worktreeCommit: string | null,
     integratedCommit: string | null,
+    mountedSubmodules: RuntimeMountedSubmoduleRecord[],
     mergeOutcome: "merged" | "no_changes",
   ): Promise<void> {
     const shouldPersistGuard = finalState === input.entry.state;
@@ -395,6 +430,7 @@ export class DispatcherRuntime {
       worktree_path: null,
       branch_name: null,
       isolated_item_file: null,
+      mounted_submodules: [],
       updated_at: new Date().toISOString(),
       heartbeat_at: null,
       worktree_commit: worktreeCommit,
@@ -408,6 +444,7 @@ export class DispatcherRuntime {
       latest_cost_usd: input.costUsd,
       incident: null,
     }));
+    void mountedSubmodules;
   }
 }
 
@@ -436,6 +473,15 @@ function buildActiveRecord(
     worktree_path: prepared.worktreePath,
     branch_name: prepared.branchName,
     base_commit: prepared.baseCommit,
+    mounted_submodules: prepared.mountedSubmodules.map((entry) => ({
+      repo_path: entry.repoPath,
+      primary_repo_path: entry.primaryRepoPath,
+      worktree_path: entry.worktreePath,
+      branch_name: entry.branchName,
+      base_commit: entry.baseCommit,
+      worktree_commit: null,
+      integrated_commit: null,
+    })),
     worktree_commit: null,
     integrated_commit: null,
     started_at: now,
@@ -453,4 +499,43 @@ function buildActiveRecord(
     latest_cost_usd: null,
     incident: null,
   };
+}
+
+function buildCleanupMountedSubmodules(
+  mountedSubmodules: ReadonlyArray<PreparedDispatch["mountedSubmodules"][number]>,
+): Array<{
+  repo_path: string;
+  primary_repo_path: string;
+  worktree_path: string;
+  branch_name: string;
+}> {
+  return mountedSubmodules.map((entry) => ({
+    repo_path: entry.repoPath,
+    primary_repo_path: entry.primaryRepoPath,
+    worktree_path: entry.worktreePath,
+    branch_name: entry.branchName,
+  }));
+}
+
+function mergeMountedSubmoduleMetadata(
+  mountedSubmodules: ReadonlyArray<PreparedDispatch["mountedSubmodules"][number]>,
+  updates: ReadonlyArray<{
+    repoPath: string;
+    worktreeCommit: string | null;
+    integratedCommit: string | null;
+  }>,
+): RuntimeMountedSubmoduleRecord[] {
+  const updatesByPath = new Map(updates.map((entry) => [entry.repoPath, entry]));
+  return mountedSubmodules.map((entry) => {
+    const update = updatesByPath.get(entry.repoPath);
+    return {
+      repo_path: entry.repoPath,
+      primary_repo_path: entry.primaryRepoPath,
+      worktree_path: entry.worktreePath,
+      branch_name: entry.branchName,
+      base_commit: entry.baseCommit,
+      worktree_commit: update?.worktreeCommit ?? null,
+      integrated_commit: update?.integratedCommit ?? null,
+    };
+  });
 }

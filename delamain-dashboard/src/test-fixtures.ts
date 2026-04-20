@@ -808,6 +808,7 @@ function runtimeRecord(input: {
     worktree_path: input.worktreePath,
     branch_name: input.branchName,
     base_commit: "1111111111111111111111111111111111111111",
+    mounted_submodules: [],
     worktree_commit: null,
     integrated_commit: null,
     started_at: input.startedAt ?? "2026-04-17T10:19:15.000Z",

@@ -60,12 +60,20 @@ export async function gitRepoPrefix(cwd: string): Promise<string> {
   return runGit(cwd, ["rev-parse", "--show-prefix"]);
 }
 
+export async function gitCommonDir(cwd: string): Promise<string> {
+  return runGit(cwd, ["rev-parse", "--git-common-dir"]);
+}
+
 export async function gitCurrentBranch(cwd: string): Promise<string> {
   return runGit(cwd, ["rev-parse", "--abbrev-ref", "HEAD"]);
 }
 
 export async function gitStatusPorcelain(cwd: string): Promise<string> {
   return runGit(cwd, ["status", "--porcelain"]);
+}
+
+export async function gitStatusPorcelainNoUntracked(cwd: string): Promise<string> {
+  return runGit(cwd, ["status", "--porcelain", "--untracked-files=no"]);
 }
 
 export async function gitListTrackedFilesAtHead(
@@ -129,6 +137,10 @@ export async function gitHasChanges(cwd: string, baseCommit: string): Promise<bo
   ]);
 
   return status.length > 0 || head !== baseCommit;
+}
+
+export async function gitIsClean(cwd: string): Promise<boolean> {
+  return (await gitStatusPorcelainNoUntracked(cwd)).length === 0;
 }
 
 export function isProcessAlive(pid: number | null): boolean {

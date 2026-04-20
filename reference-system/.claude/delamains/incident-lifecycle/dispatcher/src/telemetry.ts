@@ -1,5 +1,6 @@
 import { mkdir, readFile, rename, writeFile } from "fs/promises";
 import { join } from "path";
+import type { RuntimeMountedSubmoduleRecord } from "./runtime-state.js";
 
 export const DISPATCH_TELEMETRY_SCHEMA = "als-delamain-telemetry-event@1";
 export const DEFAULT_TELEMETRY_RETENTION = 200;
@@ -37,6 +38,7 @@ export interface DispatchTelemetryEvent {
   worker_session_id: string | null;
   worktree_path: string | null;
   branch_name: string | null;
+  mounted_submodules?: RuntimeMountedSubmoduleRecord[];
   worktree_commit: string | null;
   integrated_commit: string | null;
   merge_outcome: string | null;
@@ -171,6 +173,9 @@ function normalizeTelemetryEvent(
     worker_session_id: event.worker_session_id ?? null,
     worktree_path: typeof event.worktree_path === "string" ? event.worktree_path : null,
     branch_name: typeof event.branch_name === "string" ? event.branch_name : null,
+    mounted_submodules: Array.isArray(event.mounted_submodules)
+      ? event.mounted_submodules.map((entry) => normalizeMountedSubmodule(entry))
+      : [],
     worktree_commit: typeof event.worktree_commit === "string" ? event.worktree_commit : null,
     integrated_commit: typeof event.integrated_commit === "string"
       ? event.integrated_commit
@@ -184,6 +189,36 @@ function normalizeTelemetryEvent(
     num_turns: typeof event.num_turns === "number" ? event.num_turns : null,
     cost_usd: typeof event.cost_usd === "number" ? event.cost_usd : null,
     error: typeof event.error === "string" && event.error.length > 0 ? event.error : null,
+  };
+}
+
+function normalizeMountedSubmodule(value: unknown): RuntimeMountedSubmoduleRecord {
+  const record = value && typeof value === "object"
+    ? value as Partial<RuntimeMountedSubmoduleRecord>
+    : {};
+
+  return {
+    repo_path: typeof record.repo_path === "string" && record.repo_path.length > 0
+      ? record.repo_path
+      : "unknown",
+    primary_repo_path: typeof record.primary_repo_path === "string" && record.primary_repo_path.length > 0
+      ? record.primary_repo_path
+      : null,
+    worktree_path: typeof record.worktree_path === "string" && record.worktree_path.length > 0
+      ? record.worktree_path
+      : null,
+    branch_name: typeof record.branch_name === "string" && record.branch_name.length > 0
+      ? record.branch_name
+      : null,
+    base_commit: typeof record.base_commit === "string" && record.base_commit.length > 0
+      ? record.base_commit
+      : null,
+    worktree_commit: typeof record.worktree_commit === "string" && record.worktree_commit.length > 0
+      ? record.worktree_commit
+      : null,
+    integrated_commit: typeof record.integrated_commit === "string" && record.integrated_commit.length > 0
+      ? record.integrated_commit
+      : null,
   };
 }
 

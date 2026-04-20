@@ -8,5 +8,6 @@
   "entity_path": "programs/{program}/experiments/{experiment}/runs/{id}.md",
   "status_field": "status",
   "discriminator_field": null,
-  "discriminator_value": null
+  "discriminator_value": null,
+  "submodules": []
 }

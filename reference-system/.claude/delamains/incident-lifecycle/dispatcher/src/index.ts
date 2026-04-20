@@ -37,6 +37,7 @@ const runtime = new DispatcherRuntime({
   delamainName: config.delamainName,
   statusField: config.statusField,
   pollMs: POLL_MS,
+  submodules: config.submodules,
 });
 
 console.log(`[dispatcher] system: ${SYSTEM_ROOT}`);
@@ -47,6 +48,9 @@ console.log(`[dispatcher] status field: ${config.statusField}`);
 console.log(`[dispatcher] entity: ${config.entityName}`);
 console.log(`[dispatcher] entity path: ${config.entityPath}`);
 console.log(`[dispatcher] module root: ${config.moduleRoot}`);
+if (config.submodules.length > 0) {
+  console.log(`[dispatcher] mounted submodules: ${config.submodules.join(", ")}`);
+}
 if (config.discriminatorField) {
   console.log(`[dispatcher] discriminator: ${config.discriminatorField}=${config.discriminatorValue}`);
 }

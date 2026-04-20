@@ -8,5 +8,6 @@
   "entity_path": "regions/{region}/clusters/{cluster}/services/{service}/releases/{id}.md",
   "status_field": "status",
   "discriminator_field": null,
-  "discriminator_value": null
+  "discriminator_value": null,
+  "submodules": []
 }

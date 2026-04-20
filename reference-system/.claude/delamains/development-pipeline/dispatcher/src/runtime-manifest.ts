@@ -12,6 +12,7 @@ export interface RuntimeManifest {
   status_field: string;
   discriminator_field: string | null;
   discriminator_value: string | null;
+  submodules: string[];
 }
 
 const DELAMAIN_RUNTIME_MANIFEST_SCHEMA = "als-delamain-runtime-manifest@1";
@@ -104,6 +105,8 @@ export async function loadRuntimeManifest(bundleRoot: string): Promise<RuntimeMa
     }
   }
 
+  const submodules = normalizeSubmodules(bundleRoot, manifest.submodules);
+
   return {
     schema: requireStringField(manifest, "schema"),
     delamain_name: requireStringField(manifest, "delamain_name"),
@@ -115,5 +118,49 @@ export async function loadRuntimeManifest(bundleRoot: string): Promise<RuntimeMa
     status_field: requireStringField(manifest, "status_field"),
     discriminator_field: manifest.discriminator_field ?? null,
     discriminator_value: manifest.discriminator_value ?? null,
+    submodules,
   };
+}
+
+function normalizeSubmodules(bundleRoot: string, value: unknown): string[] {
+  if (value === undefined) {
+    return [];
+  }
+
+  if (!Array.isArray(value)) {
+    throw new Error(
+      `Invalid runtime-manifest.json in '${bundleRoot}': 'submodules' must be an array of repo-relative paths`,
+    );
+  }
+
+  const normalized: string[] = [];
+  const seen = new Set<string>();
+
+  for (const entry of value) {
+    if (typeof entry !== "string" || entry.trim().length === 0) {
+      throw new Error(
+        `Invalid runtime-manifest.json in '${bundleRoot}': 'submodules' entries must be non-empty strings`,
+      );
+    }
+
+    const candidate = entry.replace(/\\/g, "/").replace(/\/+/g, "/").replace(/^\.\//, "");
+    if (
+      candidate.length === 0
+      || candidate === "."
+      || candidate.startsWith("/")
+      || candidate.startsWith("../")
+      || candidate.includes("/../")
+      || candidate.endsWith("/..")
+    ) {
+      throw new Error(
+        `Invalid runtime-manifest.json in '${bundleRoot}': submodule path '${entry}' must be repo-relative`,
+      );
+    }
+
+    if (seen.has(candidate)) continue;
+    seen.add(candidate);
+    normalized.push(candidate);
+  }
+
+  return normalized;
 }

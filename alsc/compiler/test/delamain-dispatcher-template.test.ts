@@ -239,6 +239,28 @@ test("dispatcher resolve uses deployed runtime manifest metadata", async () => {
     expect(manifest.entity_path).toBe("items/{id}.md");
     expect(manifest.status_field).toBe("status");
     expect(manifest.module_mount_path).toBe("workspace/factory");
+    expect(manifest.submodules).toEqual([]);
+  });
+});
+
+test("dispatcher deploy merges authored runtime-manifest submodule config into the generated manifest", async () => {
+  await withFixtureSandbox("delamain-dispatcher-submodules", async ({ root }) => {
+    await writePath(
+      root,
+      ".als/modules/factory/v1/delamains/development-pipeline/runtime-manifest.config.json",
+      JSON.stringify({ submodules: ["workspace/factory"] }, null, 2) + "\n",
+    );
+
+    const validationContext = loadSystemValidationContext(root);
+    expect(validationContext.system_config).not.toBeNull();
+
+    const output = deployClaudeSkillsFromConfig(root, validationContext.system_config!, "pass", {
+      module_filter: "factory",
+    });
+    expect(output.status).toBe("pass");
+
+    const manifest = await loadRuntimeManifest(join(root, ".claude/delamains/development-pipeline"));
+    expect(manifest.submodules).toEqual(["workspace/factory"]);
   });
 });
 

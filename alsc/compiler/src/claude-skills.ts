@@ -1,4 +1,4 @@
-import { cpSync, mkdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { stringify as stringifyYaml } from "yaml";
 import { loadAuthoredSourceExport } from "./authored-load.ts";
@@ -46,6 +46,7 @@ interface ClaudeDelamainProjectionWorkPlan extends ClaudeDelamainProjectionPlan 
   status_field: string;
   discriminator_field: string | null;
   discriminator_value: string | null;
+  submodules: string[];
   rendered_delamain_yaml: string;
 }
 
@@ -72,6 +73,11 @@ interface DelamainProjectionBinding {
 
 const DELAMAIN_RUNTIME_MANIFEST_SCHEMA = "als-delamain-runtime-manifest@1";
 const ALS_SYSTEM_CLAUDE_MD_TARGET_PATH = ".als/CLAUDE.md";
+const DELAMAIN_RUNTIME_MANIFEST_CONFIG = "runtime-manifest.config.json";
+const CANONICAL_DISPATCHER_TEMPLATE_DIR = resolve(
+  import.meta.dir,
+  "../../../skills/new/references/dispatcher",
+);
 
 export const ALS_SYSTEM_CLAUDE_MD_CONTENTS = `# .als Directory
 
@@ -290,6 +296,8 @@ export function deployClaudeSkillsFromConfig(
     for (const plan of delamainPlans) {
       try {
         mergeProjectionDirectory(plan.source_dir_abs, plan.target_dir_abs);
+        mergeCanonicalDispatcherDirectory(plan.target_dir_abs);
+        removeProjectionOnlyDelamainFiles(plan.target_dir_abs);
         writeProjectedDelamainDefinition(plan);
         writeDelamainRuntimeManifest(plan);
         writtenDelamainCount += 1;
@@ -416,6 +424,15 @@ function buildProjectionPlans(
           error: loadedDelamain.error,
         };
       }
+      const runtimeManifestConfig = loadDelamainRuntimeManifestConfig(systemRootAbs, sourceDirAbs);
+      if (runtimeManifestConfig.error) {
+        return {
+          skill_plans: skillPlans,
+          delamain_plans: delamainPlans,
+          delamain_name_conflicts: collectDelamainNameConflicts(delamainPlans),
+          error: runtimeManifestConfig.error,
+        };
+      }
 
       delamainPlans.push({
         module_id: moduleId,
@@ -431,6 +448,7 @@ function buildProjectionPlans(
         status_field: binding.status_field,
         discriminator_field: binding.discriminator_field,
         discriminator_value: binding.discriminator_value,
+        submodules: runtimeManifestConfig.config.submodules,
         rendered_delamain_yaml: stringifyYaml(loadedDelamain.shape),
       });
     }
@@ -807,6 +825,19 @@ function mergeProjectionDirectory(sourceDirAbs: string, targetDirAbs: string): v
   cpSync(sourceDirAbs, targetDirAbs, { recursive: true, force: true });
 }
 
+function mergeCanonicalDispatcherDirectory(targetDirAbs: string): void {
+  const targetDispatcherDirAbs = resolve(targetDirAbs, "dispatcher");
+  mkdirSync(dirname(targetDispatcherDirAbs), { recursive: true });
+  cpSync(CANONICAL_DISPATCHER_TEMPLATE_DIR, targetDispatcherDirAbs, {
+    recursive: true,
+    force: true,
+  });
+}
+
+function removeProjectionOnlyDelamainFiles(targetDirAbs: string): void {
+  rmSync(resolve(targetDirAbs, DELAMAIN_RUNTIME_MANIFEST_CONFIG), { force: true });
+}
+
 function writeSystemFile(plan: ClaudeSystemFileWorkPlan): void {
   mkdirSync(dirname(plan.target_path_abs), { recursive: true });
   writeFileSync(plan.target_path_abs, plan.contents);
@@ -831,11 +862,96 @@ function writeDelamainRuntimeManifest(plan: ClaudeDelamainProjectionWorkPlan): v
         status_field: plan.status_field,
         discriminator_field: plan.discriminator_field,
         discriminator_value: plan.discriminator_value,
+        submodules: plan.submodules,
       },
       null,
       2,
     ) + "\n",
   );
+}
+
+function loadDelamainRuntimeManifestConfig(
+  systemRootAbs: string,
+  sourceDirAbs: string,
+): { config: { submodules: string[] }; error: string | null } {
+  const configPathAbs = resolve(sourceDirAbs, DELAMAIN_RUNTIME_MANIFEST_CONFIG);
+  const configStat = safeStat(configPathAbs);
+  if (!configStat) {
+    return {
+      config: { submodules: [] },
+      error: null,
+    };
+  }
+
+  if (!configStat.isFile()) {
+    return {
+      config: { submodules: [] },
+      error: `Could not load ${DELAMAIN_RUNTIME_MANIFEST_CONFIG} for '${toSystemRelative(systemRootAbs, sourceDirAbs)}': expected a file.`,
+    };
+  }
+
+  try {
+    const raw = readFileSync(configPathAbs, "utf-8");
+    const parsed = JSON.parse(raw) as { submodules?: unknown };
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return {
+        config: { submodules: [] },
+        error: `Could not load ${DELAMAIN_RUNTIME_MANIFEST_CONFIG} for '${toSystemRelative(systemRootAbs, sourceDirAbs)}': expected a JSON object.`,
+      };
+    }
+
+    if (parsed.submodules === undefined) {
+      return {
+        config: { submodules: [] },
+        error: null,
+      };
+    }
+
+    if (!Array.isArray(parsed.submodules)) {
+      return {
+        config: { submodules: [] },
+        error: `Could not load ${DELAMAIN_RUNTIME_MANIFEST_CONFIG} for '${toSystemRelative(systemRootAbs, sourceDirAbs)}': 'submodules' must be an array of repo-relative paths.`,
+      };
+    }
+
+    return {
+      config: {
+        submodules: normalizeDelamainRuntimeSubmodules(systemRootAbs, parsed.submodules),
+      },
+      error: null,
+    };
+  } catch (error) {
+    return {
+      config: { submodules: [] },
+      error: `Could not load ${DELAMAIN_RUNTIME_MANIFEST_CONFIG} for '${toSystemRelative(systemRootAbs, sourceDirAbs)}': ${formatError(error)}`,
+    };
+  }
+}
+
+function normalizeDelamainRuntimeSubmodules(
+  systemRootAbs: string,
+  submodules: unknown[],
+): string[] {
+  const normalized: string[] = [];
+  const seen = new Set<string>();
+
+  for (const value of submodules) {
+    if (typeof value !== "string" || value.trim().length === 0) {
+      throw new Error("'submodules' entries must be non-empty strings");
+    }
+
+    const candidateAbs = resolve(systemRootAbs, value);
+    const candidateRel = toSystemRelative(systemRootAbs, candidateAbs);
+    if (candidateRel === "." || candidateRel.startsWith("..")) {
+      throw new Error(`submodule path '${value}' must stay within the system root`);
+    }
+
+    if (seen.has(candidateRel)) continue;
+    seen.add(candidateRel);
+    normalized.push(candidateRel);
+  }
+
+  return normalized;
 }
 
 function describeMultipleBindingError(

@@ -23,6 +23,16 @@ export interface RuntimeDispatchIncident {
   detected_at: string;
 }
 
+export interface RuntimeMountedSubmoduleRecord {
+  repo_path: string;
+  primary_repo_path: string | null;
+  worktree_path: string | null;
+  branch_name: string | null;
+  base_commit: string | null;
+  worktree_commit: string | null;
+  integrated_commit: string | null;
+}
+
 export interface RuntimeDispatchRecord {
   dispatch_id: string;
   item_id: string;
@@ -38,6 +48,7 @@ export interface RuntimeDispatchRecord {
   worktree_path: string | null;
   branch_name: string | null;
   base_commit: string | null;
+  mounted_submodules: RuntimeMountedSubmoduleRecord[];
   worktree_commit: string | null;
   integrated_commit: string | null;
   started_at: string;
@@ -197,6 +208,9 @@ function normalizeRecord(input: unknown): RuntimeDispatchRecord {
     worktree_path: asString(value.worktree_path),
     branch_name: asString(value.branch_name),
     base_commit: asString(value.base_commit),
+    mounted_submodules: Array.isArray(value.mounted_submodules)
+      ? value.mounted_submodules.map((entry) => normalizeMountedSubmodule(entry))
+      : [],
     worktree_commit: asString(value.worktree_commit),
     integrated_commit: asString(value.integrated_commit),
     started_at: asString(value.started_at) ?? new Date().toISOString(),
@@ -215,6 +229,22 @@ function normalizeRecord(input: unknown): RuntimeDispatchRecord {
     latest_num_turns: asInteger(value.latest_num_turns),
     latest_cost_usd: asNumber(value.latest_cost_usd),
     incident: normalizeIncident(value.incident),
+  };
+}
+
+function normalizeMountedSubmodule(value: unknown): RuntimeMountedSubmoduleRecord {
+  const record = value && typeof value === "object"
+    ? value as Partial<RuntimeMountedSubmoduleRecord>
+    : {};
+
+  return {
+    repo_path: asString(record.repo_path) ?? "unknown",
+    primary_repo_path: asString(record.primary_repo_path),
+    worktree_path: asString(record.worktree_path),
+    branch_name: asString(record.branch_name),
+    base_commit: asString(record.base_commit),
+    worktree_commit: asString(record.worktree_commit),
+    integrated_commit: asString(record.integrated_commit),
   };
 }
 
