@@ -42,3 +42,4 @@ Compatibility note:
 - manual rewrites may be required while ALS is still in preview
 
 UAT smoke touch for ALS-026 — 2026-04-20
+UAT smoke touch for ALS-026 — 2026-04-20
