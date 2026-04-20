@@ -40,3 +40,5 @@ Compatibility note:
 
 - authored-source compatibility is not guaranteed across preview releases
 - manual rewrites may be required while ALS is still in preview
+
+UAT smoke touch for ALS-026 — 2026-04-20
