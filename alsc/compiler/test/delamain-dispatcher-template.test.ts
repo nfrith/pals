@@ -9,6 +9,7 @@ import {
   loadDispatcherVersionInfo,
   parseDispatcherVersion,
 } from "../../../skills/new/references/dispatcher/src/dispatcher-version.ts";
+import { resolveDispatchLimits } from "../../../skills/new/references/dispatcher/src/dispatch-limits.ts";
 import { runGit } from "../../../skills/new/references/dispatcher/src/git.ts";
 import { loadRuntimeManifest } from "../../../skills/new/references/dispatcher/src/runtime-manifest.ts";
 import { scan } from "../../../skills/new/references/dispatcher/src/watcher.ts";
@@ -17,6 +18,17 @@ import { withFixtureSandbox, writePath } from "./helpers/fixture.ts";
 test("dispatcher version parser accepts positive integers", () => {
   expect(parseDispatcherVersion("1\n", "local")).toBe(1);
   expect(parseDispatcherVersion("42", "canonical")).toBe(42);
+});
+
+test("dispatch limits resolve authored overrides and canonical defaults", () => {
+  expect(resolveDispatchLimits()).toEqual({
+    maxTurns: 50,
+    maxBudgetUsd: 10,
+  });
+  expect(resolveDispatchLimits({ maxTurns: 100, maxBudgetUsd: 20 })).toEqual({
+    maxTurns: 100,
+    maxBudgetUsd: 20,
+  });
 });
 
 test("canonical dispatcher template strips ANTHROPIC_API_KEY before SDK imports", async () => {
@@ -240,15 +252,30 @@ test("dispatcher resolve uses deployed runtime manifest metadata", async () => {
     expect(manifest.status_field).toBe("status");
     expect(manifest.module_mount_path).toBe("workspace/factory");
     expect(manifest.submodules).toEqual([]);
+    expect(manifest.limits).toBeUndefined();
+    expect(resolveDispatchLimits(manifest.limits)).toEqual({
+      maxTurns: 50,
+      maxBudgetUsd: 10,
+    });
   });
 });
 
-test("dispatcher deploy merges authored runtime-manifest submodule config into the generated manifest", async () => {
-  await withFixtureSandbox("delamain-dispatcher-submodules", async ({ root }) => {
+test("dispatcher deploy merges authored runtime-manifest config into the generated manifest", async () => {
+  await withFixtureSandbox("delamain-dispatcher-runtime-manifest-config", async ({ root }) => {
     await writePath(
       root,
       ".als/modules/factory/v1/delamains/development-pipeline/runtime-manifest.config.json",
-      JSON.stringify({ submodules: ["workspace/factory"] }, null, 2) + "\n",
+      JSON.stringify(
+        {
+          submodules: ["workspace/factory"],
+          limits: {
+            maxTurns: 100,
+            maxBudgetUsd: 20,
+          },
+        },
+        null,
+        2,
+      ) + "\n",
     );
 
     const validationContext = loadSystemValidationContext(root);
@@ -261,6 +288,42 @@ test("dispatcher deploy merges authored runtime-manifest submodule config into t
 
     const manifest = await loadRuntimeManifest(join(root, ".claude/delamains/development-pipeline"));
     expect(manifest.submodules).toEqual(["workspace/factory"]);
+    expect(manifest.limits).toEqual({
+      maxTurns: 100,
+      maxBudgetUsd: 20,
+    });
+    expect(resolveDispatchLimits(manifest.limits)).toEqual({
+      maxTurns: 100,
+      maxBudgetUsd: 20,
+    });
+  });
+});
+
+test("dispatcher deploy rejects malformed runtime-manifest limits config", async () => {
+  await withFixtureSandbox("delamain-dispatcher-invalid-limits-config", async ({ root }) => {
+    await writePath(
+      root,
+      ".als/modules/factory/v1/delamains/development-pipeline/runtime-manifest.config.json",
+      JSON.stringify(
+        {
+          limits: {
+            maxTurns: 0,
+          },
+        },
+        null,
+        2,
+      ) + "\n",
+    );
+
+    const validationContext = loadSystemValidationContext(root);
+    expect(validationContext.system_config).not.toBeNull();
+
+    const output = deployClaudeSkillsFromConfig(root, validationContext.system_config!, "pass", {
+      module_filter: "factory",
+    });
+
+    expect(output.status).toBe("fail");
+    expect(output.error).toContain("'limits.maxTurns' must be a positive integer");
   });
 });
 

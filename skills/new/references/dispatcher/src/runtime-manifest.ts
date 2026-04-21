@@ -13,6 +13,12 @@ export interface RuntimeManifest {
   discriminator_field: string | null;
   discriminator_value: string | null;
   submodules: string[];
+  limits?: RuntimeManifestLimits;
+}
+
+export interface RuntimeManifestLimits {
+  maxTurns?: number;
+  maxBudgetUsd?: number;
 }
 
 const DELAMAIN_RUNTIME_MANIFEST_SCHEMA = "als-delamain-runtime-manifest@1";
@@ -106,6 +112,7 @@ export async function loadRuntimeManifest(bundleRoot: string): Promise<RuntimeMa
   }
 
   const submodules = normalizeSubmodules(bundleRoot, manifest.submodules);
+  const limits = normalizeLimits(bundleRoot, manifest.limits);
 
   return {
     schema: requireStringField(manifest, "schema"),
@@ -119,6 +126,7 @@ export async function loadRuntimeManifest(bundleRoot: string): Promise<RuntimeMa
     discriminator_field: manifest.discriminator_field ?? null,
     discriminator_value: manifest.discriminator_value ?? null,
     submodules,
+    limits,
   };
 }
 
@@ -160,6 +168,47 @@ function normalizeSubmodules(bundleRoot: string, value: unknown): string[] {
     if (seen.has(candidate)) continue;
     seen.add(candidate);
     normalized.push(candidate);
+  }
+
+  return normalized;
+}
+
+function normalizeLimits(bundleRoot: string, value: unknown): RuntimeManifestLimits | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error(`Invalid runtime-manifest.json in '${bundleRoot}': 'limits' must be an object`);
+  }
+
+  const limits = value as Record<string, unknown>;
+  const normalized: RuntimeManifestLimits = {};
+
+  if (limits.maxTurns !== undefined) {
+    if (
+      typeof limits.maxTurns !== "number"
+      || !Number.isInteger(limits.maxTurns)
+      || limits.maxTurns <= 0
+    ) {
+      throw new Error(
+        `Invalid runtime-manifest.json in '${bundleRoot}': 'limits.maxTurns' must be a positive integer`,
+      );
+    }
+    normalized.maxTurns = limits.maxTurns;
+  }
+
+  if (limits.maxBudgetUsd !== undefined) {
+    if (
+      typeof limits.maxBudgetUsd !== "number"
+      || !Number.isFinite(limits.maxBudgetUsd)
+      || limits.maxBudgetUsd <= 0
+    ) {
+      throw new Error(
+        `Invalid runtime-manifest.json in '${bundleRoot}': 'limits.maxBudgetUsd' must be a positive number`,
+      );
+    }
+    normalized.maxBudgetUsd = limits.maxBudgetUsd;
   }
 
   return normalized;

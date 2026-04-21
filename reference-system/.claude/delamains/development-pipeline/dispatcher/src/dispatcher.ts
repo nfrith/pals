@@ -2,6 +2,7 @@ import { readFile } from "fs/promises";
 import { basename, join } from "path";
 import { parse as parseYaml } from "yaml";
 import { query } from "@anthropic-ai/claude-agent-sdk";
+import { resolveDispatchLimits } from "./dispatch-limits.js";
 import { DispatcherRuntime } from "./dispatcher-runtime.js";
 import { parseMd, readFrontmatterField, setFrontmatterField } from "./frontmatter.js";
 import { buildSessionRuntimeState, shouldPersistDispatcherSession } from "./session-runtime.js";
@@ -62,6 +63,8 @@ export interface ResolvedConfig {
   statusField: string;
   delamainName: string;
   submodules: string[];
+  maxTurns: number;
+  maxBudgetUsd: number;
   discriminatorField?: string;
   discriminatorValue?: string;
   agents: Record<string, AgentDef>;
@@ -74,6 +77,7 @@ export async function resolve(
   systemRoot: string,
 ): Promise<ResolvedConfig> {
   const manifest = await loadRuntimeManifest(bundleRoot);
+  const effectiveLimits = resolveDispatchLimits(manifest.limits);
   const moduleRoot = join(systemRoot, manifest.module_mount_path);
   const delamain = parseYaml(
     await readFile(join(bundleRoot, "delamain.yaml"), "utf-8"),
@@ -156,6 +160,8 @@ export async function resolve(
     statusField: manifest.status_field,
     delamainName: manifest.delamain_name,
     submodules: manifest.submodules,
+    maxTurns: effectiveLimits.maxTurns,
+    maxBudgetUsd: effectiveLimits.maxBudgetUsd,
     discriminatorField: manifest.discriminator_field ?? undefined,
     discriminatorValue: manifest.discriminator_value ?? undefined,
     agents,
@@ -187,7 +193,7 @@ export async function dispatch(
   itemFile: string,
   entry: DispatchEntry,
   agents: Record<string, AgentDef>,
-  config: Pick<ResolvedConfig, "moduleId" | "delamainName">,
+  config: Pick<ResolvedConfig, "moduleId" | "delamainName" | "maxTurns" | "maxBudgetUsd">,
   bundleRoot: string,
   runtime: DispatcherRuntime,
 ): Promise<{ success: boolean; blocked: boolean; sessionId?: string; dispatchId?: string }> {
@@ -370,8 +376,8 @@ export async function dispatch(
         ...(sessionState.resumeSessionId ? { resume: sessionState.resumeSessionId } : {}),
         env: sdkEnv,
         permissionMode: "acceptEdits",
-        maxTurns: 50,
-        maxBudgetUsd: 10.0,
+        maxTurns: config.maxTurns,
+        maxBudgetUsd: config.maxBudgetUsd,
       },
     })) {
       if (message.type === "system" && message.subtype === "init") {

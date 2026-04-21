@@ -48,6 +48,7 @@ console.log(`[dispatcher] status field: ${config.statusField}`);
 console.log(`[dispatcher] entity: ${config.entityName}`);
 console.log(`[dispatcher] entity path: ${config.entityPath}`);
 console.log(`[dispatcher] module root: ${config.moduleRoot}`);
+console.log(`[dispatcher] limits: ${config.maxTurns} / ${config.maxBudgetUsd}`);
 if (config.submodules.length > 0) {
   console.log(`[dispatcher] mounted submodules: ${config.submodules.join(", ")}`);
 }

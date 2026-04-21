@@ -47,6 +47,7 @@ interface ClaudeDelamainProjectionWorkPlan extends ClaudeDelamainProjectionPlan 
   discriminator_field: string | null;
   discriminator_value: string | null;
   submodules: string[];
+  limits?: DelamainRuntimeLimits;
   rendered_delamain_yaml: string;
 }
 
@@ -69,6 +70,16 @@ interface DelamainProjectionBinding {
   status_field: string;
   discriminator_field: string | null;
   discriminator_value: string | null;
+}
+
+interface DelamainRuntimeLimits {
+  maxTurns?: number;
+  maxBudgetUsd?: number;
+}
+
+interface DelamainRuntimeManifestConfig {
+  submodules: string[];
+  limits?: DelamainRuntimeLimits;
 }
 
 const DELAMAIN_RUNTIME_MANIFEST_SCHEMA = "als-delamain-runtime-manifest@1";
@@ -449,6 +460,7 @@ function buildProjectionPlans(
         discriminator_field: binding.discriminator_field,
         discriminator_value: binding.discriminator_value,
         submodules: runtimeManifestConfig.config.submodules,
+        limits: runtimeManifestConfig.config.limits,
         rendered_delamain_yaml: stringifyYaml(loadedDelamain.shape),
       });
     }
@@ -848,32 +860,31 @@ function writeProjectedDelamainDefinition(plan: ClaudeDelamainProjectionWorkPlan
 }
 
 function writeDelamainRuntimeManifest(plan: ClaudeDelamainProjectionWorkPlan): void {
+  const manifest = {
+    schema: DELAMAIN_RUNTIME_MANIFEST_SCHEMA,
+    delamain_name: plan.delamain_name,
+    module_id: plan.module_id,
+    module_version: plan.module_version,
+    module_mount_path: plan.module_mount_path,
+    entity_name: plan.entity_name,
+    entity_path: plan.entity_path,
+    status_field: plan.status_field,
+    discriminator_field: plan.discriminator_field,
+    discriminator_value: plan.discriminator_value,
+    submodules: plan.submodules,
+    ...(plan.limits ? { limits: plan.limits } : {}),
+  };
+
   writeFileSync(
     resolve(plan.target_dir_abs, "runtime-manifest.json"),
-    JSON.stringify(
-      {
-        schema: DELAMAIN_RUNTIME_MANIFEST_SCHEMA,
-        delamain_name: plan.delamain_name,
-        module_id: plan.module_id,
-        module_version: plan.module_version,
-        module_mount_path: plan.module_mount_path,
-        entity_name: plan.entity_name,
-        entity_path: plan.entity_path,
-        status_field: plan.status_field,
-        discriminator_field: plan.discriminator_field,
-        discriminator_value: plan.discriminator_value,
-        submodules: plan.submodules,
-      },
-      null,
-      2,
-    ) + "\n",
+    JSON.stringify(manifest, null, 2) + "\n",
   );
 }
 
 function loadDelamainRuntimeManifestConfig(
   systemRootAbs: string,
   sourceDirAbs: string,
-): { config: { submodules: string[] }; error: string | null } {
+): { config: DelamainRuntimeManifestConfig; error: string | null } {
   const configPathAbs = resolve(sourceDirAbs, DELAMAIN_RUNTIME_MANIFEST_CONFIG);
   const configStat = safeStat(configPathAbs);
   if (!configStat) {
@@ -892,7 +903,11 @@ function loadDelamainRuntimeManifestConfig(
 
   try {
     const raw = readFileSync(configPathAbs, "utf-8");
-    const parsed = JSON.parse(raw) as { submodules?: unknown };
+    const parsed = JSON.parse(raw) as {
+      submodules?: unknown;
+      limits?: unknown;
+      [key: string]: unknown;
+    };
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
       return {
         config: { submodules: [] },
@@ -900,24 +915,25 @@ function loadDelamainRuntimeManifestConfig(
       };
     }
 
-    if (parsed.submodules === undefined) {
+    for (const key of Object.keys(parsed)) {
+      if (key === "submodules" || key === "limits") {
+        continue;
+      }
       return {
         config: { submodules: [] },
-        error: null,
+        error: `Could not load ${DELAMAIN_RUNTIME_MANIFEST_CONFIG} for '${toSystemRelative(systemRootAbs, sourceDirAbs)}': '${key}' is not a supported field.`,
       };
     }
 
-    if (!Array.isArray(parsed.submodules)) {
-      return {
-        config: { submodules: [] },
-        error: `Could not load ${DELAMAIN_RUNTIME_MANIFEST_CONFIG} for '${toSystemRelative(systemRootAbs, sourceDirAbs)}': 'submodules' must be an array of repo-relative paths.`,
-      };
-    }
+    const submodules = parsed.submodules === undefined
+      ? []
+      : normalizeDelamainRuntimeSubmodules(systemRootAbs, parsed.submodules);
+    const limits = parsed.limits === undefined
+      ? undefined
+      : normalizeDelamainRuntimeLimits(parsed.limits);
 
     return {
-      config: {
-        submodules: normalizeDelamainRuntimeSubmodules(systemRootAbs, parsed.submodules),
-      },
+      config: limits ? { submodules, limits } : { submodules },
       error: null,
     };
   } catch (error) {
@@ -930,8 +946,12 @@ function loadDelamainRuntimeManifestConfig(
 
 function normalizeDelamainRuntimeSubmodules(
   systemRootAbs: string,
-  submodules: unknown[],
+  submodules: unknown,
 ): string[] {
+  if (!Array.isArray(submodules)) {
+    throw new Error("'submodules' must be an array of repo-relative paths");
+  }
+
   const normalized: string[] = [];
   const seen = new Set<string>();
 
@@ -949,6 +969,49 @@ function normalizeDelamainRuntimeSubmodules(
     if (seen.has(candidateRel)) continue;
     seen.add(candidateRel);
     normalized.push(candidateRel);
+  }
+
+  return normalized;
+}
+
+function normalizeDelamainRuntimeLimits(value: unknown): DelamainRuntimeLimits {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("'limits' must be an object");
+  }
+
+  const parsed = value as Record<string, unknown>;
+  const normalized: DelamainRuntimeLimits = {};
+
+  for (const key of Object.keys(parsed)) {
+    if (key === "maxTurns" || key === "maxBudgetUsd") {
+      continue;
+    }
+    if (key === "agents") {
+      throw new Error("'limits.agents' is reserved for a future ALS release and is not supported yet");
+    }
+    throw new Error(`'limits.${key}' is not a supported field`);
+  }
+
+  if (parsed.maxTurns !== undefined) {
+    if (
+      typeof parsed.maxTurns !== "number"
+      || !Number.isInteger(parsed.maxTurns)
+      || parsed.maxTurns <= 0
+    ) {
+      throw new Error("'limits.maxTurns' must be a positive integer");
+    }
+    normalized.maxTurns = parsed.maxTurns;
+  }
+
+  if (parsed.maxBudgetUsd !== undefined) {
+    if (
+      typeof parsed.maxBudgetUsd !== "number"
+      || !Number.isFinite(parsed.maxBudgetUsd)
+      || parsed.maxBudgetUsd <= 0
+    ) {
+      throw new Error("'limits.maxBudgetUsd' must be a positive number");
+    }
+    normalized.maxBudgetUsd = parsed.maxBudgetUsd;
   }
 
   return normalized;

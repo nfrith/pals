@@ -24,13 +24,16 @@ The deployed bundle root also receives `runtime-manifest.json`. That manifest is
 - which entity path template to match
 - which frontmatter field is the Delamain-bound status field
 - which discriminator field/value, if any, constrain the binding
+- which effective Agent SDK dispatch limits to apply for this bundle
 - which repo-relative submodules, if any, should be mounted as nested worktrees inside the host worktree
 
-Submodule declarations come from an optional authored sidecar at the Delamain bundle root:
+Authored manifest-sidecar declarations come from an optional `runtime-manifest.config.json` at the Delamain bundle root:
 
-- `runtime-manifest.config.json`
-- current supported field: `submodules: string[]`
-- values are repo-relative paths such as `nfrith-repos/als`
+- `submodules: string[]`
+- `limits.maxTurns?: positive integer`
+- `limits.maxBudgetUsd?: positive number`
+- `submodules` values are repo-relative paths such as `nfrith-repos/als`
+- `limits` are module-authored only in this release; there is no operator-local override layer yet
 
 The dispatcher is supported from deployed `.claude/delamains/<name>/` bundles. Running it directly from authored `.als/modules/.../delamains/.../dispatcher` is not part of the runtime contract because authored bundles do not carry the generated manifest.
 
@@ -69,6 +72,7 @@ Entry point. Handles:
 - **System root discovery**: walks up directories from its own location looking for `.als/system.ts`. Also respects the `SYSTEM_ROOT` environment variable.
 - **Template version check**: reads local `dispatcher/VERSION` and canonical `${CLAUDE_PLUGIN_ROOT}/skills/new/references/dispatcher/VERSION`, logs the current/latest versions, and fails before polling when either source is missing or malformed.
 - **Startup**: calls `resolve()` once to load `runtime-manifest.json`, local `delamain.yaml`, and state-agent files, then enters the poll loop.
+- **Effective limits**: resolves `runtime-manifest.json.limits` once at startup, falls back to canonical `50 / 10` when absent, and logs the active `maxTurns / maxBudgetUsd` pair before polling.
 - **Runtime boot**: creates one `DispatcherRuntime`, runs orphan sweep at startup, and keeps the persisted dispatch registry as the source of truth for active, blocked, orphaned, guarded, and delegated ownership.
 - **Poll loop**: scans items at a configurable interval (`POLL_MS`, default 30s). Reads committed `HEAD` state only, warns when a status transition exists in the checkout but not in `HEAD`, reconciles registry records against current item status, suppresses redispatch for unresolved incidents, runs periodic orphan sweeping, and refreshes the heartbeat after dispatch completions.
 - **Runtime hardening**: keeps the event loop alive with an internal keepalive server, logs tick and process lifecycle events, and ignores stray `SIGTERM` so dispatcher children do not accidentally kill the parent runtime.
@@ -162,6 +166,7 @@ Runtime manifest loader and validator.
 - Reads `runtime-manifest.json` from the deployed bundle root
 - Validates the manifest schema and required binding fields
 - Normalizes the optional `submodules` list to `[]` when absent
+- Validates the optional `limits.maxTurns` and `limits.maxBudgetUsd` fields when present
 - Fails closed with a redeploy message when the manifest is missing or malformed
 
 ### `src/dispatcher-version.ts`
@@ -210,6 +215,7 @@ The dispatcher reads one generated runtime manifest plus the local Delamain bund
 | Status field | `runtime-manifest.json` → `status_field` |
 | Variant discriminator | `runtime-manifest.json` → `discriminator_field` + `discriminator_value` |
 | Mounted nested repos | `runtime-manifest.json` → `submodules[]` |
+| Effective dispatch limits | `runtime-manifest.json` → `limits.maxTurns` / `limits.maxBudgetUsd`, else dispatcher defaults `50 / 10` |
 | Legal states | Delamain primary definition → `states` |
 | Dispatch rules | States where `actor: agent` and `path` is declared |
 | Agent prompts | Markdown files at delamain-relative `path` |
@@ -220,6 +226,8 @@ The dispatcher reads one generated runtime manifest plus the local Delamain bund
 | Latest dispatcher template version | `${CLAUDE_PLUGIN_ROOT}/skills/new/references/dispatcher/VERSION` |
 
 Hosts generate `runtime-manifest.json` during Claude projection. One deployed Delamain bundle owns exactly one effective binding. Reusing the same Delamain name across multiple effective bindings is a deploy-planning error.
+
+This ship does not add any operator-local limit override layer. Limit changes are authored in module source and take effect on the next deploy plus dispatcher restart.
 
 ## Path Resolution
 
