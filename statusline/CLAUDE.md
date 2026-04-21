@@ -4,7 +4,19 @@ Canonical ALS statusline for Claude Code. Installed into operator projects via `
 
 The statusline is the compact badge surface for Delamain health. It is not the canonical monitoring implementation. Rich dispatcher history, queue state, and failure context belong to `nfrith-repos/als/delamain-dashboard/`.
 
-## Architecture: Two-process model
+## Direction shift (2026-04-21) — tracked in GF-034
+
+**`statusline.sh` is now a single-file renderer (no daemon required).** Claude Code's `refreshInterval: 1` setting (issue 5685, closed 2026-04-11) gives us platform-native idle refresh, which removes the constraint that forced the two-process design below. Inline scanning fits comfortably in the 1-second render budget (~100ms measured).
+
+This module is evolving into a **PULSE + FACE** split tracked in [`ghost-factory/jobs/GF-034.md`](../../../ghost-factory/jobs/GF-034.md):
+
+- **FACE** (Phase 1 — done) — `statusline.sh` is the first face: the native Claude Code statusline renderer.
+- **PULSE** (Phase 2 — pending) — background data producer that publishes system state (delamain health, LIVE signal, git) into a source-agnostic cache. Replaces the legacy `statusline-daemon.sh`. Wires into `/bootup`.
+- **Second FACE** (future) — a tmux-pane face could consume the same pulse cache. Out of scope for GF-034 but designed for.
+
+Legacy `statusline-daemon.sh`, `obs-status.py`, and the two-process architecture documented below are **deprecated.** They remain in the directory until Phase 3 cleanup lands. Read the rest of this file as history, not current architecture.
+
+## Legacy architecture: Two-process model (deprecated)
 
 The statusline is split into two independent pieces:
 
