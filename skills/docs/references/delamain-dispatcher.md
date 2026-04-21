@@ -1,8 +1,8 @@
 # Delamain Dispatcher Reference
 
-The dispatcher is a generic Bun application template that scans entity items and invokes Delamain-bound agents via the Claude Agent SDK. Its runtime identity comes from a compiler-generated `runtime-manifest.json` projected into each deployed Delamain bundle.
+The dispatcher is a generic Bun application template that scans entity items and invokes Delamain-bound agents through provider-native SDK adapters. Its runtime identity comes from a compiler-generated `runtime-manifest.json` projected into each deployed Delamain bundle.
 
-Each dispatch now runs inside its own isolated git worktree. The dispatcher owns the full lifecycle: create worktree, rewrite the bound item path into that worktree, run the SDK session with that worktree as `cwd`, auto-commit successful edits, serialize merge-back to the integration checkout, and preserve blocked or orphaned worktrees instead of silently dropping work.
+Each dispatch now runs inside its own isolated git worktree. The dispatcher owns the full lifecycle: create worktree, rewrite the bound item path into that worktree, run the provider session with that worktree as `cwd`, auto-commit successful edits, serialize merge-back to the integration checkout, and preserve blocked or orphaned worktrees instead of silently dropping work.
 
 ## Audience
 
@@ -14,7 +14,7 @@ The dispatcher template lives at `${CLAUDE_PLUGIN_ROOT}/skills/new/references/di
 
 The canonical template exposes its latest template version in `${CLAUDE_PLUGIN_ROOT}/skills/new/references/dispatcher/VERSION`. Every copied dispatcher bundle carries a local `dispatcher/VERSION` file. Startup reads both files, logs `[dispatcher] version: X (latest: Y)`, and appends `run /upgrade-dispatchers to update` when the local version is stale. Missing or malformed local or canonical `VERSION` files are hard startup errors.
 
-Every dispatcher entrypoint begins with `import "./preflight.js";`. That sibling module deletes `process.env.ANTHROPIC_API_KEY` before the Claude Agent SDK loads, which keeps plain `bun run src/index.ts` on Max-subscription routing instead of cached API-key billing.
+Every dispatcher entrypoint begins with `import "./preflight.js";`. That sibling module deletes `process.env.ANTHROPIC_API_KEY` before the Anthropic SDK loads, which keeps plain `bun run src/index.ts` on Max-subscription routing instead of cached API-key billing. OpenAI-provider dispatches continue to use `CODEX_API_KEY`.
 
 When a Delamain bundle is deployed to `.claude/delamains/<name>/`, later `alsc deploy claude` runs refresh `dispatcher/` from the canonical dispatcher template while preserving an existing `dispatcher/node_modules/` directory. Deploy itself does not install packages. If dependencies have never been installed in the deployed target, deploy warns and leaves installation as an explicit `bun install` step.
 
@@ -24,7 +24,7 @@ The deployed bundle root also receives `runtime-manifest.json`. That manifest is
 - which entity path template to match
 - which frontmatter field is the Delamain-bound status field
 - which discriminator field/value, if any, constrain the binding
-- which effective Agent SDK dispatch limits to apply for this bundle
+- which effective dispatch limits to apply for this bundle
 - which repo-relative submodules, if any, should be mounted as nested worktrees inside the host worktree
 
 Authored manifest-sidecar declarations come from an optional `runtime-manifest.config.json` at the Delamain bundle root:
@@ -41,8 +41,8 @@ The dispatcher is supported from deployed `.claude/delamains/<name>/` bundles. R
 
 The dispatcher now emits three runtime surfaces per deployed Delamain bundle:
 
-- `status.json` — the small compatibility heartbeat for liveness, PID checks, poll cadence, direct active dispatch count, scanned item count, and current delegated handoffs
-- `runtime/worktree-state.json` — the current runtime registry for active, blocked, orphaned, guarded, and delegated dispatch ownership
+- `status.json` — the small compatibility heartbeat for liveness, PID checks, poll cadence, active dispatch counts, provider breakdown, and scanned item count
+- `runtime/worktree-state.json` — the current runtime registry for active, blocked, orphaned, and guarded dispatch ownership plus provider metadata
 - `telemetry/events.jsonl` — the bounded recent activity log for dashboard history
 
 `telemetry/events.jsonl` is append-only at the contract level, but the writer keeps only the most recent bounded window of events so the file does not grow without limit. Each event is a single JSON object using schema `als-delamain-telemetry-event@1`.
@@ -68,12 +68,12 @@ Older dispatcher copies that only emit `status.json` remain valid. Consumers mus
 
 Entry point. Handles:
 
-- **Auth preflight**: imports `src/preflight.ts` as the literal first line so the Claude Agent SDK never sees `ANTHROPIC_API_KEY` during module evaluation.
+- **Auth preflight**: imports `src/preflight.ts` as the literal first line so the Anthropic SDK never sees `ANTHROPIC_API_KEY` during module evaluation.
 - **System root discovery**: walks up directories from its own location looking for `.als/system.ts`. Also respects the `SYSTEM_ROOT` environment variable.
 - **Template version check**: reads local `dispatcher/VERSION` and canonical `${CLAUDE_PLUGIN_ROOT}/skills/new/references/dispatcher/VERSION`, logs the current/latest versions, and fails before polling when either source is missing or malformed.
 - **Startup**: calls `resolve()` once to load `runtime-manifest.json`, local `delamain.yaml`, and state-agent files, then enters the poll loop.
 - **Effective limits**: resolves `runtime-manifest.json.limits` once at startup, falls back to canonical `50 / 10` when absent, and logs the active `maxTurns / maxBudgetUsd` pair before polling.
-- **Runtime boot**: creates one `DispatcherRuntime`, runs orphan sweep at startup, and keeps the persisted dispatch registry as the source of truth for active, blocked, orphaned, guarded, and delegated ownership.
+- **Runtime boot**: creates one `DispatcherRuntime`, runs orphan sweep at startup, and keeps the persisted dispatch registry as the source of truth for active, blocked, orphaned, and guarded ownership.
 - **Poll loop**: scans items at a configurable interval (`POLL_MS`, default 30s). Reads committed `HEAD` state only, warns when a status transition exists in the checkout but not in `HEAD`, reconciles registry records against current item status, suppresses redispatch for unresolved incidents, runs periodic orphan sweeping, and refreshes the heartbeat after dispatch completions.
 - **Runtime hardening**: keeps the event loop alive with an internal keepalive server, logs tick and process lifecycle events, and ignores stray `SIGTERM` so dispatcher children do not accidentally kill the parent runtime.
 
@@ -93,7 +93,7 @@ Runtime coordinator for isolated dispatch execution.
 - Owns the persisted dispatch registry
 - Finalizes successful and failed dispatches
 - Holds the repo-mutation lease during merge-back
-- Produces heartbeat counts for active, blocked, orphaned, guarded, and delegated runtime state
+- Produces heartbeat counts for active, blocked, orphaned, and guarded runtime state, including `active_by_provider`
 
 ### `src/dispatch-registry.ts`
 
@@ -155,8 +155,8 @@ The core logic. Two main functions:
 
 1. Claims a persisted dispatch slot and creates an isolated worktree
 2. Rewrites the bound `item_file` into that worktree and adds worktree metadata to Runtime Context
-3. Calls the Agent SDK `query()` with the worktree as `cwd`
-4. Handles direct and delegated session behavior: reads session metadata, resumes direct SDK sessions, and skips SDK resume plus auto-persist for delegated states
+3. Routes the dispatch through the state's declared provider adapter with the worktree as `cwd`
+4. Handles provider-owned session behavior: reads session metadata, resumes Anthropic sessions or OpenAI threads when the state is resumable, and persists new provider session ids back to the item's `session-field`
 5. Finalizes through the runtime: auto-commit worktree changes, merge back under the repo-mutation lease, clean up on success, or preserve blocked/orphaned worktrees when integration is unsafe
 
 ### `src/runtime-manifest.ts`
@@ -183,8 +183,8 @@ Dispatcher template version loader and formatter.
 Pure helper logic for session handling:
 
 - Builds the runtime `resume`, `session_field`, and `session_id` contract from authored Delamain state data plus any stored session value
-- Distinguishes direct SDK-resumable states from delegated externally managed worker sessions
-- Centralizes the rule for whether the dispatcher should persist its own SDK session id
+- Treats stored session ids as opaque provider-owned identifiers
+- Centralizes the rule for whether the dispatcher should persist the provider session id
 
 ### `src/telemetry.ts`
 
@@ -201,7 +201,7 @@ Structured telemetry writer and reader.
 Shared reader/writer for `runtime/worktree-state.json`.
 
 - Normalizes persisted dispatch/worktree records
-- Lets dashboard consumers inspect current active, blocked, orphaned, guarded, and delegated state
+- Lets dashboard consumers inspect current active, blocked, orphaned, and guarded state plus provider metadata
 - Gives the dispatcher registry a single on-disk contract
 
 ## How Configuration Is Derived
@@ -220,7 +220,7 @@ The dispatcher reads one generated runtime manifest plus the local Delamain bund
 | Dispatch rules | States where `actor: agent` and `path` is declared |
 | Agent prompts | Markdown files at delamain-relative `path` |
 | Legal transitions | Delamain primary definition → `transitions` filtered by source state |
-| Session handling | State `resumable` + `delegated` + `session-field` |
+| Session handling | State `resumable` + `provider` + `session-field` |
 | Sub-agents | State `sub-agent` path |
 | Local dispatcher template version | `dispatcher/VERSION` |
 | Latest dispatcher template version | `${CLAUDE_PLUGIN_ROOT}/skills/new/references/dispatcher/VERSION` |
@@ -241,7 +241,7 @@ The `findSystemRoot` walk-up in `index.ts` makes the dispatcher work at any nest
 
 The dashboard service reads:
 
-- `status.json` for liveness and current delegated handoffs
+- `status.json` for liveness and provider-aware active-dispatch counts
 - `runtime/worktree-state.json` for active worktree ownership plus blocked/orphaned incidents, including any mounted submodule worktrees
 - `telemetry/events.jsonl` for recent run history and failures
 - `runtime-manifest.json` for bundle identity and item binding
@@ -254,25 +254,16 @@ The localhost web UI and the OpenTUI client both consume the same service snapsh
 
 Session fields are implicit — they originate in authored `delamain.ts` and are projected into runtime `delamain.yaml`, not declared in `module.ts`.
 
-### Direct resumable dispatch
+### Provider-owned resumable dispatch
 
-States that declare `resumable: true` and omit `delegated` (or declare `delegated: false`) get automatic Agent SDK session persistence:
+States that declare `resumable: true` get automatic provider session persistence:
 
 1. Before dispatch, the dispatcher reads the session field from item frontmatter.
-2. If the stored value is a valid Agent SDK session id, it passes `resume: sessionId` to the SDK.
-3. After a new SDK session completes, the dispatcher writes that SDK session id back to the item's frontmatter field.
-4. On subsequent dispatches to the same state, the SDK session resumes where it left off.
+2. If the stored value is a non-empty provider session id, it passes that value to the provider adapter as the resume target.
+3. After a new provider session or thread completes, the dispatcher writes that session id back to the item's frontmatter field.
+4. On subsequent dispatches to the same state, the provider session resumes where it left off.
 
-### Delegated dispatch
-
-States that declare `delegated: true` are treated as orchestrators for externally managed work:
-
-1. The dispatcher still reads the authored `session-field` value when one exists.
-2. The dispatcher exposes `session_field` and `session_id` in Runtime Context so the state agent can inspect or manage the delegated worker lifecycle.
-3. The dispatcher does not pass `resume` to the Agent SDK for delegated states.
-4. The dispatcher does not auto-persist the dispatcher-owned Agent SDK session id back into the item's `session-field`.
-
-If a delegated state has no declared `session-field`, Runtime Context still includes `session_field: null` and `session_id: null`.
+`session_id` is intentionally opaque. Anthropic currently stores SDK session ids; OpenAI stores Codex thread ids.
 
 ## Sub-Agent Handling
 
@@ -313,18 +304,18 @@ If `dispatcher/VERSION`, `CLAUDE_PLUGIN_ROOT`, the canonical dispatcher `VERSION
 - `active_dispatches`
 - `items_scanned`
 
-Delegation-aware dispatchers add:
+Provider-aware dispatchers add:
 
 - `blocked_dispatches` — current count of blocked merge or cleanup incidents
 - `orphaned_dispatches` — current count of preserved orphaned worktrees
-- `guarded_dispatches` — current count of successful same-state direct runs still guarded against redispatch
-- `delegated_dispatches` — current number of delegated items still owned by external workers
-- `delegated_items` — array of `{ item_id, state, delegated_at }` objects for the live delegated handoffs
+- `guarded_dispatches` — current count of successful same-state runs still guarded against redispatch
+- `active_by_provider` — object with active counts per provider, currently `{ anthropic, openai }`
 
 Older consumers that only read the compatibility fields remain valid.
 
 ## Dependencies
 
-- `@anthropic-ai/claude-agent-sdk` — for `query()` calls
+- `@anthropic-ai/claude-agent-sdk` — Anthropic provider dispatch
+- `@openai/codex-sdk` — OpenAI provider dispatch
 - `yaml` — for YAML parsing
 - Bun runtime

@@ -86,20 +86,87 @@ test.concurrent("malformed Delamain prompt frontmatter produces a diagnostic ins
   });
 });
 
-test.concurrent("delegated is rejected on operator-owned states during bundle validation", async () => {
-  await withFixtureSandbox("delamain-delegated-operator-state", async ({ root }) => {
+test.concurrent("provider is rejected on operator-owned states during bundle validation", async () => {
+  await withFixtureSandbox("delamain-provider-operator-state", async ({ root }) => {
     await updateYamlTextFile(
       root,
       ".als/modules/factory/v1/delamains/development-pipeline/delamain.ts",
       (current) => {
         const states = current.states as Record<string, Record<string, unknown>>;
-        states["plan-input"].delegated = true;
+        states["plan-input"].provider = "anthropic";
       },
     );
 
     const result = validateFixture(root);
     expect(result.status).toBe("fail");
     expectModuleDiagnostic(result, "factory", codes.DELAMAIN_INVALID, "development-pipeline/delamain.ts");
+  });
+});
+
+test.concurrent("missing provider on agent-owned states fails bundle validation", async () => {
+  await withFixtureSandbox("delamain-provider-missing", async ({ root }) => {
+    await updateYamlTextFile(
+      root,
+      ".als/modules/factory/v1/delamains/development-pipeline/delamain.ts",
+      (current) => {
+        const states = current.states as Record<string, Record<string, unknown>>;
+        if (states.planning) {
+          delete states.planning.provider;
+        }
+      },
+    );
+
+    const result = validateFixture(root);
+    expect(result.status).toBe("fail");
+    expectModuleDiagnostic(result, "factory", codes.DELAMAIN_INVALID, "development-pipeline/delamain.ts");
+  });
+});
+
+test.concurrent("openai prompt assets reject Claude /skill syntax", async () => {
+  await withFixtureSandbox("delamain-openai-claude-skill-syntax", async ({ root }) => {
+    await updateYamlTextFile(
+      root,
+      ".als/modules/factory/v1/delamains/development-pipeline/delamain.ts",
+      (current) => {
+        const states = current.states as Record<string, Record<string, unknown>>;
+        states.planning!.provider = "openai";
+      },
+    );
+
+    await updateMarkdownFrontmatterFile(
+      root,
+      ".als/modules/factory/v1/delamains/development-pipeline/agents/planning.md",
+      (data) => {
+        delete data.tools;
+        data.model = "gpt-5.4";
+        data["sandbox-mode"] = "workspace-write";
+        data["approval-policy"] = "never";
+      },
+    );
+
+    await updateTextFile(
+      root,
+      ".als/modules/factory/v1/delamains/development-pipeline/agents/planning.md",
+      (current) => `${current}\n\nUse /commit before finishing.\n`,
+    );
+
+    const result = validateFixture(root);
+    expect(result.status).toBe("fail");
+    expectModuleDiagnostic(result, "factory", codes.DELAMAIN_PROMPT_INVALID, "agents/planning.md");
+  });
+});
+
+test.concurrent("anthropic prompt assets reject Codex $skill syntax", async () => {
+  await withFixtureSandbox("delamain-anthropic-codex-skill-syntax", async ({ root }) => {
+    await updateTextFile(
+      root,
+      ".als/modules/factory/v1/delamains/development-pipeline/agents/queued.md",
+      (current) => `${current}\n\nUse $commit before finishing.\n`,
+    );
+
+    const result = validateFixture(root);
+    expect(result.status).toBe("fail");
+    expectModuleDiagnostic(result, "factory", codes.DELAMAIN_PROMPT_INVALID, "agents/queued.md");
   });
 });
 

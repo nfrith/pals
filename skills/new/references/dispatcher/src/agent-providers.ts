@@ -1,0 +1,447 @@
+import { isAbsolute, resolve as resolvePath } from "node:path";
+import { gitCommonDir } from "./git.js";
+import type { AgentProvider } from "./provider.js";
+
+const ANTHROPIC_MODELS = new Set(["sonnet", "opus", "haiku"]);
+const OPENAI_LONG_CONTEXT_THRESHOLD_TOKENS = 272_000;
+const TOKENS_PER_MILLION = 1_000_000;
+
+interface OpenAIModelPricingTier {
+  inputUsdPer1M: number;
+  cachedInputUsdPer1M: number;
+  outputUsdPer1M: number;
+}
+
+interface OpenAIModelPricing {
+  short: OpenAIModelPricingTier;
+  long?: OpenAIModelPricingTier;
+  longContextThresholdTokens?: number;
+}
+
+const OPENAI_MODEL_PRICING: Record<string, OpenAIModelPricing> = {
+  "gpt-5.4": {
+    short: { inputUsdPer1M: 2.5, cachedInputUsdPer1M: 0.25, outputUsdPer1M: 15 },
+    long: { inputUsdPer1M: 5, cachedInputUsdPer1M: 0.5, outputUsdPer1M: 22.5 },
+    longContextThresholdTokens: OPENAI_LONG_CONTEXT_THRESHOLD_TOKENS,
+  },
+  "gpt-5.4-mini": {
+    short: { inputUsdPer1M: 0.75, cachedInputUsdPer1M: 0.075, outputUsdPer1M: 4.5 },
+  },
+  "gpt-5.4-nano": {
+    short: { inputUsdPer1M: 0.2, cachedInputUsdPer1M: 0.02, outputUsdPer1M: 1.25 },
+  },
+  "gpt-5.4-pro": {
+    short: { inputUsdPer1M: 30, cachedInputUsdPer1M: 0, outputUsdPer1M: 180 },
+    long: { inputUsdPer1M: 60, cachedInputUsdPer1M: 0, outputUsdPer1M: 270 },
+    longContextThresholdTokens: OPENAI_LONG_CONTEXT_THRESHOLD_TOKENS,
+  },
+  "gpt-5.3-codex": {
+    short: { inputUsdPer1M: 1.75, cachedInputUsdPer1M: 0.175, outputUsdPer1M: 14 },
+  },
+  "gpt-5.2": {
+    short: { inputUsdPer1M: 1.75, cachedInputUsdPer1M: 0.175, outputUsdPer1M: 14 },
+  },
+  "gpt-5.2-codex": {
+    short: { inputUsdPer1M: 1.75, cachedInputUsdPer1M: 0.175, outputUsdPer1M: 14 },
+  },
+  "gpt-5.1-codex-max": {
+    short: { inputUsdPer1M: 1.25, cachedInputUsdPer1M: 0.125, outputUsdPer1M: 10 },
+  },
+  "gpt-5.1-codex-mini": {
+    short: { inputUsdPer1M: 0.25, cachedInputUsdPer1M: 0.025, outputUsdPer1M: 2 },
+  },
+  "gpt-5-codex": {
+    short: { inputUsdPer1M: 1.25, cachedInputUsdPer1M: 0.125, outputUsdPer1M: 10 },
+  },
+};
+
+export interface LoadedAgentPrompt {
+  description: string;
+  prompt: string;
+  tools?: string[];
+  model?: string;
+  reasoningEffort?: "low" | "medium" | "high" | "xhigh";
+  sandboxMode?: "read-only" | "workspace-write" | "danger-full-access";
+  approvalPolicy?: "untrusted" | "on-request" | "on-failure" | "never";
+  networkEnabled?: boolean;
+}
+
+export interface ProviderDispatchInput {
+  itemId: string;
+  prompt: string;
+  cwd: string;
+  agent: LoadedAgentPrompt;
+  maxTurns: number;
+  maxBudgetUsd: number;
+  resumeSessionId?: string;
+  env: Record<string, string | undefined>;
+  subAgents?: Record<string, LoadedAgentPrompt>;
+  onToolUse: (detail: string) => void;
+}
+
+export interface ProviderDispatchResult {
+  sessionId?: string;
+  subtype: string;
+  totalCostUsd: number | null;
+  durationMs: number;
+  numTurns: number;
+}
+
+export interface AgentProviderAdapter {
+  dispatch(input: ProviderDispatchInput): Promise<ProviderDispatchResult>;
+}
+
+export interface OpenAIUsage {
+  inputTokens: number;
+  cachedInputTokens: number;
+  outputTokens: number;
+}
+
+const providers: Record<AgentProvider, AgentProviderAdapter> = {
+  anthropic: {
+    async dispatch(input) {
+      const { query } = await loadAnthropicSdk();
+      let sessionId = input.resumeSessionId;
+      let resultSummary: ProviderDispatchResult | null = null;
+      const startedAt = Date.now();
+
+      for await (const message of query({
+        prompt: input.prompt,
+        options: {
+          cwd: input.cwd,
+          model: resolveAnthropicModel(input.agent.model),
+          allowedTools: [...(input.agent.tools ?? ["Read", "Edit"])],
+          ...(input.subAgents ? { agents: toAnthropicSubAgents(input.subAgents) } : {}),
+          ...(input.resumeSessionId ? { resume: input.resumeSessionId } : {}),
+          env: input.env,
+          permissionMode: "acceptEdits",
+          maxTurns: input.maxTurns,
+          maxBudgetUsd: input.maxBudgetUsd,
+        },
+      })) {
+        if (message.type === "system" && message.subtype === "init") {
+          sessionId = message.session_id;
+        }
+
+        if (message.type === "assistant") {
+          for (const block of message.message.content) {
+            if (block.type === "tool_use") {
+              input.onToolUse(formatToolUse(block.name, block.input as Record<string, unknown>));
+            }
+          }
+        }
+
+        if (message.type === "result") {
+          resultSummary = {
+            sessionId,
+            subtype: message.subtype,
+            totalCostUsd:
+              typeof message.total_cost_usd === "number" ? message.total_cost_usd : null,
+            durationMs: message.duration_ms,
+            numTurns: message.num_turns,
+          };
+        }
+      }
+
+      return resultSummary ?? {
+        sessionId,
+        subtype: "success",
+        totalCostUsd: null,
+        durationMs: Date.now() - startedAt,
+        numTurns: 0,
+      };
+    },
+  },
+  openai: {
+    async dispatch(input) {
+      if (input.subAgents && Object.keys(input.subAgents).length > 0) {
+        throw new Error("OpenAI agent states do not support ALS sub-agent projection");
+      }
+
+      const { Codex } = await loadCodexSdk();
+      const startedAt = Date.now();
+      let sessionId = input.resumeSessionId;
+      let numTurns = 0;
+      let totalCostUsd = 0;
+      let failureSubtype = "success";
+      const model = input.agent.model ?? "gpt-5.4";
+      if (!resolveOpenAIModelPricing(model)) {
+        throw new Error(
+          `OpenAI dispatcher cost accounting does not recognize model '${model}'. Add pricing before using it in Delamain prompts.`,
+        );
+      }
+
+      const commonDir = await gitCommonDir(input.cwd);
+      const additionalDirectories = [normalizeAdditionalDirectory(input.cwd, commonDir)];
+      const apiKey = asString(input.env["CODEX_API_KEY"]) ?? asString(process.env["CODEX_API_KEY"]);
+      const codex = new Codex({
+        ...(apiKey ? { apiKey } : {}),
+        env: normalizeEnv(input.env),
+      });
+
+      const threadOptions: Record<string, unknown> = {
+        model,
+        workingDirectory: input.cwd,
+        sandboxMode: input.agent.sandboxMode ?? "workspace-write",
+        approvalPolicy: input.agent.approvalPolicy ?? "never",
+        additionalDirectories,
+      };
+
+      if (input.agent.reasoningEffort) {
+        threadOptions["modelReasoningEffort"] = input.agent.reasoningEffort;
+      }
+
+      if (input.agent.networkEnabled !== undefined) {
+        threadOptions["networkAccessEnabled"] = input.agent.networkEnabled;
+      }
+
+      const thread = input.resumeSessionId
+        ? codex.resumeThread(input.resumeSessionId, threadOptions)
+        : codex.startThread(threadOptions);
+      const streamed = await thread.runStreamed(input.prompt);
+
+      try {
+        for await (const event of streamed.events) {
+          const type = extractCodexEventType(event);
+          if (!type) continue;
+
+          if (type === "thread.started") {
+            sessionId = asString(event["thread_id"]) ?? asString(event["threadId"]) ?? sessionId;
+            continue;
+          }
+
+          if (type === "turn.completed") {
+            numTurns += 1;
+            const usage = extractCodexUsage(event);
+            if (!usage) {
+              failureSubtype = "error";
+              throw new Error(`OpenAI turn.completed event omitted usage for ${input.itemId}`);
+            }
+            totalCostUsd += estimateOpenAITurnCostUsd(model, usage) ?? 0;
+            if (numTurns > input.maxTurns) {
+              failureSubtype = "max_turns_exceeded";
+              throw new Error(
+                `OpenAI dispatch exceeded maxTurns (${input.maxTurns}) for ${input.itemId}`,
+              );
+            }
+            if (totalCostUsd > input.maxBudgetUsd) {
+              failureSubtype = "max_budget_exceeded";
+              throw new Error(
+                `OpenAI dispatch exceeded maxBudgetUsd (${input.maxBudgetUsd}) for ${input.itemId}`,
+              );
+            }
+            continue;
+          }
+
+          if (type === "turn.failed" || type === "error") {
+            failureSubtype = "error";
+            continue;
+          }
+
+          if (type === "item.started" || type === "item.updated" || type === "item.completed") {
+            const detail = describeCodexToolUse(event["item"]);
+            if (detail) {
+              input.onToolUse(detail);
+            }
+          }
+        }
+      } catch (error) {
+        return {
+          sessionId,
+          subtype: failureSubtype === "success" ? "error" : failureSubtype,
+          totalCostUsd,
+          durationMs: Date.now() - startedAt,
+          numTurns,
+        };
+      }
+
+      return {
+        sessionId,
+        subtype: failureSubtype,
+        totalCostUsd,
+        durationMs: Date.now() - startedAt,
+        numTurns,
+      };
+    },
+  },
+};
+
+export function getAgentProvider(provider: AgentProvider): AgentProviderAdapter {
+  return providers[provider];
+}
+
+export function estimateOpenAITurnCostUsd(model: string, usage: OpenAIUsage): number | null {
+  const pricing = resolveOpenAIModelPricing(model);
+  if (!pricing) {
+    return null;
+  }
+
+  const promptInputTokens = usage.inputTokens + usage.cachedInputTokens;
+  const tier = pricing.long && pricing.longContextThresholdTokens
+      && promptInputTokens > pricing.longContextThresholdTokens
+    ? pricing.long
+    : pricing.short;
+
+  return (
+    (usage.inputTokens / TOKENS_PER_MILLION) * tier.inputUsdPer1M
+    + (usage.cachedInputTokens / TOKENS_PER_MILLION) * tier.cachedInputUsdPer1M
+    + (usage.outputTokens / TOKENS_PER_MILLION) * tier.outputUsdPer1M
+  );
+}
+
+function resolveAnthropicModel(model: string | undefined): "sonnet" | "opus" | "haiku" {
+  if (model && ANTHROPIC_MODELS.has(model)) {
+    return model as "sonnet" | "opus" | "haiku";
+  }
+
+  return "sonnet";
+}
+
+function toAnthropicSubAgents(
+  subAgents: Record<string, LoadedAgentPrompt>,
+): Record<string, { description: string; prompt: string; tools?: string[]; model?: "sonnet" | "opus" | "haiku" }> {
+  return Object.fromEntries(
+    Object.entries(subAgents).map(([name, agent]) => [
+      name,
+      {
+        description: agent.description,
+        prompt: agent.prompt,
+        ...(agent.tools ? { tools: agent.tools } : {}),
+        ...(agent.model && ANTHROPIC_MODELS.has(agent.model)
+          ? { model: agent.model as "sonnet" | "opus" | "haiku" }
+          : {}),
+      },
+    ]),
+  );
+}
+
+function normalizeEnv(env: Record<string, string | undefined>): Record<string, string> {
+  const normalized: Record<string, string> = {};
+  for (const [key, value] of Object.entries(env)) {
+    if (typeof value === "string") {
+      normalized[key] = value;
+    }
+  }
+  return normalized;
+}
+
+function normalizeAdditionalDirectory(cwd: string, value: string): string {
+  return isAbsolute(value) ? value : resolvePath(cwd, value);
+}
+
+async function loadCodexSdk(): Promise<{ Codex: new (options: Record<string, unknown>) => any }> {
+  try {
+    return await import("@openai/codex-sdk");
+  } catch (error) {
+    throw new Error(
+      `OpenAI dispatcher integration requires '@openai/codex-sdk': ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+}
+
+async function loadAnthropicSdk(): Promise<{
+  query: (input: { prompt: string; options: Record<string, unknown> }) => AsyncIterable<any>;
+}> {
+  try {
+    return await import("@anthropic-ai/claude-agent-sdk");
+  } catch (error) {
+    throw new Error(
+      `Anthropic dispatcher integration requires '@anthropic-ai/claude-agent-sdk': ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+}
+
+function extractCodexEventType(event: unknown): string | null {
+  if (!event || typeof event !== "object") {
+    return null;
+  }
+
+  const value = event as Record<string, unknown>;
+  return asString(value["type"]) ?? asString(value["event"]) ?? null;
+}
+
+function extractCodexUsage(event: unknown): OpenAIUsage | null {
+  const value = asRecord(event);
+  const usage = value ? asRecord(value["usage"]) : null;
+  if (!usage) {
+    return null;
+  }
+
+  const inputTokens = asNumber(usage["input_tokens"]) ?? 0;
+  const cachedInputTokens = asNumber(usage["cached_input_tokens"]) ?? 0;
+  const outputTokens = asNumber(usage["output_tokens"]) ?? 0;
+  return {
+    inputTokens,
+    cachedInputTokens,
+    outputTokens,
+  };
+}
+
+function describeCodexToolUse(item: unknown): string | null {
+  if (!item || typeof item !== "object") {
+    return null;
+  }
+
+  const value = item as Record<string, unknown>;
+  const itemType = asString(value["type"]) ?? asString(value["kind"]) ?? "";
+  if (!itemType.includes("tool")) {
+    return null;
+  }
+
+  const name = asString(value["name"])
+    ?? asString(value["tool_name"])
+    ?? asString(value["toolName"])
+    ?? itemType;
+  const payload = asRecord(value["input"])
+    ?? asRecord(value["arguments"])
+    ?? asRecord(value["args"])
+    ?? {};
+
+  return formatToolUse(name, payload);
+}
+
+function formatToolUse(name: string, input: Record<string, unknown>): string {
+  const path = asString(input["file_path"]) ?? asString(input["path"]);
+  if (path) return `${name} ${path}`;
+
+  const command = asString(input["command"]) ?? asString(input["cmd"]);
+  if (command) return `${name} ${command.length > 60 ? `${command.slice(0, 57)}...` : command}`;
+
+  const pattern = asString(input["pattern"]);
+  if (pattern) return `${name} ${pattern}`;
+
+  const description = asString(input["description"]);
+  if (description) return `${name}: ${description}`;
+
+  return name;
+}
+
+function asString(value: unknown): string | null {
+  return typeof value === "string" && value.length > 0 ? value : null;
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null;
+}
+
+function asNumber(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function resolveOpenAIModelPricing(model: string): OpenAIModelPricing | null {
+  const normalized = model.trim().toLowerCase();
+  const direct = OPENAI_MODEL_PRICING[normalized];
+  if (direct) {
+    return direct;
+  }
+
+  for (const [prefix, pricing] of Object.entries(OPENAI_MODEL_PRICING)) {
+    if (normalized === prefix || normalized.startsWith(`${prefix}-`)) {
+      return pricing;
+    }
+  }
+
+  return null;
+}

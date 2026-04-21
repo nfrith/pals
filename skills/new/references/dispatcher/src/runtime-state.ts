@@ -1,12 +1,17 @@
 import { mkdir, readFile, rename, writeFile } from "fs/promises";
 import { join } from "path";
+import {
+  emptyProviderDispatchCounts,
+  incrementProviderDispatchCount,
+  type AgentProvider,
+  type ProviderDispatchCounts,
+} from "./provider.js";
 
 export const DELAMAIN_RUNTIME_STATE_SCHEMA = "als-delamain-worktree-state@1";
 
 export type RuntimeDispatchStatus =
   | "active"
   | "guarded"
-  | "delegated"
   | "blocked"
   | "orphaned";
 
@@ -41,7 +46,7 @@ export interface RuntimeDispatchRecord {
   state: string;
   agent_name: string;
   dispatcher_name: string;
-  delegated: boolean;
+  provider: AgentProvider;
   resumable: boolean;
   session_field: string | null;
   status: RuntimeDispatchStatus;
@@ -76,14 +81,13 @@ export interface RuntimeDispatchState {
 export interface RuntimeDispatchSummary {
   active: RuntimeDispatchRecord[];
   blocked: RuntimeDispatchRecord[];
-  delegated: RuntimeDispatchRecord[];
   guarded: RuntimeDispatchRecord[];
   orphaned: RuntimeDispatchRecord[];
   activeCount: number;
   blockedCount: number;
-  delegatedCount: number;
   guardedCount: number;
   orphanedCount: number;
+  activeByProvider: ProviderDispatchCounts;
 }
 
 interface RuntimeStatePaths {
@@ -162,21 +166,24 @@ export async function writeRuntimeState(
 export function summarizeRuntimeState(state: RuntimeDispatchState): RuntimeDispatchSummary {
   const active = state.records.filter((record) => record.status === "active");
   const guarded = state.records.filter((record) => record.status === "guarded");
-  const delegated = state.records.filter((record) => record.status === "delegated");
   const blocked = state.records.filter((record) => record.status === "blocked");
   const orphaned = state.records.filter((record) => record.status === "orphaned");
+  const activeByProvider = emptyProviderDispatchCounts();
+
+  for (const record of active) {
+    incrementProviderDispatchCount(activeByProvider, record.provider);
+  }
 
   return {
     active,
     blocked,
-    delegated,
     guarded,
     orphaned,
     activeCount: active.length,
     blockedCount: blocked.length,
-    delegatedCount: delegated.length,
     guardedCount: guarded.length,
     orphanedCount: orphaned.length,
+    activeByProvider,
   };
 }
 
@@ -201,7 +208,7 @@ function normalizeRecord(input: unknown): RuntimeDispatchRecord {
     state: asString(value.state) ?? "unknown",
     agent_name: asString(value.agent_name) ?? "unknown",
     dispatcher_name: asString(value.dispatcher_name) ?? "unknown",
-    delegated: value.delegated === true,
+    provider: normalizeProvider(value.provider),
     resumable: value.resumable === true,
     session_field: asString(value.session_field),
     status: normalizeStatus(value.status),
@@ -266,11 +273,14 @@ function normalizeIncident(value: unknown): RuntimeDispatchIncident | null {
 function normalizeStatus(value: unknown): RuntimeDispatchStatus {
   return value === "active"
     || value === "guarded"
-    || value === "delegated"
     || value === "blocked"
     || value === "orphaned"
     ? value
     : "blocked";
+}
+
+function normalizeProvider(value: unknown): AgentProvider {
+  return value === "openai" ? "openai" : "anthropic";
 }
 
 function normalizeMergeOutcome(value: unknown): RuntimeMergeOutcome {

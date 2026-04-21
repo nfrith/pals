@@ -9,5 +9,15 @@
   "status_field": "status",
   "discriminator_field": null,
   "discriminator_value": null,
-  "submodules": []
+  "submodules": [],
+  "state_providers": {
+    "queued": "anthropic",
+    "planning": "openai",
+    "ready": "anthropic",
+    "in-dev": "openai",
+    "in-review": "anthropic",
+    "deployment-ready": "anthropic",
+    "deploying": "anthropic",
+    "deployment-testing": "anthropic"
+  }
 }

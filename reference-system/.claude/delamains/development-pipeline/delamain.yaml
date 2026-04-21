@@ -12,14 +12,15 @@ states:
   queued:
     phase: intake
     actor: agent
+    provider: anthropic
     path: agents/queued.md
     resumable: false
   planning:
     phase: planning
     actor: agent
+    provider: openai
     path: agents/planning.md
     resumable: true
-    delegated: true
     session-field: planner_session
   plan-input:
     phase: planning
@@ -30,18 +31,20 @@ states:
   ready:
     phase: implementation
     actor: agent
+    provider: anthropic
     path: agents/ready.md
     resumable: false
   in-dev:
     phase: implementation
     actor: agent
+    provider: openai
     path: agents/in-dev.md
     resumable: true
     session-field: dev_session
-    sub-agent: sub-agents/developer.md
   in-review:
     phase: implementation
     actor: agent
+    provider: anthropic
     path: agents/in-review.md
     resumable: false
   uat-test:
@@ -50,16 +53,19 @@ states:
   deployment-ready:
     phase: deployment
     actor: agent
+    provider: anthropic
     path: agents/deployment-ready.md
     resumable: false
   deploying:
     phase: deployment
     actor: agent
+    provider: anthropic
     path: agents/deploying.md
     resumable: false
   deployment-testing:
     phase: deployment
     actor: agent
+    provider: anthropic
     path: agents/deployment-testing.md
     resumable: false
   deployment-failure:

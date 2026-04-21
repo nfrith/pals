@@ -1,5 +1,6 @@
 import { readFile } from "fs/promises";
 import { join } from "path";
+import type { AgentProvider } from "./provider.js";
 
 export interface RuntimeManifest {
   schema: string;
@@ -13,6 +14,7 @@ export interface RuntimeManifest {
   discriminator_field: string | null;
   discriminator_value: string | null;
   submodules: string[];
+  state_providers: Record<string, AgentProvider>;
   limits?: RuntimeManifestLimits;
 }
 
@@ -112,6 +114,7 @@ export async function loadRuntimeManifest(bundleRoot: string): Promise<RuntimeMa
   }
 
   const submodules = normalizeSubmodules(bundleRoot, manifest.submodules);
+  const stateProviders = normalizeStateProviders(bundleRoot, manifest.state_providers);
   const limits = normalizeLimits(bundleRoot, manifest.limits);
 
   return {
@@ -126,6 +129,7 @@ export async function loadRuntimeManifest(bundleRoot: string): Promise<RuntimeMa
     discriminator_field: manifest.discriminator_field ?? null,
     discriminator_value: manifest.discriminator_value ?? null,
     submodules,
+    state_providers: stateProviders,
     limits,
   };
 }
@@ -209,6 +213,29 @@ function normalizeLimits(bundleRoot: string, value: unknown): RuntimeManifestLim
       );
     }
     normalized.maxBudgetUsd = limits.maxBudgetUsd;
+  }
+
+  return normalized;
+}
+
+function normalizeStateProviders(
+  bundleRoot: string,
+  value: unknown,
+): Record<string, AgentProvider> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error(
+      `Invalid runtime-manifest.json in '${bundleRoot}': 'state_providers' must be an object`,
+    );
+  }
+
+  const normalized: Record<string, AgentProvider> = {};
+  for (const [stateName, provider] of Object.entries(value as Record<string, unknown>)) {
+    if (provider !== "anthropic" && provider !== "openai") {
+      throw new Error(
+        `Invalid runtime-manifest.json in '${bundleRoot}': state provider '${stateName}' must be 'anthropic' or 'openai'`,
+      );
+    }
+    normalized[stateName] = provider;
   }
 
   return normalized;

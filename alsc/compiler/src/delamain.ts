@@ -37,9 +37,9 @@ const delamainStateSchema = z.object({
   terminal: z.boolean().optional(),
   phase: delamainNameSchema,
   actor: z.enum(["operator", "agent"]).optional(),
+  provider: z.enum(["anthropic", "openai"]).optional(),
   path: nonEmptyString.optional(),
   resumable: z.boolean().optional(),
-  delegated: z.boolean().optional(),
   "session-field": fieldNameSchema.optional(),
   "sub-agent": nonEmptyString.optional(),
 }).strict().superRefine((value, ctx) => {
@@ -54,7 +54,7 @@ const delamainStateSchema = z.object({
   }
 
   if (isTerminal) {
-    for (const fieldName of ["actor", "path", "resumable", "delegated", "session-field", "sub-agent"] as const) {
+    for (const fieldName of ["actor", "provider", "path", "resumable", "session-field", "sub-agent"] as const) {
       if (value[fieldName] !== undefined) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
@@ -76,7 +76,7 @@ const delamainStateSchema = z.object({
   }
 
   if (value.actor === "operator") {
-    for (const fieldName of ["path", "resumable", "delegated", "session-field", "sub-agent"] as const) {
+    for (const fieldName of ["provider", "path", "resumable", "session-field", "sub-agent"] as const) {
       if (value[fieldName] !== undefined) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
@@ -93,6 +93,14 @@ const delamainStateSchema = z.object({
       code: z.ZodIssueCode.custom,
       message: "agent-owned states must declare path",
       path: ["path"],
+    });
+  }
+
+  if (!value.provider) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "agent-owned states must declare provider",
+      path: ["provider"],
     });
   }
 
@@ -113,6 +121,14 @@ const delamainStateSchema = z.object({
       code: z.ZodIssueCode.custom,
       message: "non-resumable agent-owned states must not declare session-field",
       path: ["session-field"],
+    });
+  }
+
+  if (value.provider === "openai" && value["sub-agent"] !== undefined) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "openai agent-owned states must not declare sub-agent",
+      path: ["sub-agent"],
     });
   }
 });
@@ -141,6 +157,7 @@ export type DelamainShape = z.infer<typeof delamainShapeSchema>;
 export type DelamainStateShape = z.infer<typeof delamainStateSchema>;
 export type DelamainTransitionShape = z.infer<typeof delamainTransitionSchema>;
 export type DelamainStateActor = NonNullable<DelamainStateShape["actor"]>;
+export type DelamainAgentProvider = NonNullable<DelamainStateShape["provider"]>;
 
 export interface DelamainValidationIssue {
   path: Array<string | number>;

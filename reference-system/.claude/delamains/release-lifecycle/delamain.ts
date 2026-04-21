@@ -11,18 +11,21 @@ export const delamain = defineDelamain({
       "initial": true,
       "phase": "deployment",
       "actor": "agent",
+      "provider": "anthropic",
       "resumable": false,
       "path": "agents/pending.md"
     },
     "rolling-out": {
       "phase": "deployment",
       "actor": "agent",
+      "provider": "anthropic",
       "resumable": false,
       "path": "agents/rolling-out.md"
     },
     "active": {
       "phase": "steady-state",
       "actor": "agent",
+      "provider": "anthropic",
       "resumable": false,
       "path": "agents/active.md"
     },

@@ -15,10 +15,10 @@ import {
   type DispatchTelemetryEvent,
 } from "../../../skills/new/references/dispatcher/src/telemetry.ts";
 
-test("direct resumable dispatch resumes valid SDK session ids", () => {
+test("anthropic resumable dispatch resumes stored session ids", () => {
   const state = buildSessionRuntimeState(
     {
-      delegated: false,
+      provider: "anthropic",
       resumable: true,
       sessionField: "planner_session",
     },
@@ -32,10 +32,44 @@ test("direct resumable dispatch resumes valid SDK session ids", () => {
   expect(state.resumeSessionId).toBe("8d4d2ecb-0c59-4c5c-946c-2d44ef7b43b8");
 });
 
-test("direct non-resumable dispatch omits runtime session keys", () => {
+test("openai resumable dispatch resumes opaque thread ids", () => {
   const state = buildSessionRuntimeState(
     {
-      delegated: false,
+      provider: "openai",
+      resumable: true,
+      sessionField: "planner_session",
+    },
+    "codex-thread-123",
+  );
+
+  expect(state.includeRuntimeKeys).toBe(true);
+  expect(state.runtimeSessionField).toBe("planner_session");
+  expect(state.runtimeSessionId).toBe("codex-thread-123");
+  expect(state.resume).toBe("yes");
+  expect(state.resumeSessionId).toBe("codex-thread-123");
+});
+
+test("resumable first-run dispatch exposes session field without resume", () => {
+  const state = buildSessionRuntimeState(
+    {
+      provider: "openai",
+      resumable: true,
+      sessionField: "planner_session",
+    },
+    null,
+  );
+
+  expect(state.includeRuntimeKeys).toBe(true);
+  expect(state.runtimeSessionField).toBe("planner_session");
+  expect(state.runtimeSessionId).toBeNull();
+  expect(state.resume).toBe("no");
+  expect(state.resumeSessionId).toBeUndefined();
+});
+
+test("non-resumable dispatch omits runtime session keys", () => {
+  const state = buildSessionRuntimeState(
+    {
+      provider: "anthropic",
       resumable: false,
     },
     null,
@@ -47,129 +81,59 @@ test("direct non-resumable dispatch omits runtime session keys", () => {
   expect(state.resume).toBe("no");
 });
 
-test("direct resumable first-run dispatch exposes session field without resume", () => {
-  const state = buildSessionRuntimeState(
-    {
-      delegated: false,
-      resumable: true,
-      sessionField: "planner_session",
-    },
-    null,
-  );
-
-  expect(state.includeRuntimeKeys).toBe(true);
-  expect(state.runtimeSessionField).toBe("planner_session");
-  expect(state.runtimeSessionId).toBeNull();
-  expect(state.resume).toBe("no");
-  expect(state.resumeSessionId).toBeUndefined();
-});
-
-test("direct resumable dispatch ignores invalid stored SDK session ids", () => {
-  const state = buildSessionRuntimeState(
-    {
-      delegated: false,
-      resumable: true,
-      sessionField: "planner_session",
-    },
-    "codex:ghost-tree:plan-SWF-001",
-  );
-
-  expect(state.includeRuntimeKeys).toBe(true);
-  expect(state.runtimeSessionField).toBe("planner_session");
-  expect(state.runtimeSessionId).toBeNull();
-  expect(state.resume).toBe("no");
-  expect(state.resumeSessionId).toBeUndefined();
-  expect(state.ignoredInvalidSessionId).toBe("codex:ghost-tree:plan-SWF-001");
-});
-
-test("delegated dispatch exposes saved worker session ids without SDK resume", () => {
-  const state = buildSessionRuntimeState(
-    {
-      delegated: true,
-      resumable: true,
-      sessionField: "planner_session",
-    },
-    "codex:ghost-tree:plan-SWF-001",
-  );
-
-  expect(state.includeRuntimeKeys).toBe(true);
-  expect(state.runtimeSessionField).toBe("planner_session");
-  expect(state.runtimeSessionId).toBe("codex:ghost-tree:plan-SWF-001");
-  expect(state.resume).toBe("no");
-  expect(state.resumeSessionId).toBeUndefined();
-  expect(state.ignoredInvalidSessionId).toBeUndefined();
-});
-
-test("delegated dispatch keeps valid UUID worker session ids as runtime metadata only", () => {
-  const state = buildSessionRuntimeState(
-    {
-      delegated: true,
-      resumable: true,
-      sessionField: "planner_session",
-    },
-    "8d4d2ecb-0c59-4c5c-946c-2d44ef7b43b8",
-  );
-
-  expect(state.includeRuntimeKeys).toBe(true);
-  expect(state.runtimeSessionField).toBe("planner_session");
-  expect(state.runtimeSessionId).toBe("8d4d2ecb-0c59-4c5c-946c-2d44ef7b43b8");
-  expect(state.resume).toBe("no");
-  expect(state.resumeSessionId).toBeUndefined();
-});
-
-test("delegated dispatch without a session field still emits null-shaped runtime keys", () => {
-  const state = buildSessionRuntimeState(
-    {
-      delegated: true,
-      resumable: false,
-    },
-    null,
-  );
-
-  expect(state.includeRuntimeKeys).toBe(true);
-  expect(state.runtimeSessionField).toBeNull();
-  expect(state.runtimeSessionId).toBeNull();
-  expect(state.resume).toBe("no");
-});
-
-test("delegated lifecycle moves successful launcher dispatches into delegated guards", () => {
+test("guarded lifecycle tracks active providers and guarded items", () => {
   const lifecycle = new DispatchLifecycle();
   lifecycle.reconcile([{ id: "ALS-002", status: "dev" }]);
-  lifecycle.markDispatchStarted("ALS-002", "dev");
+  lifecycle.markDispatchStarted("ALS-002", "dev", "openai");
+
+  expect(lifecycle.heartbeat()).toEqual({
+    active_dispatches: 1,
+    active_by_provider: {
+      anthropic: 0,
+      openai: 1,
+    },
+    guarded_dispatches: 0,
+    guarded_items: [],
+  });
 
   const disposition = lifecycle.completeDispatch({
     itemId: "ALS-002",
     state: "dev",
     success: true,
-    delegated: true,
-    delegatedAtMs: Date.parse("2026-04-17T04:05:06.000Z"),
+    provider: "openai",
+    guardedAtMs: Date.parse("2026-04-17T04:05:06.000Z"),
   });
 
-  expect(disposition).toBe("guarded_delegated");
+  expect(disposition).toBe("guarded");
   expect(lifecycle.isGuarded("ALS-002")).toBe(true);
   expect(lifecycle.heartbeat()).toEqual({
     active_dispatches: 0,
-    delegated_dispatches: 1,
-    delegated_items: [
+    active_by_provider: {
+      anthropic: 0,
+      openai: 0,
+    },
+    guarded_dispatches: 1,
+    guarded_items: [
       {
         item_id: "ALS-002",
         state: "dev",
-        delegated_at: "2026-04-17T04:05:06.000Z",
+        provider: "openai",
+        guarded_at: "2026-04-17T04:05:06.000Z",
       },
     ],
   });
 });
 
-test("delegated lifecycle releases delegated guards when status changes", () => {
+test("guarded lifecycle releases items when status changes", () => {
   const lifecycle = new DispatchLifecycle();
   lifecycle.reconcile([{ id: "ALS-002", status: "dev" }]);
-  lifecycle.markDispatchStarted("ALS-002", "dev");
+  lifecycle.markDispatchStarted("ALS-002", "dev", "openai");
   lifecycle.completeDispatch({
     itemId: "ALS-002",
     state: "dev",
     success: true,
-    delegated: true,
-    delegatedAtMs: Date.parse("2026-04-17T04:05:06.000Z"),
+    provider: "openai",
+    guardedAtMs: Date.parse("2026-04-17T04:05:06.000Z"),
   });
 
   const releases = lifecycle.reconcile([{ id: "ALS-002", status: "in-review" }]);
@@ -180,99 +144,67 @@ test("delegated lifecycle releases delegated guards when status changes", () => 
       previousStatus: "dev",
       nextStatus: "in-review",
       releasedActive: false,
-      releasedDelegated: true,
+      releasedGuarded: true,
     },
   ]);
   expect(lifecycle.isGuarded("ALS-002")).toBe(false);
-  expect(lifecycle.heartbeat().delegated_items).toEqual([]);
+  expect(lifecycle.heartbeat().guarded_items).toEqual([]);
 });
 
-test("delegated lifecycle ignores stale completions after the item already moved on", () => {
+test("guarded lifecycle ignores stale completions after the item already moved on", () => {
   const lifecycle = new DispatchLifecycle();
   lifecycle.reconcile([{ id: "ALS-002", status: "dev" }]);
-  lifecycle.markDispatchStarted("ALS-002", "dev");
+  lifecycle.markDispatchStarted("ALS-002", "dev", "anthropic");
   lifecycle.reconcile([{ id: "ALS-002", status: "in-review" }]);
 
   const disposition = lifecycle.completeDispatch({
     itemId: "ALS-002",
     state: "dev",
     success: true,
-    delegated: true,
-    delegatedAtMs: Date.parse("2026-04-17T04:05:06.000Z"),
+    provider: "anthropic",
   });
 
   expect(disposition).toBe("ignored_stale");
   expect(lifecycle.isGuarded("ALS-002")).toBe(false);
   expect(lifecycle.heartbeat()).toEqual({
     active_dispatches: 0,
-    delegated_dispatches: 0,
-    delegated_items: [],
+    active_by_provider: {
+      anthropic: 0,
+      openai: 0,
+    },
+    guarded_dispatches: 0,
+    guarded_items: [],
   });
-});
-
-test("direct lifecycle keeps successful direct dispatches active until status changes", () => {
-  const lifecycle = new DispatchLifecycle();
-  lifecycle.reconcile([{ id: "ALS-002", status: "dev" }]);
-  lifecycle.markDispatchStarted("ALS-002", "dev");
-
-  const disposition = lifecycle.completeDispatch({
-    itemId: "ALS-002",
-    state: "dev",
-    success: true,
-    delegated: false,
-  });
-
-  expect(disposition).toBe("guarded_direct");
-  expect(lifecycle.counts()).toEqual({ active: 1, delegated: 0 });
 });
 
 test("failed dispatches release active guards immediately", () => {
   const lifecycle = new DispatchLifecycle();
   lifecycle.reconcile([{ id: "ALS-002", status: "dev" }]);
-  lifecycle.markDispatchStarted("ALS-002", "dev");
+  lifecycle.markDispatchStarted("ALS-002", "dev", "anthropic");
 
   const disposition = lifecycle.completeDispatch({
     itemId: "ALS-002",
     state: "dev",
     success: false,
-    delegated: true,
+    provider: "anthropic",
   });
 
   expect(disposition).toBe("released_after_failure");
-  expect(lifecycle.counts()).toEqual({ active: 0, delegated: 0 });
+  expect(lifecycle.counts()).toEqual({ active: 0, guarded: 0 });
 });
 
-test("dispatcher session persistence is disabled for delegated states", () => {
+test("dispatcher session persistence writes new openai worker session ids", () => {
   expect(
     shouldPersistDispatcherSession(
       {
-        delegated: true,
-        resumable: true,
-        sessionField: "planner_session",
-      },
-      "8d4d2ecb-0c59-4c5c-946c-2d44ef7b43b8",
-      buildSessionRuntimeState(
-        {
-          delegated: true,
-          resumable: true,
-          sessionField: "planner_session",
-        },
-        "8d4d2ecb-0c59-4c5c-946c-2d44ef7b43b8",
-      ),
-    ),
-  ).toBe(false);
-
-  expect(
-    shouldPersistDispatcherSession(
-      {
-        delegated: false,
+        provider: "openai",
         resumable: true,
         sessionField: "dev_session",
       },
-      "8d4d2ecb-0c59-4c5c-946c-2d44ef7b43b8",
+      "codex-thread-123",
       buildSessionRuntimeState(
         {
-          delegated: false,
+          provider: "openai",
           resumable: true,
           sessionField: "dev_session",
         },
@@ -282,18 +214,18 @@ test("dispatcher session persistence is disabled for delegated states", () => {
   ).toBe(true);
 });
 
-test("dispatcher session persistence is disabled for resumed direct sessions", () => {
+test("dispatcher session persistence is disabled for resumed sessions", () => {
   expect(
     shouldPersistDispatcherSession(
       {
-        delegated: false,
+        provider: "anthropic",
         resumable: true,
         sessionField: "dev_session",
       },
       "11111111-1111-4111-8111-111111111111",
       buildSessionRuntimeState(
         {
-          delegated: false,
+          provider: "anthropic",
           resumable: true,
           sessionField: "dev_session",
         },
@@ -303,18 +235,18 @@ test("dispatcher session persistence is disabled for resumed direct sessions", (
   ).toBe(false);
 });
 
-test("dispatcher session persistence is disabled when no new SDK session id is available", () => {
+test("dispatcher session persistence is disabled when no new provider session id is available", () => {
   expect(
     shouldPersistDispatcherSession(
       {
-        delegated: false,
+        provider: "anthropic",
         resumable: true,
         sessionField: "dev_session",
       },
       undefined,
       buildSessionRuntimeState(
         {
-          delegated: false,
+          provider: "anthropic",
           resumable: true,
           sessionField: "dev_session",
         },
@@ -324,17 +256,17 @@ test("dispatcher session persistence is disabled when no new SDK session id is a
   ).toBe(false);
 });
 
-test("dispatcher session persistence is disabled for non-resumable direct states", () => {
+test("dispatcher session persistence is disabled for non-resumable states", () => {
   expect(
     shouldPersistDispatcherSession(
       {
-        delegated: false,
+        provider: "anthropic",
         resumable: false,
       },
       "8d4d2ecb-0c59-4c5c-946c-2d44ef7b43b8",
       buildSessionRuntimeState(
         {
-          delegated: false,
+          provider: "anthropic",
           resumable: false,
         },
         null,
@@ -419,13 +351,13 @@ function buildTelemetryEvent(itemId: string): DispatchTelemetryEvent {
     state: "in-dev",
     agent_name: "in-dev",
     sub_agent_name: null,
-    delegated: false,
+    provider: "openai",
     resumable: true,
     resume_requested: false,
     session_field: "dev_session",
     runtime_session_id: null,
     resume_session_id: null,
-    worker_session_id: "11111111-1111-4111-8111-111111111111",
+    worker_session_id: "codex-thread-123",
     worktree_path: `/tmp/.worktrees/${itemId}`,
     branch_name: `delamain/telemetry-test/${itemId}/d-telemetry001`,
     worktree_commit: null,

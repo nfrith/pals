@@ -7,16 +7,19 @@ states:
     initial: true
     phase: deployment
     actor: agent
+    provider: anthropic
     path: agents/pending.md
     resumable: false
   rolling-out:
     phase: deployment
     actor: agent
+    provider: anthropic
     path: agents/rolling-out.md
     resumable: false
   active:
     phase: steady-state
     actor: agent
+    provider: anthropic
     path: agents/active.md
     resumable: false
   rolled-back:

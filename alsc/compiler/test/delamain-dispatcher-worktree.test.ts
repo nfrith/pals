@@ -17,8 +17,8 @@ import type { DispatchEntry } from "../../../skills/new/references/dispatcher/sr
 const ENTRY: DispatchEntry = {
   state: "in-dev",
   agentName: "in-dev",
+  provider: "anthropic",
   resumable: false,
-  delegated: false,
   transitions: [{ class: "advance", to: "in-review" }],
 };
 

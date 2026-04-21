@@ -45,6 +45,7 @@ import {
 } from "./schema.ts";
 import {
   collectDelamainSessionFields,
+  type DelamainAgentProvider,
   delamainShapeSchema,
   type DelamainShape,
   validateDelamainDefinition,
@@ -571,6 +572,7 @@ function validateDelamainPromptAssets(
           state.path,
           `states.${stateName}.path`,
           `Delamain state '${stateName}' agent path`,
+          state.provider ?? null,
         ),
       );
     }
@@ -585,6 +587,7 @@ function validateDelamainPromptAssets(
           subAgentPath,
           `states.${stateName}.sub-agent`,
           `Delamain state '${stateName}' sub-agent path`,
+          state.provider ?? null,
         ),
       );
     }
@@ -600,6 +603,7 @@ function validateDelamainPromptAsset(
   authoredPath: string,
   fieldPath: string,
   label: string,
+  provider: DelamainAgentProvider | null,
 ): CompilerDiagnostic[] {
   const diagnostics: CompilerDiagnostic[] = [];
   const resolvedAssetPath = resolvePathInsideRoot(bundle.bundle_root_abs, authoredPath);
@@ -774,6 +778,174 @@ function validateDelamainPromptAsset(
         ),
       );
     }
+  }
+
+  diagnostics.push(
+    ...validateDelamainPromptProviderContract(
+      moduleId,
+      assetRel,
+      fieldPath,
+      provider,
+      promptFrontmatter,
+      parsed.content,
+    ),
+  );
+
+  return diagnostics;
+}
+
+const ANTHROPIC_AGENT_MODELS = new Set(["sonnet", "opus", "haiku"]);
+const ANTHROPIC_ONLY_FRONTMATTER_FIELDS = new Set(["tools"]);
+const OPENAI_ONLY_FRONTMATTER_FIELDS = new Set([
+  "approval-policy",
+  "network-enabled",
+  "reasoning-effort",
+  "sandbox-mode",
+]);
+const CLAUDE_SKILL_REFERENCE_PATTERN = /(^|[\s`(])\/[a-z][a-z0-9-]*/im;
+const CODEX_SKILL_REFERENCE_PATTERN = /(^|[\s`(])\$[a-z][a-z0-9-]*/im;
+
+function validateDelamainPromptProviderContract(
+  moduleId: string,
+  assetRel: string,
+  fieldPath: string,
+  provider: DelamainAgentProvider | null,
+  promptFrontmatter: Record<string, unknown>,
+  promptBody: string,
+): CompilerDiagnostic[] {
+  if (!provider) {
+    return [];
+  }
+
+  const diagnostics: CompilerDiagnostic[] = [];
+
+  if (provider === "anthropic") {
+    for (const fieldName of OPENAI_ONLY_FRONTMATTER_FIELDS) {
+      if (fieldName in promptFrontmatter) {
+        diagnostics.push(
+          diag(
+            codes.DELAMAIN_PROMPT_INVALID,
+            "error",
+            "module_shape",
+            assetRel,
+            `Anthropic Delamain prompt assets must not declare '${fieldName}'`,
+            {
+              module_id: moduleId,
+              field: fieldPath,
+              expected: "anthropic-compatible frontmatter",
+              actual: fieldName,
+            },
+          ),
+        );
+      }
+    }
+
+    if (
+      "model" in promptFrontmatter
+      && (
+        typeof promptFrontmatter.model !== "string"
+        || !ANTHROPIC_AGENT_MODELS.has(promptFrontmatter.model.trim())
+      )
+    ) {
+      diagnostics.push(
+        diag(
+          codes.DELAMAIN_PROMPT_INVALID,
+          "error",
+          "module_shape",
+          assetRel,
+          "Anthropic Delamain prompt assets must use an Anthropic model alias",
+          {
+            module_id: moduleId,
+            field: "model",
+            expected: [...ANTHROPIC_AGENT_MODELS],
+            actual: promptFrontmatter.model ?? null,
+          },
+        ),
+      );
+    }
+
+    const codexSkillReference = promptBody.match(CODEX_SKILL_REFERENCE_PATTERN)?.[0]?.trim();
+    if (codexSkillReference) {
+      diagnostics.push(
+        diag(
+          codes.DELAMAIN_PROMPT_INVALID,
+          "error",
+          "module_shape",
+          assetRel,
+          "Anthropic Delamain prompt assets must not use Codex `$skill` syntax",
+          {
+            module_id: moduleId,
+            field: fieldPath,
+            expected: "Claude `/skill` syntax or plain instructions",
+            actual: codexSkillReference,
+          },
+        ),
+      );
+    }
+
+    return diagnostics;
+  }
+
+  for (const fieldName of ANTHROPIC_ONLY_FRONTMATTER_FIELDS) {
+    if (fieldName in promptFrontmatter) {
+      diagnostics.push(
+        diag(
+          codes.DELAMAIN_PROMPT_INVALID,
+          "error",
+          "module_shape",
+          assetRel,
+          `OpenAI Delamain prompt assets must not declare '${fieldName}'`,
+          {
+            module_id: moduleId,
+            field: fieldPath,
+            expected: "openai-compatible frontmatter",
+            actual: fieldName,
+          },
+        ),
+      );
+    }
+  }
+
+  for (const requiredField of ["sandbox-mode", "approval-policy"] as const) {
+    if (
+      typeof promptFrontmatter[requiredField] !== "string"
+      || promptFrontmatter[requiredField].trim().length === 0
+    ) {
+      diagnostics.push(
+        diag(
+          codes.DELAMAIN_PROMPT_INVALID,
+          "error",
+          "module_shape",
+          assetRel,
+          `OpenAI Delamain prompt assets must declare frontmatter ${requiredField}`,
+          {
+            module_id: moduleId,
+            field: requiredField,
+            expected: "non-empty string",
+            actual: promptFrontmatter[requiredField] ?? null,
+          },
+        ),
+      );
+    }
+  }
+
+  const claudeSkillReference = promptBody.match(CLAUDE_SKILL_REFERENCE_PATTERN)?.[0]?.trim();
+  if (claudeSkillReference) {
+    diagnostics.push(
+      diag(
+        codes.DELAMAIN_PROMPT_INVALID,
+        "error",
+        "module_shape",
+        assetRel,
+        "OpenAI Delamain prompt assets must not use Claude `/skill` syntax",
+        {
+          module_id: moduleId,
+          field: fieldPath,
+          expected: "Codex `$skill` syntax or plain instructions",
+          actual: claudeSkillReference,
+        },
+      ),
+    );
   }
 
   return diagnostics;

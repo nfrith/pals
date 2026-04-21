@@ -7,16 +7,19 @@ states:
     initial: true
     phase: investigation
     actor: agent
+    provider: anthropic
     path: agents/investigating.md
     resumable: false
   mitigated:
     phase: remediation
     actor: agent
+    provider: anthropic
     path: agents/mitigated.md
     resumable: false
   resolved:
     phase: remediation
     actor: agent
+    provider: anthropic
     path: agents/resolved.md
     resumable: false
   closed:

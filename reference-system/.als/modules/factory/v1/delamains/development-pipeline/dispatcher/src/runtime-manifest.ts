@@ -1,5 +1,6 @@
 import { readFile } from "fs/promises";
 import { join } from "path";
+import type { AgentProvider } from "./provider.js";
 
 export interface RuntimeManifest {
   schema: string;
@@ -13,6 +14,13 @@ export interface RuntimeManifest {
   discriminator_field: string | null;
   discriminator_value: string | null;
   submodules: string[];
+  state_providers: Record<string, AgentProvider>;
+  limits?: RuntimeManifestLimits;
+}
+
+export interface RuntimeManifestLimits {
+  maxTurns?: number;
+  maxBudgetUsd?: number;
 }
 
 const DELAMAIN_RUNTIME_MANIFEST_SCHEMA = "als-delamain-runtime-manifest@1";
@@ -106,6 +114,8 @@ export async function loadRuntimeManifest(bundleRoot: string): Promise<RuntimeMa
   }
 
   const submodules = normalizeSubmodules(bundleRoot, manifest.submodules);
+  const stateProviders = normalizeStateProviders(bundleRoot, manifest.state_providers);
+  const limits = normalizeLimits(bundleRoot, manifest.limits);
 
   return {
     schema: requireStringField(manifest, "schema"),
@@ -119,6 +129,8 @@ export async function loadRuntimeManifest(bundleRoot: string): Promise<RuntimeMa
     discriminator_field: manifest.discriminator_field ?? null,
     discriminator_value: manifest.discriminator_value ?? null,
     submodules,
+    state_providers: stateProviders,
+    limits,
   };
 }
 
@@ -160,6 +172,70 @@ function normalizeSubmodules(bundleRoot: string, value: unknown): string[] {
     if (seen.has(candidate)) continue;
     seen.add(candidate);
     normalized.push(candidate);
+  }
+
+  return normalized;
+}
+
+function normalizeLimits(bundleRoot: string, value: unknown): RuntimeManifestLimits | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error(`Invalid runtime-manifest.json in '${bundleRoot}': 'limits' must be an object`);
+  }
+
+  const limits = value as Record<string, unknown>;
+  const normalized: RuntimeManifestLimits = {};
+
+  if (limits.maxTurns !== undefined) {
+    if (
+      typeof limits.maxTurns !== "number"
+      || !Number.isInteger(limits.maxTurns)
+      || limits.maxTurns <= 0
+    ) {
+      throw new Error(
+        `Invalid runtime-manifest.json in '${bundleRoot}': 'limits.maxTurns' must be a positive integer`,
+      );
+    }
+    normalized.maxTurns = limits.maxTurns;
+  }
+
+  if (limits.maxBudgetUsd !== undefined) {
+    if (
+      typeof limits.maxBudgetUsd !== "number"
+      || !Number.isFinite(limits.maxBudgetUsd)
+      || limits.maxBudgetUsd <= 0
+    ) {
+      throw new Error(
+        `Invalid runtime-manifest.json in '${bundleRoot}': 'limits.maxBudgetUsd' must be a positive number`,
+      );
+    }
+    normalized.maxBudgetUsd = limits.maxBudgetUsd;
+  }
+
+  return normalized;
+}
+
+function normalizeStateProviders(
+  bundleRoot: string,
+  value: unknown,
+): Record<string, AgentProvider> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error(
+      `Invalid runtime-manifest.json in '${bundleRoot}': 'state_providers' must be an object`,
+    );
+  }
+
+  const normalized: Record<string, AgentProvider> = {};
+  for (const [stateName, provider] of Object.entries(value as Record<string, unknown>)) {
+    if (provider !== "anthropic" && provider !== "openai") {
+      throw new Error(
+        `Invalid runtime-manifest.json in '${bundleRoot}': state provider '${stateName}' must be 'anthropic' or 'openai'`,
+      );
+    }
+    normalized[stateName] = provider;
   }
 
   return normalized;

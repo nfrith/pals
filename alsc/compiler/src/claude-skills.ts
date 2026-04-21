@@ -3,7 +3,7 @@ import { dirname, resolve } from "node:path";
 import { stringify as stringifyYaml } from "yaml";
 import { loadAuthoredSourceExport } from "./authored-load.ts";
 import { DEPLOY_OUTPUT_SCHEMA_LITERAL } from "./contracts.ts";
-import type { DelamainShape } from "./delamain.ts";
+import type { DelamainAgentProvider, DelamainShape } from "./delamain.ts";
 import { delamainShapeSchema } from "./delamain.ts";
 import type { FieldShape, ModuleShape, SystemConfig } from "./schema.ts";
 import { moduleShapeSchema } from "./schema.ts";
@@ -47,6 +47,7 @@ interface ClaudeDelamainProjectionWorkPlan extends ClaudeDelamainProjectionPlan 
   discriminator_field: string | null;
   discriminator_value: string | null;
   submodules: string[];
+  state_providers: Record<string, DelamainAgentProvider>;
   limits?: DelamainRuntimeLimits;
   rendered_delamain_yaml: string;
 }
@@ -460,6 +461,7 @@ function buildProjectionPlans(
         discriminator_field: binding.discriminator_field,
         discriminator_value: binding.discriminator_value,
         submodules: runtimeManifestConfig.config.submodules,
+        state_providers: collectStateProviders(loadedDelamain.shape),
         limits: runtimeManifestConfig.config.limits,
         rendered_delamain_yaml: stringifyYaml(loadedDelamain.shape),
       });
@@ -872,12 +874,21 @@ function writeDelamainRuntimeManifest(plan: ClaudeDelamainProjectionWorkPlan): v
     discriminator_field: plan.discriminator_field,
     discriminator_value: plan.discriminator_value,
     submodules: plan.submodules,
+    state_providers: plan.state_providers,
     ...(plan.limits ? { limits: plan.limits } : {}),
   };
 
   writeFileSync(
     resolve(plan.target_dir_abs, "runtime-manifest.json"),
     JSON.stringify(manifest, null, 2) + "\n",
+  );
+}
+
+function collectStateProviders(delamain: DelamainShape): Record<string, DelamainAgentProvider> {
+  return Object.fromEntries(
+    Object.entries(delamain.states)
+      .filter(([, state]) => state.actor === "agent" && state.provider)
+      .map(([stateName, state]) => [stateName, state.provider!]),
   );
 }
 

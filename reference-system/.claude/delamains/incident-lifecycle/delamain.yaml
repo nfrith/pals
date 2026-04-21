@@ -7,16 +7,19 @@ states:
     initial: true
     phase: response
     actor: agent
+    provider: anthropic
     path: agents/active.md
     resumable: false
   monitoring:
     phase: stabilization
     actor: agent
+    provider: anthropic
     path: agents/monitoring.md
     resumable: false
   recovered:
     phase: stabilization
     actor: agent
+    provider: anthropic
     path: agents/recovered.md
     resumable: false
   closed:

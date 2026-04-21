@@ -5,7 +5,7 @@ Status-driven SDLC for work items in the factory module. Governed by the `develo
 ## Actors
 
 - **Operator**: Human in the loop. Creates items, approves plans, performs UAT, handles failures.
-- **Agent**: Dispatched by the delamain. Planning may delegate to an external worker, while the other agent-owned states run directly.
+- **Agent**: Dispatched by the delamain. `planning` and `in-dev` run through the OpenAI codex provider; the other agent-owned states run through the Anthropic provider.
 
 ## Phases and Statuses
 
@@ -72,13 +72,13 @@ Operator sends back to `queued` for full re-plan. Failure context captured in UA
 
 `plan-ready` -> `queued` -> `planning` -> ... -> `plan-ready`
 
-Operator rejects plan. Item returns to `queued` with `planner_session` preserved. When the item re-enters `planning`, the dispatcher re-dispatches the planning orchestrator with the saved planner session in Runtime Context so the delegated planner can continue the same thread.
+Operator rejects plan. Item returns to `queued` with `planner_session` preserved. When the item re-enters `planning`, the dispatcher resumes the saved planning thread through the OpenAI provider.
 
 ### Plan-input loop
 
 `planning` -> `plan-input` -> `queued` -> `planning` -> ... -> `plan-ready`
 
-Planner has questions. Operator answers in `PLAN_QUESTIONS`. Item moves back to `queued`. When it re-enters `planning`, the dispatcher passes the saved `planner_session` back through Runtime Context and the delegated planning agent resumes or inspects that worker session itself.
+Planner has questions. Operator answers in `PLAN_QUESTIONS`. Item moves back to `queued`. When it re-enters `planning`, the dispatcher passes the saved `planner_session` back through Runtime Context and resumes that provider-owned thread when possible.
 
 ## Session Fields
 
@@ -86,8 +86,8 @@ These fields are implicit — managed by the delamain dispatcher, not by the ope
 
 | Field | Purpose |
 |-------|---------|
-| `planner_session` | Durable session ID for the delegated planning worker. Exposed back to the planning agent through Runtime Context on later `planning` re-entry. |
-| `dev_session` | Session ID for the direct Agent SDK dev run. Set at `ready` -> `in-dev` and resumed by the dispatcher on later re-entry. |
+| `planner_session` | Durable session ID for the OpenAI planning thread. Exposed back to the planning agent through Runtime Context on later `planning` re-entry. |
+| `dev_session` | Durable session ID for the OpenAI implementation thread. Set at `ready` -> `in-dev` and resumed by the dispatcher on later re-entry. |
 
 ## Section Lifecycle
 

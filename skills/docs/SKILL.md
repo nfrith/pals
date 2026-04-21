@@ -1,6 +1,6 @@
 ---
 name: docs
-description: ALS format reference index. This skill should be used when the user asks about ALS format rules, TypeScript-authored system/module/delamain contracts, delamain agents, delamain dispatchers, delegated dispatch, field types, agent file format, dispatcher behavior, skill decomposition patterns, or module integration.
+description: ALS format reference index. This skill should be used when the user asks about ALS format rules, TypeScript-authored system/module/delamain contracts, delamain agents, delamain dispatchers, provider dispatch, field types, agent file format, dispatcher behavior, skill decomposition patterns, or module integration.
 ---
 
 # ALS Documentation Index
@@ -48,11 +48,11 @@ Read this when:
 
 `references/delamain-agents.md`
 
-How to write state agents and sub-agents. Covers the agent file format, runtime context injection, and best practices: idempotency, delegated dispatch, session field ownership, and sub-agent patterns.
+How to write state agents and sub-agents. Covers the agent file format, runtime context injection, and best practices: idempotency, provider-specific dispatch, session field ownership, and sub-agent patterns.
 
 Read this when:
 - Writing or modifying a state agent markdown file
-- Implementing delegated dispatch (agent spawns external process)
+- Implementing provider-specific dispatch behavior
 - Understanding how the dispatcher injects runtime context
 - Debugging agent behavior or dispatch failures
 
@@ -60,7 +60,7 @@ Read this when:
 
 `references/delamain-dispatcher.md`
 
-The generic dispatcher template: a zero-config Bun application that scans entity items and invokes agents via the Claude Agent SDK. Covers the three source files, multi-module resolution, variant scanning, session handling, sub-agent delegation, and deployment.
+The generic dispatcher template: a zero-config Bun application that scans entity items and invokes agents through provider-native SDK adapters. Covers the runtime manifest, provider dispatch, session handling, worktree isolation, and deployment.
 
 Read this when:
 - Scaffolding a new delamain bundle with a dispatcher

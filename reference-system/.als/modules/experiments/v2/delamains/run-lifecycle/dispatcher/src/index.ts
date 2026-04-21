@@ -48,6 +48,7 @@ console.log(`[dispatcher] status field: ${config.statusField}`);
 console.log(`[dispatcher] entity: ${config.entityName}`);
 console.log(`[dispatcher] entity path: ${config.entityPath}`);
 console.log(`[dispatcher] module root: ${config.moduleRoot}`);
+console.log(`[dispatcher] limits: ${config.maxTurns} / ${config.maxBudgetUsd}`);
 if (config.submodules.length > 0) {
   console.log(`[dispatcher] mounted submodules: ${config.submodules.join(", ")}`);
 }
@@ -69,11 +70,13 @@ const STATUS_FILE = join(
 let lastItemsScanned = 0;
 let lastRuntimeHeartbeat: DispatcherRuntimeHeartbeat = {
   active_dispatches: 0,
+  active_by_provider: {
+    anthropic: 0,
+    openai: 0,
+  },
   blocked_dispatches: 0,
   orphaned_dispatches: 0,
   guarded_dispatches: 0,
-  delegated_dispatches: 0,
-  delegated_items: [],
 };
 
 async function writeHeartbeat(itemsScanned: number) {
@@ -87,12 +90,11 @@ async function writeHeartbeat(itemsScanned: number) {
         last_tick: new Date().toISOString(),
         poll_ms: POLL_MS,
         active_dispatches: lastRuntimeHeartbeat.active_dispatches,
+        active_by_provider: lastRuntimeHeartbeat.active_by_provider,
         blocked_dispatches: lastRuntimeHeartbeat.blocked_dispatches,
         orphaned_dispatches: lastRuntimeHeartbeat.orphaned_dispatches,
         guarded_dispatches: lastRuntimeHeartbeat.guarded_dispatches,
         items_scanned: itemsScanned,
-        delegated_dispatches: lastRuntimeHeartbeat.delegated_dispatches,
-        delegated_items: lastRuntimeHeartbeat.delegated_items,
       }) + "\n",
     );
   } catch {
@@ -114,7 +116,7 @@ function findRule(status: string): DispatchEntry | undefined {
 
 function logCounts(prefix: string) {
   console.log(
-    `${prefix} (active=${lastRuntimeHeartbeat.active_dispatches}, blocked=${lastRuntimeHeartbeat.blocked_dispatches}, orphaned=${lastRuntimeHeartbeat.orphaned_dispatches}, delegated=${lastRuntimeHeartbeat.delegated_dispatches})`,
+    `${prefix} (active=${lastRuntimeHeartbeat.active_dispatches} [anthropic=${lastRuntimeHeartbeat.active_by_provider.anthropic}, openai=${lastRuntimeHeartbeat.active_by_provider.openai}], blocked=${lastRuntimeHeartbeat.blocked_dispatches}, orphaned=${lastRuntimeHeartbeat.orphaned_dispatches})`,
   );
 }
 
@@ -122,9 +124,13 @@ async function updateHeartbeat() {
   await writeHeartbeat(lastItemsScanned);
 }
 
-function logCompletion(itemId: string, result: { success: boolean; blocked: boolean }) {
+function logCompletion(
+  itemId: string,
+  provider: DispatchEntry["provider"],
+  result: { success: boolean; blocked: boolean },
+) {
   console.log(
-    `[dispatcher] ${itemId} finished (success=${result.success}, blocked=${result.blocked}, active=${lastRuntimeHeartbeat.active_dispatches}, blocked_total=${lastRuntimeHeartbeat.blocked_dispatches}, delegated=${lastRuntimeHeartbeat.delegated_dispatches})`,
+    `[dispatcher] ${itemId} finished provider=${provider} (success=${result.success}, blocked=${result.blocked}, active=${lastRuntimeHeartbeat.active_dispatches}, blocked_total=${lastRuntimeHeartbeat.blocked_dispatches}, anthropic=${lastRuntimeHeartbeat.active_by_provider.anthropic}, openai=${lastRuntimeHeartbeat.active_by_provider.openai})`,
   );
 }
 
@@ -204,7 +210,7 @@ async function tick() {
     )
       .then(async (result) => {
         await updateHeartbeat();
-        logCompletion(item.id, result);
+        logCompletion(item.id, rule.provider, result);
       })
       .catch(async (error) => {
         console.error(`[dispatcher] ${item.id} dispatch error:`, error);
@@ -249,7 +255,7 @@ const stop = (signal: string) => {
   }
 
   console.log(
-    `[dispatcher] ${signal} received, shutting down (active=${lastRuntimeHeartbeat.active_dispatches}, blocked=${lastRuntimeHeartbeat.blocked_dispatches}, delegated=${lastRuntimeHeartbeat.delegated_dispatches})`,
+    `[dispatcher] ${signal} received, shutting down (active=${lastRuntimeHeartbeat.active_dispatches}, blocked=${lastRuntimeHeartbeat.blocked_dispatches}, anthropic=${lastRuntimeHeartbeat.active_by_provider.anthropic}, openai=${lastRuntimeHeartbeat.active_by_provider.openai})`,
   );
   clearRuntimeAndExit(0);
   return true;

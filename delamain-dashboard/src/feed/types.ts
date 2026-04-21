@@ -9,10 +9,13 @@ export interface DispatcherHeartbeat {
   lastTick: string | null;
   pollMs: number | null;
   activeDispatches: number;
-   blockedDispatches: number;
-   orphanedDispatches: number;
-   guardedDispatches: number;
-   delegatedDispatches: number;
+  activeByProvider: {
+    anthropic: number;
+    openai: number;
+  };
+  blockedDispatches: number;
+  orphanedDispatches: number;
+  guardedDispatches: number;
   itemsScanned: number;
 }
 
@@ -72,7 +75,6 @@ export interface DispatcherRuntimeState {
   blocked: RuntimeDispatchRecord[];
   orphaned: RuntimeDispatchRecord[];
   guarded: RuntimeDispatchRecord[];
-  delegated: RuntimeDispatchRecord[];
 }
 
 export interface DispatcherSnapshot {

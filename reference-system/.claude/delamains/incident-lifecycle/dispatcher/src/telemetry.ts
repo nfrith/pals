@@ -1,6 +1,7 @@
 import { mkdir, readFile, rename, writeFile } from "fs/promises";
 import { join } from "path";
 import type { RuntimeMountedSubmoduleRecord } from "./runtime-state.js";
+import type { AgentProvider } from "./provider.js";
 
 export const DISPATCH_TELEMETRY_SCHEMA = "als-delamain-telemetry-event@1";
 export const DEFAULT_TELEMETRY_RETENTION = 200;
@@ -29,7 +30,7 @@ export interface DispatchTelemetryEvent {
   state: string;
   agent_name: string;
   sub_agent_name: string | null;
-  delegated: boolean;
+  provider: AgentProvider;
   resumable: boolean;
   resume_requested: boolean;
   session_field: string | null;
@@ -164,7 +165,7 @@ function normalizeTelemetryEvent(
     state: event.state ?? "unknown",
     agent_name: event.agent_name ?? "unknown",
     sub_agent_name: event.sub_agent_name ?? null,
-    delegated: event.delegated === true,
+    provider: event.provider === "openai" ? "openai" : "anthropic",
     resumable: event.resumable === true,
     resume_requested: event.resume_requested === true,
     session_field: event.session_field ?? null,

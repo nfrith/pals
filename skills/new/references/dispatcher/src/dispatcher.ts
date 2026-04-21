@@ -1,10 +1,15 @@
 import { readFile } from "fs/promises";
 import { basename, join } from "path";
 import { parse as parseYaml } from "yaml";
-import { query } from "@anthropic-ai/claude-agent-sdk";
+import {
+  getAgentProvider,
+  type LoadedAgentPrompt as AgentDef,
+  type ProviderDispatchResult,
+} from "./agent-providers.js";
 import { resolveDispatchLimits } from "./dispatch-limits.js";
 import { DispatcherRuntime } from "./dispatcher-runtime.js";
 import { parseMd, readFrontmatterField, setFrontmatterField } from "./frontmatter.js";
+import type { AgentProvider } from "./provider.js";
 import { buildSessionRuntimeState, shouldPersistDispatcherSession } from "./session-runtime.js";
 import { loadRuntimeManifest } from "./runtime-manifest.js";
 import {
@@ -24,9 +29,9 @@ interface StateDef {
   initial?: boolean;
   terminal?: boolean;
   actor?: string;
+  provider?: AgentProvider;
   path?: string;
   resumable?: boolean;
-  delegated?: boolean;
   "session-field"?: string;
   "sub-agent"?: string;
 }
@@ -37,19 +42,12 @@ interface DelamainConfig {
   transitions: Transition[];
 }
 
-interface AgentDef {
-  description: string;
-  prompt: string;
-  tools?: string[];
-  model?: "sonnet" | "opus" | "haiku";
-}
-
 export interface DispatchEntry {
   state: string;
   agentName: string;
   subAgentName?: string;
+  provider: AgentProvider;
   resumable: boolean;
-  delegated: boolean;
   sessionField?: string;
   transitions: Array<Pick<Transition, "class" | "to">>;
 }
@@ -96,14 +94,32 @@ export async function resolve(
         description: meta["description"] ?? "",
         prompt: body,
       };
-      if (meta["tools"]) {
+      if (typeof meta["tools"] === "string" && meta["tools"].trim().length > 0) {
         def.tools = meta["tools"].split(",").map((tool) => tool.trim());
       }
+      if (typeof meta["model"] === "string" && meta["model"].trim().length > 0) {
+        def.model = meta["model"];
+      }
       if (
-        meta["model"]
-        && ["sonnet", "opus", "haiku"].includes(meta["model"])
+        typeof meta["reasoning-effort"] === "string"
+        && ["low", "medium", "high", "xhigh"].includes(meta["reasoning-effort"])
       ) {
-        def.model = meta["model"] as AgentDef["model"];
+        def.reasoningEffort = meta["reasoning-effort"] as AgentDef["reasoningEffort"];
+      }
+      if (
+        typeof meta["sandbox-mode"] === "string"
+        && ["read-only", "workspace-write", "danger-full-access"].includes(meta["sandbox-mode"])
+      ) {
+        def.sandboxMode = meta["sandbox-mode"] as AgentDef["sandboxMode"];
+      }
+      if (
+        typeof meta["approval-policy"] === "string"
+        && ["untrusted", "on-request", "on-failure", "never"].includes(meta["approval-policy"])
+      ) {
+        def.approvalPolicy = meta["approval-policy"] as AgentDef["approvalPolicy"];
+      }
+      if (typeof meta["network-enabled"] === "boolean") {
+        def.networkEnabled = meta["network-enabled"];
       }
 
       agents[agentKey] = def;
@@ -139,13 +155,19 @@ export async function resolve(
       .map((transition) => ({ class: transition.class, to: transition.to }));
 
     const subAgentPath = state["sub-agent"];
+    const provider = state.provider ?? manifest.state_providers[stateId];
+    if (!provider) {
+      throw new Error(
+        `Delamain state '${stateId}' in '${bundleRoot}' is missing projected provider metadata. Redeploy after ALS-025 provider migration.`,
+      );
+    }
 
     dispatchTable.push({
       state: stateId,
       agentName: stateId,
       subAgentName: subAgentPath ? basename(subAgentPath, ".md") : undefined,
+      provider,
       resumable: state.resumable === true,
-      delegated: state.delegated === true,
       sessionField: state.resumable ? state["session-field"] : undefined,
       transitions,
     });
@@ -175,18 +197,6 @@ delete sdkEnv["ANTHROPIC_API_KEY"];
 sdkEnv["DELAMAIN_SESSION"] = "1";
 
 const today = () => new Date().toISOString().slice(0, 10);
-
-function formatToolUse(name: string, input: Record<string, unknown>): string {
-  const path = input["file_path"] as string | undefined;
-  if (path) return `${name} ${path}`;
-  const cmd = input["command"] as string | undefined;
-  if (cmd) return `${name} ${cmd.length > 60 ? cmd.slice(0, 57) + "..." : cmd}`;
-  const pattern = input["pattern"] as string | undefined;
-  if (pattern) return `${name} ${pattern}`;
-  const desc = input["description"] as string | undefined;
-  if (desc) return `${name}: ${desc}`;
-  return name;
-}
 
 export async function dispatch(
   itemId: string,
@@ -271,8 +281,7 @@ export async function dispatch(
   }
 
   console.log(
-    `[dispatcher] ${itemId} @ current state: ${entry.state}`
-      + (entry.delegated ? " (delegated)" : "")
+    `[dispatcher] ${itemId} @ current state: ${entry.state} provider=${entry.provider}`
       + (sessionState.resumeSessionId
         ? ` (resume: ${sessionState.resumeSessionId.slice(0, 8)}...)`
         : "")
@@ -281,14 +290,7 @@ export async function dispatch(
   );
 
   let sessionId: string | undefined;
-  let resultSummary:
-    | {
-      subtype: string;
-      totalCostUsd: number | null;
-      durationMs: number;
-      numTurns: number;
-    }
-    | null = null;
+  let resultSummary: ProviderDispatchResult | null = null;
   const startedAt = Date.now();
   const baseEvent = {
     schema: DISPATCH_TELEMETRY_SCHEMA,
@@ -301,7 +303,7 @@ export async function dispatch(
     state: entry.state,
     agent_name: entry.agentName,
     sub_agent_name: entry.subAgentName ?? null,
-    delegated: entry.delegated,
+    provider: entry.provider,
     resumable: entry.resumable,
     resume_requested: sessionState.resume === "yes",
     session_field: entry.sessionField ?? null,
@@ -366,55 +368,41 @@ export async function dispatch(
       error: null,
     });
 
-    for await (const message of query({
+    resultSummary = await getAgentProvider(entry.provider).dispatch({
+      itemId,
       prompt,
-      options: {
-        cwd: prepared.worktreePath,
-        model: agent.model ?? "sonnet",
-        allowedTools: tools,
-        ...(subAgents ? { agents: subAgents } : {}),
-        ...(sessionState.resumeSessionId ? { resume: sessionState.resumeSessionId } : {}),
-        env: sdkEnv,
-        permissionMode: "acceptEdits",
-        maxTurns: config.maxTurns,
-        maxBudgetUsd: config.maxBudgetUsd,
+      cwd: prepared.worktreePath,
+      agent: {
+        ...agent,
+        ...(entry.provider === "anthropic" ? { tools } : {}),
       },
-    })) {
-      if (message.type === "system" && message.subtype === "init") {
-        sessionId = message.session_id;
-      }
-      if (message.type === "assistant") {
-        for (const block of message.message.content) {
-          if (block.type === "tool_use") {
-            const detail = formatToolUse(block.name, block.input as Record<string, unknown>);
-            console.log(`[dispatcher]   ${itemId} | ${detail}`);
-          }
-        }
-      }
-      if (message.type === "result") {
-        resultSummary = {
-          subtype: message.subtype,
-          totalCostUsd:
-            typeof message.total_cost_usd === "number" ? message.total_cost_usd : null,
-          durationMs: message.duration_ms,
-          numTurns: message.num_turns,
-        };
-        const cost =
-          message.subtype === "success"
-            ? `$${message.total_cost_usd.toFixed(4)}`
-            : message.subtype;
-        const secs = Math.round(message.duration_ms / 1000);
-        console.log(`[dispatcher] ${itemId} done (${cost}, ${secs}s, ${message.num_turns} turns)`);
-      }
-    }
+      maxTurns: config.maxTurns,
+      maxBudgetUsd: config.maxBudgetUsd,
+      resumeSessionId: sessionState.resumeSessionId,
+      env: sdkEnv,
+      ...(subAgents ? { subAgents } : {}),
+      onToolUse: (detail) => {
+        console.log(`[dispatcher]   ${itemId} provider=${entry.provider} | ${detail}`);
+      },
+    });
+    sessionId = resultSummary.sessionId;
+
+    const cost = resultSummary.totalCostUsd === null
+      ? resultSummary.subtype
+      : resultSummary.subtype === "success"
+        ? `$${resultSummary.totalCostUsd.toFixed(4)}`
+        : resultSummary.subtype;
+    const secs = Math.round(resultSummary.durationMs / 1000);
+    console.log(
+      `[dispatcher] ${itemId} done provider=${entry.provider} (${cost}, ${secs}s, ${resultSummary.numTurns} turns)`,
+    );
 
     const dispatchSucceeded = resultSummary
       ? resultSummary.subtype === "success"
       : true;
 
     if (
-      !entry.delegated
-      && entry.resumable
+      entry.resumable
       && entry.sessionField
       && sessionState.resume === "no"
       && !sessionId

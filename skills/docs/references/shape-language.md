@@ -870,7 +870,7 @@ Use `outline` when the heading tree itself is part of the schema contract. Use `
 - Terminal states must not have outgoing transitions.
 - Every non-terminal state must have at least one outgoing transition and a path to at least one terminal state.
 - `actor: "agent"` states declare exactly one `path` plus explicit boolean `resumable`.
-- `delegated` is optional and only valid on `actor: "agent"` states.
+- `provider` is required on `actor: "agent"` states and must be `anthropic` or `openai`.
 - If `resumable: true`, the state declares exactly one `session-field`.
 - If `resumable: false`, the state does not declare `session-field`.
 - Delamain-declared session-field names become implicit nullable string frontmatter fields on bound entities.

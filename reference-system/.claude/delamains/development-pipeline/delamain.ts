@@ -17,14 +17,15 @@ export const delamain = defineDelamain({
     "queued": {
       "phase": "intake",
       "actor": "agent",
+      "provider": "anthropic",
       "resumable": false,
       "path": "agents/queued.md"
     },
     "planning": {
       "phase": "planning",
       "actor": "agent",
+      "provider": "openai",
       "resumable": true,
-      "delegated": true,
       "session-field": "planner_session",
       "path": "agents/planning.md"
     },
@@ -39,20 +40,22 @@ export const delamain = defineDelamain({
     "ready": {
       "phase": "implementation",
       "actor": "agent",
+      "provider": "anthropic",
       "resumable": false,
       "path": "agents/ready.md"
     },
     "in-dev": {
       "phase": "implementation",
       "actor": "agent",
+      "provider": "openai",
       "resumable": true,
       "session-field": "dev_session",
-      "path": "agents/in-dev.md",
-      "sub-agent": "sub-agents/developer.md"
+      "path": "agents/in-dev.md"
     },
     "in-review": {
       "phase": "implementation",
       "actor": "agent",
+      "provider": "anthropic",
       "resumable": false,
       "path": "agents/in-review.md"
     },
@@ -63,18 +66,21 @@ export const delamain = defineDelamain({
     "deployment-ready": {
       "phase": "deployment",
       "actor": "agent",
+      "provider": "anthropic",
       "resumable": false,
       "path": "agents/deployment-ready.md"
     },
     "deploying": {
       "phase": "deployment",
       "actor": "agent",
+      "provider": "anthropic",
       "resumable": false,
       "path": "agents/deploying.md"
     },
     "deployment-testing": {
       "phase": "deployment",
       "actor": "agent",
+      "provider": "anthropic",
       "resumable": false,
       "path": "agents/deployment-testing.md"
     },

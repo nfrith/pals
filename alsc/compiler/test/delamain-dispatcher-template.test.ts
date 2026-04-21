@@ -378,6 +378,9 @@ test("dispatcher scan honors non-status field names and discriminator filtering"
           status_field: "lifecycle",
           discriminator_field: "type",
           discriminator_value: "app",
+          state_providers: {
+            active: "anthropic",
+          },
         },
         null,
         2,

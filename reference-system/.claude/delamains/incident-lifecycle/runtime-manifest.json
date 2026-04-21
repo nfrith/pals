@@ -9,5 +9,10 @@
   "status_field": "status",
   "discriminator_field": null,
   "discriminator_value": null,
-  "submodules": []
+  "submodules": [],
+  "state_providers": {
+    "active": "anthropic",
+    "monitoring": "anthropic",
+    "recovered": "anthropic"
+  }
 }

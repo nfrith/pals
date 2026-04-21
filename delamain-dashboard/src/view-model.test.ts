@@ -68,7 +68,7 @@ test("recent history is truncated to the most recent five terminal events", () =
       state: "in-dev",
       agent_name: "in-dev",
       sub_agent_name: null,
-      delegated: false,
+      provider: "openai" as const,
       resumable: false,
       resume_requested: false,
       session_field: null,

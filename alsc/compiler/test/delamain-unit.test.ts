@@ -13,6 +13,7 @@ function makeValidDelamain(): DelamainShape {
       planning: {
         phase: "planning",
         actor: "agent",
+        provider: "anthropic",
         resumable: true,
         "session-field": "planner_session",
         path: "agents/planning.md",
@@ -69,7 +70,7 @@ test("delamain shape schema rejects operator-owned states with agent-only fields
   expect(result.success).toBe(false);
 });
 
-test("delamain shape schema accepts delegated agent-owned states", () => {
+test("delamain shape schema accepts explicit provider declarations on agent-owned states", () => {
   const result = delamainShapeSchema.safeParse({
     phases: ["intake", "planning", "closed"],
     states: {
@@ -81,16 +82,16 @@ test("delamain shape schema accepts delegated agent-owned states", () => {
       planning: {
         phase: "planning",
         actor: "agent",
+        provider: "openai",
         resumable: true,
-        delegated: true,
         "session-field": "planner_session",
         path: "agents/planning.md",
       },
       review: {
         phase: "planning",
         actor: "agent",
+        provider: "anthropic",
         resumable: false,
-        delegated: true,
         path: "agents/review.md",
       },
       completed: {
@@ -120,7 +121,7 @@ test("delamain shape schema accepts delegated agent-owned states", () => {
   expect(result.success).toBe(true);
 });
 
-test("delamain shape schema rejects delegated on operator-owned states", () => {
+test("delamain shape schema rejects provider on operator-owned states", () => {
   const result = delamainShapeSchema.safeParse({
     phases: ["intake", "closed"],
     states: {
@@ -128,7 +129,7 @@ test("delamain shape schema rejects delegated on operator-owned states", () => {
         initial: true,
         phase: "intake",
         actor: "operator",
-        delegated: true,
+        provider: "anthropic",
       },
       completed: {
         phase: "closed",
@@ -147,7 +148,7 @@ test("delamain shape schema rejects delegated on operator-owned states", () => {
   expect(result.success).toBe(false);
 });
 
-test("delamain shape schema rejects delegated on terminal states", () => {
+test("delamain shape schema rejects provider on terminal states", () => {
   const result = delamainShapeSchema.safeParse({
     phases: ["intake", "closed"],
     states: {
@@ -159,13 +160,89 @@ test("delamain shape schema rejects delegated on terminal states", () => {
       completed: {
         phase: "closed",
         terminal: true,
-        delegated: true,
+        provider: "anthropic",
       },
     },
     transitions: [
       {
         class: "exit",
         from: "draft",
+        to: "completed",
+      },
+    ],
+  });
+
+  expect(result.success).toBe(false);
+});
+
+test("delamain shape schema rejects missing provider on agent-owned states", () => {
+  const result = delamainShapeSchema.safeParse({
+    phases: ["intake", "planning", "closed"],
+    states: {
+      draft: {
+        initial: true,
+        phase: "intake",
+        actor: "operator",
+      },
+      planning: {
+        phase: "planning",
+        actor: "agent",
+        resumable: false,
+        path: "agents/planning.md",
+      },
+      completed: {
+        phase: "closed",
+        terminal: true,
+      },
+    },
+    transitions: [
+      {
+        class: "advance",
+        from: "draft",
+        to: "planning",
+      },
+      {
+        class: "exit",
+        from: "planning",
+        to: "completed",
+      },
+    ],
+  });
+
+  expect(result.success).toBe(false);
+});
+
+test("delamain shape schema rejects sub-agent on openai states", () => {
+  const result = delamainShapeSchema.safeParse({
+    phases: ["intake", "planning", "closed"],
+    states: {
+      draft: {
+        initial: true,
+        phase: "intake",
+        actor: "operator",
+      },
+      planning: {
+        phase: "planning",
+        actor: "agent",
+        provider: "openai",
+        resumable: false,
+        path: "agents/planning.md",
+        "sub-agent": "sub-agents/planner.md",
+      },
+      completed: {
+        phase: "closed",
+        terminal: true,
+      },
+    },
+    transitions: [
+      {
+        class: "advance",
+        from: "draft",
+        to: "planning",
+      },
+      {
+        class: "exit",
+        from: "planning",
         to: "completed",
       },
     ],

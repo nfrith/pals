@@ -11,18 +11,21 @@ export const delamain = defineDelamain({
       "initial": true,
       "phase": "response",
       "actor": "agent",
+      "provider": "anthropic",
       "resumable": false,
       "path": "agents/active.md"
     },
     "monitoring": {
       "phase": "stabilization",
       "actor": "agent",
+      "provider": "anthropic",
       "resumable": false,
       "path": "agents/monitoring.md"
     },
     "recovered": {
       "phase": "stabilization",
       "actor": "agent",
+      "provider": "anthropic",
       "resumable": false,
       "path": "agents/recovered.md"
     },

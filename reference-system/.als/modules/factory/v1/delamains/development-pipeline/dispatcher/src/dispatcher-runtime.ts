@@ -11,6 +11,7 @@ import type {
   RuntimeDispatchRecord,
   RuntimeMountedSubmoduleRecord,
 } from "./runtime-state.js";
+import type { ProviderDispatchCounts } from "./provider.js";
 import type { DispatchEntry } from "./dispatcher.js";
 
 export interface DispatcherRuntimeConfig {
@@ -51,15 +52,10 @@ export interface FinalizeDispatchResult {
 
 export interface DispatcherRuntimeHeartbeat {
   active_dispatches: number;
+  active_by_provider: ProviderDispatchCounts;
   blocked_dispatches: number;
   orphaned_dispatches: number;
   guarded_dispatches: number;
-  delegated_dispatches: number;
-  delegated_items: Array<{
-    item_id: string;
-    state: string;
-    delegated_at: string;
-  }>;
 }
 
 export class DispatcherRuntime {
@@ -436,21 +432,13 @@ export class DispatcherRuntime {
 
   async heartbeat(): Promise<DispatcherRuntimeHeartbeat> {
     const summary = await this.registry.summary();
-    const delegatedItems = [...summary.delegated]
-      .sort((left, right) => left.started_at.localeCompare(right.started_at))
-      .map((record) => ({
-        item_id: record.item_id,
-        state: record.state,
-        delegated_at: record.started_at,
-      }));
 
     return {
       active_dispatches: summary.activeCount,
+      active_by_provider: summary.activeByProvider,
       blocked_dispatches: summary.blockedCount,
       orphaned_dispatches: summary.orphanedCount,
       guarded_dispatches: summary.guardedCount,
-      delegated_dispatches: summary.delegatedCount,
-      delegated_items: delegatedItems,
     };
   }
 
@@ -473,10 +461,9 @@ export class DispatcherRuntime {
       return;
     }
 
-    const nextStatus = input.entry.delegated ? "delegated" : "guarded";
     await this.registry.updateByItemId(input.prepared.itemId, (record) => ({
       ...record,
-      status: nextStatus,
+      status: "guarded",
       worktree_path: null,
       branch_name: null,
       isolated_item_file: null,
@@ -516,7 +503,7 @@ function buildActiveRecord(
     state: entry.state,
     agent_name: entry.agentName,
     dispatcher_name: dispatcherName,
-    delegated: entry.delegated,
+    provider: entry.provider,
     resumable: entry.resumable,
     session_field: entry.sessionField ?? null,
     status: "active",

@@ -35,8 +35,8 @@ Phases group states into logical stages. They exist for human readability and re
 States with `actor: agent` declare:
 
 - **path** — the agent markdown file (relative to the delamain bundle root)
+- **provider** — the runtime provider for the agent prompt (`anthropic` or `openai`)
 - **resumable** — whether the state participates in persisted session handling
-- **delegated** — optional boolean that marks the state agent as an orchestrator for externally managed work
 - **session-field** — the frontmatter field that stores the persisted session identifier for that state
 - **sub-agent** — optional path to a sub-agent markdown file
 
@@ -98,7 +98,7 @@ Delamain runtime monitoring now has two layers:
 
 Dispatchers remain the producers of runtime truth. They emit:
 
-- `status.json` for compatibility-oriented liveness plus additive delegated-runtime metadata
+- `status.json` for compatibility-oriented liveness plus provider-aware active-dispatch metadata
 - `telemetry/events.jsonl` for bounded recent dispatch history
 
 The dashboard service reads those runtime files plus bundle metadata and current item files, then serves one normalized snapshot to both the localhost web UI and the OpenTUI client.

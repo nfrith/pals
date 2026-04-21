@@ -6,11 +6,13 @@ states:
     initial: true
     phase: execution
     actor: agent
+    provider: anthropic
     path: agents/queued.md
     resumable: false
   running:
     phase: execution
     actor: agent
+    provider: anthropic
     path: agents/running.md
     resumable: false
   completed:

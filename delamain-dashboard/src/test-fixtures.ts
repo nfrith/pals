@@ -35,10 +35,13 @@ interface FixtureHeartbeat {
   last_tick: string;
   poll_ms: number;
   active_dispatches: number;
+  active_by_provider: {
+    anthropic: number;
+    openai: number;
+  };
   blocked_dispatches: number;
   orphaned_dispatches: number;
   guarded_dispatches: number;
-  delegated_dispatches: number;
   items_scanned: number;
 }
 
@@ -74,6 +77,11 @@ export async function createDashboardFixture(label: string): Promise<DashboardFi
         status_field: "status",
         discriminator_field: null,
         discriminator_value: null,
+        state_providers: {
+          queued: "anthropic",
+          "in-dev": "openai",
+          "in-review": "anthropic",
+        },
       },
       null,
       2,
@@ -92,12 +100,15 @@ export async function createDashboardFixture(label: string): Promise<DashboardFi
       "    initial: true",
       "    phase: implementation",
       "    actor: agent",
+      "    provider: anthropic",
       "  in-dev:",
       "    phase: implementation",
       "    actor: agent",
+      "    provider: openai",
       "  in-review:",
       "    phase: implementation",
       "    actor: agent",
+      "    provider: anthropic",
       "  completed:",
       "    phase: closed",
       "    terminal: true",
@@ -170,10 +181,13 @@ export async function createDashboardFixture(label: string): Promise<DashboardFi
         last_tick: new Date().toISOString(),
         poll_ms: 1000,
         active_dispatches: 1,
+        active_by_provider: {
+          anthropic: 0,
+          openai: 1,
+        },
         blocked_dispatches: 0,
         orphaned_dispatches: 0,
         guarded_dispatches: 0,
-        delegated_dispatches: 0,
         items_scanned: 2,
         ...overrides,
       };
@@ -229,7 +243,10 @@ export function createDesignDashboardSnapshot(
         blockedDispatches: 0,
         orphanedDispatches: 0,
         guardedDispatches: 0,
-        delegatedDispatches: 0,
+        activeByProvider: {
+          anthropic: 0,
+          openai: 1,
+        },
         itemsScanned: 15,
       },
       pidLive: true,
@@ -345,7 +362,6 @@ export function createDesignDashboardSnapshot(
         blocked: [],
         orphaned: [],
         guarded: [],
-        delegated: [],
       },
       telemetry: {
         available: true,
@@ -369,7 +385,10 @@ export function createDesignDashboardSnapshot(
         blockedDispatches: 1,
         orphanedDispatches: 0,
         guardedDispatches: 0,
-        delegatedDispatches: 0,
+        activeByProvider: {
+          anthropic: 0,
+          openai: 0,
+        },
         itemsScanned: 9,
       },
       pidLive: true,
@@ -457,7 +476,6 @@ export function createDesignDashboardSnapshot(
         ],
         orphaned: [],
         guarded: [],
-        delegated: [],
       },
       telemetry: {
         available: true,
@@ -481,7 +499,10 @@ export function createDesignDashboardSnapshot(
         blockedDispatches: 0,
         orphanedDispatches: 1,
         guardedDispatches: 0,
-        delegatedDispatches: 0,
+        activeByProvider: {
+          anthropic: 1,
+          openai: 0,
+        },
         itemsScanned: 7,
       },
       pidLive: true,
@@ -545,7 +566,6 @@ export function createDesignDashboardSnapshot(
           }),
         ],
         guarded: [],
-        delegated: [],
       },
       telemetry: {
         available: false,
@@ -569,7 +589,10 @@ export function createDesignDashboardSnapshot(
         blockedDispatches: 0,
         orphanedDispatches: 0,
         guardedDispatches: 0,
-        delegatedDispatches: 0,
+        activeByProvider: {
+          anthropic: 0,
+          openai: 0,
+        },
         itemsScanned: 5,
       },
       pidLive: true,
@@ -648,7 +671,6 @@ export function createDesignDashboardSnapshot(
         blocked: [],
         orphaned: [],
         guarded: [],
-        delegated: [],
       },
       telemetry: {
         available: true,
@@ -688,7 +710,7 @@ function buildTelemetryEvent(
     state: eventType === "dispatch_failure" ? "in-review" : "in-dev",
     agent_name: "in-dev",
     sub_agent_name: null,
-    delegated: false,
+    provider: "openai",
     resumable: false,
     resume_requested: false,
     session_field: null,
@@ -763,7 +785,7 @@ function telemetryEvent(input: {
     state: input.state,
     agent_name: input.state,
     sub_agent_name: null,
-    delegated: false,
+    provider: "openai",
     resumable: false,
     resume_requested: false,
     session_field: null,
@@ -801,7 +823,7 @@ function runtimeRecord(input: {
     state: input.state,
     agent_name: input.state,
     dispatcher_name: "fixture-dispatcher",
-    delegated: false,
+    provider: "anthropic",
     resumable: false,
     session_field: null,
     status: input.status,

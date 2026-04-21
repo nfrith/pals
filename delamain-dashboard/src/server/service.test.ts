@@ -35,8 +35,13 @@ test("dashboard handlers serve snapshot JSON and fan out SSE updates to concurre
 
     await fixture.writeHeartbeat({
       active_dispatches: 0,
+      active_by_provider: {
+        anthropic: 0,
+        openai: 0,
+      },
       items_scanned: 3,
     });
+    await fixture.writeRuntimeRecords([]);
     await runtime.refresh();
 
     const updateA = await readerA.until((value) => value.dispatchers[0]?.activeDispatches === 0);

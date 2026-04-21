@@ -1,8 +1,7 @@
-const AGENT_SDK_SESSION_ID_PATTERN =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+import type { AgentProvider } from "./provider.js";
 
 export interface SessionDispatchEntry {
-  delegated: boolean;
+  provider: AgentProvider;
   resumable: boolean;
   sessionField?: string;
 }
@@ -18,7 +17,6 @@ export interface SessionRuntimeNoResumeState {
   runtimeSessionId: string | null;
   resume: "no";
   resumeSessionId?: undefined;
-  ignoredInvalidSessionId?: string;
 }
 
 export interface SessionRuntimeResumeState {
@@ -27,7 +25,6 @@ export interface SessionRuntimeResumeState {
   runtimeSessionId: string;
   resume: "yes";
   resumeSessionId: string;
-  ignoredInvalidSessionId?: undefined;
 }
 
 export type SessionRuntimeState =
@@ -38,16 +35,7 @@ export function buildSessionRuntimeState(
   entry: SessionDispatchEntry,
   storedSessionId: string | null,
 ): SessionRuntimeState {
-  if (entry.delegated) {
-    return {
-      includeRuntimeKeys: true,
-      runtimeSessionField: entry.sessionField ?? null,
-      runtimeSessionId: storedSessionId,
-      resume: "no",
-    };
-  }
-
-  if (!entry.sessionField) {
+  if (!entry.resumable || !entry.sessionField) {
     return {
       includeRuntimeKeys: false,
       runtimeSessionField: null,
@@ -62,16 +50,6 @@ export function buildSessionRuntimeState(
       runtimeSessionField: entry.sessionField,
       runtimeSessionId: null,
       resume: "no",
-    };
-  }
-
-  if (!AGENT_SDK_SESSION_ID_PATTERN.test(storedSessionId)) {
-    return {
-      includeRuntimeKeys: true,
-      runtimeSessionField: entry.sessionField,
-      runtimeSessionId: null,
-      resume: "no",
-      ignoredInvalidSessionId: storedSessionId,
     };
   }
 
@@ -90,8 +68,7 @@ export function shouldPersistDispatcherSession(
   sessionState: SessionRuntimeState,
 ): boolean {
   return Boolean(
-    !entry.delegated
-    && entry.resumable
+    entry.resumable
     && entry.sessionField
     && sessionId
     && sessionState.resume === "no",

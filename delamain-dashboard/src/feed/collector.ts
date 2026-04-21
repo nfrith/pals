@@ -115,7 +115,6 @@ async function collectDispatcherSnapshot(
       blocked: runtimeResult.summary.blocked,
       orphaned: runtimeResult.summary.orphaned,
       guarded: runtimeResult.summary.guarded,
-      delegated: runtimeResult.summary.delegated,
     },
     telemetry: {
       available: telemetryResult.available,
@@ -174,14 +173,28 @@ async function readHeartbeat(bundleRoot: string): Promise<{
       lastTick: asString(value["last_tick"]),
       pollMs: asNumber(value["poll_ms"]),
       activeDispatches: asNumber(value["active_dispatches"]) ?? 0,
+      activeByProvider: {
+        anthropic: asProviderNumber(value["active_by_provider"], "anthropic"),
+        openai: asProviderNumber(value["active_by_provider"], "openai"),
+      },
       blockedDispatches: asNumber(value["blocked_dispatches"]) ?? 0,
       orphanedDispatches: asNumber(value["orphaned_dispatches"]) ?? 0,
       guardedDispatches: asNumber(value["guarded_dispatches"]) ?? 0,
-      delegatedDispatches: asNumber(value["delegated_dispatches"]) ?? 0,
       itemsScanned: asNumber(value["items_scanned"]) ?? 0,
     },
     error: null,
   };
+}
+
+function asProviderNumber(
+  value: unknown,
+  provider: "anthropic" | "openai",
+): number {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return 0;
+  }
+
+  return asNumber((value as Record<string, unknown>)[provider]) ?? 0;
 }
 
 async function readRuntimeManifest(bundleRoot: string): Promise<{

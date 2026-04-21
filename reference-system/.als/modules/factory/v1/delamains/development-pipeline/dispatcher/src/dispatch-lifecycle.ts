@@ -1,18 +1,27 @@
+import {
+  emptyProviderDispatchCounts,
+  incrementProviderDispatchCount,
+  type AgentProvider,
+  type ProviderDispatchCounts,
+} from "./provider.js";
+
 export interface ObservedDispatchItem {
   id: string;
   status: string;
 }
 
-export interface DelegatedDispatchHeartbeatItem {
+export interface GuardedDispatchHeartbeatItem {
   item_id: string;
   state: string;
-  delegated_at: string;
+  provider: AgentProvider;
+  guarded_at: string;
 }
 
 export interface DispatcherHeartbeatState {
   active_dispatches: number;
-  delegated_dispatches: number;
-  delegated_items: DelegatedDispatchHeartbeatItem[];
+  active_by_provider: ProviderDispatchCounts;
+  guarded_dispatches: number;
+  guarded_items: GuardedDispatchHeartbeatItem[];
 }
 
 export interface StatusChangeRelease {
@@ -20,32 +29,32 @@ export interface StatusChangeRelease {
   previousStatus: string;
   nextStatus: string;
   releasedActive: boolean;
-  releasedDelegated: boolean;
+  releasedGuarded: boolean;
 }
 
 export interface DispatchCompletion {
   itemId: string;
   state: string;
   success: boolean;
-  delegated: boolean;
-  delegatedAtMs?: number;
+  provider: AgentProvider;
+  guardedAtMs?: number;
 }
 
 export type DispatchCompletionDisposition =
   | "released_after_failure"
-  | "guarded_direct"
-  | "guarded_delegated"
+  | "guarded"
   | "ignored_stale";
 
-interface DelegatedDispatchState {
+interface DispatchOwnershipState {
   state: string;
-  delegatedAtMs: number;
+  provider: AgentProvider;
+  guardedAtMs: number;
 }
 
 export class DispatchLifecycle {
   private readonly lastSeen = new Map<string, string>();
-  private readonly active = new Map<string, string>();
-  private readonly delegated = new Map<string, DelegatedDispatchState>();
+  private readonly active = new Map<string, DispatchOwnershipState>();
+  private readonly guarded = new Map<string, DispatchOwnershipState>();
 
   reconcile(items: ReadonlyArray<ObservedDispatchItem>): StatusChangeRelease[] {
     const releases: StatusChangeRelease[] = [];
@@ -69,19 +78,23 @@ export class DispatchLifecycle {
   }
 
   isGuarded(itemId: string): boolean {
-    return this.active.has(itemId) || this.delegated.has(itemId);
+    return this.active.has(itemId) || this.guarded.has(itemId);
   }
 
-  markDispatchStarted(itemId: string, state: string): void {
-    this.active.set(itemId, state);
+  markDispatchStarted(itemId: string, state: string, provider: AgentProvider): void {
+    this.active.set(itemId, {
+      state,
+      provider,
+      guardedAtMs: Date.now(),
+    });
   }
 
   completeDispatch({
     itemId,
     state,
     success,
-    delegated,
-    delegatedAtMs = Date.now(),
+    provider,
+    guardedAtMs = Date.now(),
   }: DispatchCompletion): DispatchCompletionDisposition {
     if (!success) {
       this.active.delete(itemId);
@@ -91,24 +104,24 @@ export class DispatchLifecycle {
     const activeState = this.active.get(itemId);
     const currentStatus = this.lastSeen.get(itemId);
 
-    if (!activeState || activeState !== state || (currentStatus && currentStatus !== state)) {
+    if (!activeState || activeState.state !== state || (currentStatus && currentStatus !== state)) {
       this.release(itemId);
       return "ignored_stale";
     }
 
-    if (delegated) {
-      this.active.delete(itemId);
-      this.delegated.set(itemId, { state, delegatedAtMs });
-      return "guarded_delegated";
-    }
-
-    return "guarded_direct";
+    this.active.delete(itemId);
+    this.guarded.set(itemId, {
+      state,
+      provider,
+      guardedAtMs,
+    });
+    return "guarded";
   }
 
-  counts(): { active: number; delegated: number } {
+  counts(): { active: number; guarded: number } {
     return {
       active: this.active.size,
-      delegated: this.delegated.size,
+      guarded: this.guarded.size,
     };
   }
 
@@ -117,32 +130,39 @@ export class DispatchLifecycle {
   }
 
   heartbeat(): DispatcherHeartbeatState {
-    const delegatedItems = [...this.delegated.entries()]
+    const activeByProvider = emptyProviderDispatchCounts();
+    for (const record of this.active.values()) {
+      incrementProviderDispatchCount(activeByProvider, record.provider);
+    }
+
+    const guardedItems = [...this.guarded.entries()]
       .sort((a, b) => {
         const [itemA, stateA] = a;
         const [itemB, stateB] = b;
-        if (stateA.delegatedAtMs !== stateB.delegatedAtMs) {
-          return stateA.delegatedAtMs - stateB.delegatedAtMs;
+        if (stateA.guardedAtMs !== stateB.guardedAtMs) {
+          return stateA.guardedAtMs - stateB.guardedAtMs;
         }
         return itemA.localeCompare(itemB);
       })
       .map(([itemId, state]) => ({
         item_id: itemId,
         state: state.state,
-        delegated_at: new Date(state.delegatedAtMs).toISOString(),
+        provider: state.provider,
+        guarded_at: new Date(state.guardedAtMs).toISOString(),
       }));
 
     return {
       active_dispatches: this.active.size,
-      delegated_dispatches: delegatedItems.length,
-      delegated_items: delegatedItems,
+      active_by_provider: activeByProvider,
+      guarded_dispatches: guardedItems.length,
+      guarded_items: guardedItems,
     };
   }
 
-  private release(itemId: string): { releasedActive: boolean; releasedDelegated: boolean } {
+  private release(itemId: string): { releasedActive: boolean; releasedGuarded: boolean } {
     const releasedActive = this.active.delete(itemId);
-    const releasedDelegated = this.delegated.delete(itemId);
+    const releasedGuarded = this.guarded.delete(itemId);
 
-    return { releasedActive, releasedDelegated };
+    return { releasedActive, releasedGuarded };
   }
 }

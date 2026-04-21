@@ -38,8 +38,11 @@ One sentence describing what this agent does.
 |-------|----------|-------------|
 | `name` | Yes | Agent identifier. Convention: `{delamain-name}--{state}` |
 | `description` | Yes | One-line description for the dispatcher log |
-| `tools` | No | Comma-separated tool list. Default: `Read, Edit`. Supports all Claude Code tools including `Skill` (for `/commit` and other skills), `Agent`, `Bash`, etc. |
-| `model` | No | `sonnet`, `opus`, or `haiku`. Default: `sonnet` |
+| `tools` | Anthropic only | Comma-separated Claude tool list. Supports `Skill` (for `/commit` and other skills), `Agent`, `Bash`, etc. |
+| `model` | No | Provider-specific model selector. Anthropic uses `sonnet`, `opus`, or `haiku`; OpenAI uses codex model ids such as `gpt-5.4`. |
+| `sandbox-mode` | OpenAI only | Codex sandbox mode. Common value: `workspace-write`. |
+| `approval-policy` | OpenAI only | Codex approval policy. Common value: `never`. |
+| `reasoning-effort` | OpenAI only | Optional Codex reasoning effort (`low`, `medium`, `high`, `xhigh`). |
 | `color` | No | Display color hint |
 
 ### Body
@@ -70,7 +73,7 @@ legal_transitions:
 
 The agent uses this to know which item to operate on, what transitions are legal, and how session handling applies in the current state.
 
-For direct SDK-resumable states, `resume: yes` means the dispatcher will resume its prior Agent SDK session. For delegated states, `resume: no` can still appear alongside a non-null `session_id`, meaning the saved session belongs to the delegated worker rather than the dispatcher-owned SDK session.
+For resumable states, `resume: yes` means the dispatcher will resume the provider-owned prior session or thread using the stored `session_id`. On a first run, `resume: no` appears alongside a non-null `session_field` and `session_id: null`.
 
 ## Best Practices
 
@@ -78,9 +81,7 @@ For direct SDK-resumable states, `resume: yes` means the dispatcher will resume 
 
 Agents may be re-dispatched if the dispatcher restarts. Every agent must be safe to run twice on the same item in the same state.
 
-**For direct dispatch** (agent does work via Agent SDK): this is naturally handled — the agent reads the item, checks state, and either acts or stops.
-
-**For delegated dispatch** (agent spawns an external process): the agent must check whether the operation is already in progress before acting. Check reality, not state.
+The agent should read the item, confirm the current state, and either act or stop. Resumable provider sessions help with continuity, but the authored prompt still needs to be safe when re-run.
 
 Example — checking if a tmux window already exists:
 
@@ -92,54 +93,19 @@ pane_cmd=$(tmux -L {SOCKET} list-panes -t "{SESSION}:{WINDOW}" -F '#{pane_curren
 - Output is `codex` or `node` → already running → log and stop
 - Output is `zsh` or `bash` → process finished or died → flag for operator
 
-### 2. Delegated Dispatch
+### 2. Provider-Specific Prompt Surfaces
 
-Some agents don't do work directly — they spawn an external process (e.g., a Codex session) and stop. This is the delegated dispatch pattern.
+ALS agent prompts are authored against the declared state `provider`.
 
-The `delegated: true` field in the authored `delamain.ts` definition, projected into runtime `delamain.yaml`, tells the dispatcher to skip Agent SDK resume and auto-persist for delegated states while still exposing runtime session metadata to the agent.
+- **Anthropic provider**: Claude-style frontmatter such as `tools`, Anthropic model aliases, and `/skill` references in the prompt body.
+- **OpenAI provider**: Codex-style frontmatter such as `sandbox-mode`, `approval-policy`, optional `reasoning-effort`, and `$skill` references in the prompt body.
 
-Key rules for delegated agents:
-- **Check idempotency first** — verify the delegate isn't already running
-- **The dispatch command writes the session ID** — the dispatcher disables auto-persist for delegated states, so the session ID must be captured and written by the dispatch mechanism
-- **Saved worker session metadata** — use `session_id` from Runtime Context as the delegated worker session identifier when it is present. `resume` stays `no` because the dispatcher is not resuming its own Agent SDK session for delegated states.
+The compiler rejects cross-provider prompt syntax. Examples:
 
-#### Headless dispatch (production)
-
-For automated dispatch without operator monitoring, use `codex exec --json` to run non-interactively and capture the session ID from the JSONL output:
-
-**Fresh dispatch with session capture:**
-```bash
-TID=$(codex exec --json "{PROMPT}" | jq -r 'select(.type=="thread.started") | .thread_id')
-sed -i '' "s/^{SESSION_FIELD}: .*/{SESSION_FIELD}: $TID/" {ITEM_FILE}
-```
-
-**Resume dispatch:**
-```bash
-codex exec resume {SESSION_ID} "{PROMPT}"
-```
-
-The `thread.started` event is the first JSONL line emitted. `jq` extracts the `thread_id`, and `sed` writes it to the item's session field after Codex exits. On resume, the stored session ID is passed directly — no re-capture needed.
-
-#### Debug dispatch (tmux)
-
-For operator monitoring, spawn Codex inside a tmux window so the operator can watch the output in real time:
-
-```bash
-# Create a tmux window
-tmux new-window -t "{SESSION}" -n "{WINDOW}" -d
-
-# Fresh — stream output to terminal, capture session ID after completion
-tmux send-keys -t "{SESSION}:{WINDOW}" \
-  'codex exec --json "{PROMPT}" | tee >(jq -r '\''select(.type=="thread.started") | .thread_id'\'' > /tmp/tid-{ITEM_ID}); sleep 1; TID=$(cat /tmp/tid-{ITEM_ID}); sed -i '\'''\'' "s/^{SESSION_FIELD}: .*/{SESSION_FIELD}: $TID/" {ITEM_FILE}; rm -f /tmp/tid-{ITEM_ID}' Enter
-
-# Resume — no session capture needed
-tmux send-keys -t "{SESSION}:{WINDOW}" \
-  'codex exec resume {SESSION_ID} "{PROMPT}"' Enter
-```
-
-The `tee` splits output: one copy goes to the terminal (visible to the operator), and the other pipes through `jq` to extract the session ID to a temp file. After Codex exits, the session ID is read, written to the item, and the temp file is cleaned up.
-
-The interactive TUI mode (`codex --no-alt-screen`) can also be used for debugging but does not support machine-readable session capture.
+- `provider: openai` with `/commit` in the prompt body is invalid.
+- `provider: openai` with `tools:` frontmatter is invalid.
+- `provider: anthropic` with `$commit` in the prompt body is invalid.
+- `provider: anthropic` with `sandbox-mode:` frontmatter is invalid.
 
 ### 3. Status Change Last
 
@@ -165,7 +131,7 @@ When a state agent needs to perform a large unit of focused work, delegate to a 
 
 ### 5. Session Field Ownership
 
-Session fields are implicit — they exist on items but are not declared in `module.ts`. They are managed by the dispatcher (for direct dispatch) or the dispatch command chain (for delegated dispatch). Skills and agents should not create, modify, or validate session fields unless they are part of the delegated dispatch mechanism.
+Session fields are implicit — they exist on items but are not declared in `module.ts`. They are managed by the dispatcher as provider-owned session/thread identifiers. Skills and agents should not create, modify, or validate session fields directly.
 
 ### 6. Agent Prompt Structure
 
