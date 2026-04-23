@@ -2,6 +2,8 @@ import type { DispatchTelemetryEvent } from "../../../skills/new/references/disp
 import type { RuntimeDispatchRecord } from "../../../skills/new/references/dispatcher/src/runtime-state.ts";
 
 export type DispatcherLivenessState = "live" | "idle" | "offline" | "stale" | "error";
+export type DispatcherAgentProvider = "anthropic" | "openai";
+export type DispatcherTransitionClass = "advance" | "rework" | "exit";
 
 export interface DispatcherHeartbeat {
   name: string;
@@ -24,11 +26,20 @@ export interface DispatcherDefinitionState {
   phase: string | null;
   initial: boolean;
   terminal: boolean;
+  provider?: DispatcherAgentProvider | null;
+  resumable?: boolean | null;
+}
+
+export interface DispatcherTransition {
+  class: DispatcherTransitionClass;
+  from: string | string[];
+  to: string;
 }
 
 export interface DispatcherDefinition {
   phases: string[];
   states: Record<string, DispatcherDefinitionState>;
+  transitions: DispatcherTransition[];
 }
 
 export interface DispatcherItemRecord {
@@ -77,6 +88,19 @@ export interface DispatcherRuntimeState {
   guarded: RuntimeDispatchRecord[];
 }
 
+export interface DispatcherJourneyTelemetry {
+  activeJobs: Array<{
+    jobId: string;
+    state: string;
+    age_ms: number;
+  }>;
+  recentEdges: Array<{
+    from: string;
+    to: string;
+    t: string;
+  }>;
+}
+
 export interface DispatcherSnapshot {
   name: string;
   systemRoot: string;
@@ -97,12 +121,14 @@ export interface DispatcherSnapshot {
   statusField: string | null;
   phaseOrder: string[];
   states: Record<string, DispatcherDefinitionState>;
+  transitions?: DispatcherTransition[];
   items: DispatcherItemRecord[];
   itemSummary: DispatcherItemSummary;
   recentEvents: DispatchTelemetryEvent[];
   recentRun: DispatcherRecentRun | null;
   recentError: DispatcherRecentError | null;
   runtime: DispatcherRuntimeState;
+  journeyTelemetry?: DispatcherJourneyTelemetry;
   telemetry: {
     available: boolean;
     legacyMode: boolean;

@@ -21,8 +21,17 @@ test("collector enriches dispatcher snapshots with runtime metadata and item cou
     expect(dispatcher.itemSummary.totalItems).toBe(2);
     expect(dispatcher.itemSummary.byState["in-dev"]).toBe(1);
     expect(dispatcher.itemSummary.byState["in-review"]).toBe(1);
+    expect(dispatcher.transitions).toEqual([
+      {
+        class: "advance",
+        from: "queued",
+        to: "in-dev",
+      },
+    ]);
+    expect(dispatcher.states["queued"]?.provider).toBe("anthropic");
     expect(dispatcher.runtime.available).toBe(true);
     expect(dispatcher.runtime.active[0]?.item_id).toBe("ALS-001");
+    expect(dispatcher.journeyTelemetry?.activeJobs[0]?.jobId).toBe("ALS-001");
     expect(dispatcher.telemetry.available).toBe(true);
     expect(dispatcher.recentRun?.outcome).toBe("success");
   } finally {
@@ -95,6 +104,7 @@ test("collector falls back to heartbeat-only mode for legacy dispatchers", async
 
     expect(dispatcher.telemetry.legacyMode).toBe(true);
     expect(dispatcher.recentRun).toBeNull();
+    expect(dispatcher.transitions?.length).toBe(1);
     expect(dispatcher.state).toBe("live");
   } finally {
     await fixture.cleanup();

@@ -103,6 +103,7 @@ async function collectDispatcherSnapshot(
     statusField: manifestResult.manifest?.status_field ?? null,
     phaseOrder: definitionResult.definition?.phases ?? [],
     states: definitionResult.definition?.states ?? {},
+    transitions: definitionResult.definition?.transitions ?? [],
     items,
     itemSummary,
     recentEvents: telemetryResult.events,
@@ -116,6 +117,7 @@ async function collectDispatcherSnapshot(
       orphaned: runtimeResult.summary.orphaned,
       guarded: runtimeResult.summary.guarded,
     },
+    journeyTelemetry: buildJourneyTelemetry(runtimeResult.summary.active, telemetryResult.events, now),
     telemetry: {
       available: telemetryResult.available,
       legacyMode: !telemetryResult.available,
@@ -321,6 +323,35 @@ function summarizeItems(
     totalItems: items.length,
     byState,
     byActor,
+  };
+}
+
+function buildJourneyTelemetry(
+  activeRecords: RuntimeDispatchSummary["active"],
+  events: DispatchTelemetryEvent[],
+  now: Date,
+): DispatcherSnapshot["journeyTelemetry"] {
+  const activeJobs = activeRecords.map((record) => {
+    const startedAt = Date.parse(record.started_at);
+    return {
+      jobId: record.item_id,
+      state: record.state,
+      age_ms: Number.isFinite(startedAt) ? Math.max(0, now.getTime() - startedAt) : 0,
+    };
+  });
+
+  const recentEdges = events.flatMap((event) => {
+    if (event.transition_targets.length === 0) return [];
+    return event.transition_targets.map((target) => ({
+      from: event.state,
+      to: target,
+      t: event.timestamp,
+    }));
+  });
+
+  return {
+    activeJobs,
+    recentEdges,
   };
 }
 

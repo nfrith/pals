@@ -13,7 +13,10 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@opentui/core": "0.1.96"
+    "@opentui/core": "0.1.96",
+    "@xyflow/react": "^12.4.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
   },
   "optionalDependencies": {
     "@opentui/core-darwin-arm64": "0.1.96",
@@ -25,6 +28,8 @@
   },
   "devDependencies": {
     "@types/bun": "latest",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
     "@types/node": "^25.5.2",
     "typescript": "^6.0.2"
   }

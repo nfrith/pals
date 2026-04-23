@@ -13,4 +13,6 @@ reference-system/.claude/delamains/*/dispatcher/node_modules/
 # Dispatcher status heartbeats (ephemeral)
 reference-system/.claude/delamains/*/status.json
 .claude/delamains/*/status.json
+/delamain-dashboard/.bundle/
+/delamain-dashboard/node_modules/
 # scratch — ALS-020 Test 4 v2 retry disjoint submodule drift 2026-04-20

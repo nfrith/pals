@@ -75,6 +75,8 @@ CLAUDE_PLUGIN_ROOT=${CLAUDE_PLUGIN_ROOT} bun run ${CLAUDE_PLUGIN_ROOT}/delamain-
 
 Use the Bash tool with `run_in_background: true`.
 
+The landing page remains `http://127.0.0.1:4646/`; journey inspection is now available from the web UI at `/journey/{delamainName}` links on each dispatcher card.
+
 ### 6. Open the dashboard on Claude Code Desktop
 
 Read `$CLAUDE_CODE_ENTRYPOINT` to identify the current platform per the matrix in [`platforms.md`](../docs/references/platforms.md).

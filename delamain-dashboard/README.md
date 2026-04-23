@@ -2,12 +2,17 @@
 
 Operational dashboard for ALS Delamain dispatchers.
 
-Both the web UI and the TUI consume the same snapshot feed from the local dashboard service. The TUI is the primary operator surface and is designed for both full-screen terminals and a narrow tmux pane.
+Both the web UI and the TUI consume the same snapshot feed from the local dashboard service. The web UI is now a Bun-bundled React client with two operator routes:
+
+- `/` for the live dispatcher overview
+- `/journey/{delamainName}` for the compiled phase/state/transition graph
+
+The TUI remains unchanged and is still designed for both full-screen terminals and a narrow tmux pane.
 
 ## Modes
 
 - `bun run service --system-root ../reference-system`
-  Starts the localhost dashboard service and serves the web UI plus the canonical snapshot feed.
+  Starts the localhost dashboard service and serves the React overview, journey routes, and the canonical snapshot feed.
 - `bun run tui --service-url http://127.0.0.1:4646`
   Starts the live OpenTUI client against an already-running local service.
 - `bun run smoke:design`
@@ -121,7 +126,7 @@ The dashboard service reads dispatcher runtime state from:
 
 - `.claude/delamains/*/status.json` for liveness
 - `.claude/delamains/*/telemetry/events.jsonl` for recent dispatch history
-- `runtime-manifest.json` and `delamain.yaml` for bundle metadata and pipeline definitions
+- `runtime-manifest.json` and `delamain.yaml` for bundle metadata plus phase/state/transition graph definitions
 - current module items for queue state
 
-Both the web UI and the TUI consume the same service snapshot instead of rescanning the filesystem independently.
+Both the web UI and the TUI consume the same service snapshot instead of rescanning the filesystem independently. The journey view is driven from that same snapshot contract, with `transitions` added additively for the graph renderer and a reserved telemetry seam for future overlay styling.

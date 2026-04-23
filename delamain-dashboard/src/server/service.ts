@@ -1,9 +1,8 @@
 import { collectSystemSnapshot } from "../feed/collector.ts";
+import type { DashboardAppRoute } from "../app-bootstrap.ts";
 import type { DashboardSnapshot } from "../feed/types.ts";
-import {
-  renderDashboardClientScript,
-  renderDashboardHtml,
-} from "./html.ts";
+import { buildDashboardClientBundle, contentTypeForAsset, resolveAssetPath } from "./bundler.ts";
+import { renderDashboardHtml } from "./html.ts";
 
 export interface DashboardServiceOptions {
   systemRoot: string;
@@ -32,6 +31,7 @@ export async function createDashboardServiceRuntime(
   options: DashboardServiceOptions,
 ): Promise<DashboardServiceRuntime> {
   const telemetryLimit = options.telemetryLimit ?? 25;
+  const assets = await buildDashboardClientBundle();
   let snapshot = await collectSystemSnapshot({
     systemRoot: options.systemRoot,
     telemetryLimit,
@@ -49,16 +49,23 @@ export async function createDashboardServiceRuntime(
 
     handleRequest(request) {
       const url = new URL(request.url);
+      const assetPath = resolveAssetPath(assets, url.pathname);
 
-      if (url.pathname === "/") {
-        return new Response(renderDashboardHtml(snapshot), {
-          headers: { "content-type": "text/html; charset=utf-8" },
+      if (assetPath) {
+        return new Response(Bun.file(assetPath), {
+          headers: { "content-type": contentTypeForAsset(url.pathname) },
         });
       }
 
-      if (url.pathname === "/app.js") {
-        return new Response(renderDashboardClientScript(), {
-          headers: { "content-type": "text/javascript; charset=utf-8" },
+      const route = resolveAppRoute(url.pathname);
+
+      if (route) {
+        const found = route.kind === "dashboard"
+          || snapshot.dispatchers.some((dispatcher) => dispatcher.name === route.dispatcherName);
+
+        return new Response(renderDashboardHtml({ route, snapshot }, assets), {
+          status: found ? 200 : 404,
+          headers: { "content-type": "text/html; charset=utf-8" },
         });
       }
 
@@ -190,4 +197,24 @@ function broadcast(
 
 function encodeSse(snapshot: DashboardSnapshot): Uint8Array {
   return encoder.encode(`event: snapshot\ndata: ${JSON.stringify(snapshot)}\n\n`);
+}
+
+function resolveAppRoute(pathname: string): DashboardAppRoute | null {
+  if (pathname === "/") {
+    return { kind: "dashboard" };
+  }
+
+  if (!pathname.startsWith("/journey/")) {
+    return null;
+  }
+
+  const dispatcherName = decodeURIComponent(pathname.slice("/journey/".length));
+  if (!dispatcherName) {
+    return null;
+  }
+
+  return {
+    kind: "journey",
+    dispatcherName,
+  };
 }

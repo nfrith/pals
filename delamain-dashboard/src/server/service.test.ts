@@ -20,6 +20,29 @@ test("dashboard handlers serve snapshot JSON and fan out SSE updates to concurre
   const readerB = createSnapshotEventReader(clientB);
 
   try {
+    const landingResponse = await Promise.resolve(
+      runtime.handleRequest(new Request("http://localhost/")),
+    );
+    expect(landingResponse.status).toBe(200);
+    expect(await landingResponse.text()).toContain("__ALS_DASHBOARD_BOOTSTRAP__");
+
+    const journeyResponse = await Promise.resolve(
+      runtime.handleRequest(new Request("http://localhost/journey/factory-jobs")),
+    );
+    expect(journeyResponse.status).toBe(200);
+    expect(await journeyResponse.text()).toContain("\"dispatcherName\":\"factory-jobs\"");
+
+    const missingJourneyResponse = await Promise.resolve(
+      runtime.handleRequest(new Request("http://localhost/journey/missing-delamain")),
+    );
+    expect(missingJourneyResponse.status).toBe(404);
+
+    const assetResponse = await Promise.resolve(
+      runtime.handleRequest(new Request("http://localhost/app.js")),
+    );
+    expect(assetResponse.ok).toBe(true);
+    expect(await assetResponse.text()).toContain("Delamain dashboard bootstrap");
+
     const snapshotResponse = await Promise.resolve(
       runtime.handleRequest(new Request("http://localhost/api/snapshot")),
     );

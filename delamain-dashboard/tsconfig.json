@@ -6,9 +6,10 @@
     "strict": true,
     "noEmit": true,
     "skipLibCheck": true,
-    "types": ["bun"],
+    "jsx": "react-jsx",
+    "types": ["bun", "node"],
     "lib": ["ESNext", "DOM"],
     "allowImportingTsExtensions": true
   },
-  "include": ["src/**/*.ts"]
+  "include": ["src/**/*.ts", "src/**/*.tsx"]
 }
