@@ -10,7 +10,7 @@ export const module = defineModule({
   "entities": {
     "job": {
       "source_format": "markdown",
-      "path": "jobs/{id}.md",
+      "path": "{id}.md",
       "identity": {
         "id_field": "id"
       },
