@@ -53,16 +53,17 @@ Use this skill when the operator wants to:
 
 ### 3. Create a new job
 
-1. Collect `title`, `description`, `type`, and optional tags from the operator — ask for each via `AskUserQuestion` (one field per question, free-form text where no enum applies, enum options for `type`).
+1. Collect only `title`, `description`, and optional tags from the operator — ask for each via `AskUserQuestion`, one field per question. Do **not** ask about `type`: the field's enum would look like pipeline states and is misleading at job-creation time. The console defaults `type` to `"general"` silently; the operator can edit it later in the job file if they want to categorize.
 2. Allocate the next `GPF-NNN` id by scanning existing jobs.
 3. Write a new record at `general-purpose-factory/jobs/{id}.md` with:
    - frontmatter fields in the authored order
-   - `status: drafted`
+   - `type: general` (default, not prompted)
+   - `status: research` — the pipeline kicks off immediately. There is no operator-owned `drafted` gate in this module's flow; the dispatcher will pick the job up on its next tick.
    - `created` and `updated` set to today
    - `research_session`, `planner_session`, and `impl_session` set to `null`
    - `PURPOSE` seeded from the operator's goal
    - nullable sections initialized to `null`
-   - `ACTIVITY_LOG` seeded with `- YYYY-MM-DD: Created.`
+   - `ACTIVITY_LOG` seeded with `- YYYY-MM-DD: Created. Starting in research.`
 4. Return to the attention queue.
 
 ### 4. Universal action menu
