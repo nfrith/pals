@@ -64,7 +64,17 @@ Use this skill when the operator wants to:
    - `PURPOSE` seeded from the operator's goal
    - nullable sections initialized to `null`
    - `ACTIVITY_LOG` seeded with `- YYYY-MM-DD: Created. Starting in research.`
-4. Return to the attention queue.
+4. Commit the new job file directly via `git` — do **not** invoke a `/commit` skill; no such skill exists on a fresh Foundry install of this module. Stage only the new record (never `git add -A` or `.`) to stay safe with parallel agent work:
+
+```bash
+cd <system-root>
+git add general-purpose-factory/jobs/{id}.md
+git commit -m "general-purpose-factory: create {id} — {title}"
+```
+
+   Use the new record's full `{id}` (e.g. `GPF-001`) and the operator-provided `{title}` verbatim in the subject. Body is optional; a one-line commit is fine for creation.
+
+5. Return to the attention queue.
 
 ### 4. Universal action menu
 
