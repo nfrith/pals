@@ -1,0 +1,6 @@
+{
+  "limits": {
+    "maxTurns": 100,
+    "maxBudgetUsd": 20
+  }
+}
