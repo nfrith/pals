@@ -51,7 +51,10 @@ If `PLUGIN_ROOT_INVALID` is reported, the harness did not substitute `${CLAUDE_P
 3. Run `which jq` to check if jq is on PATH.
    - If not found, tell the operator: "ALS hooks require jq. Install it with your package manager (e.g. `! sudo apt-get install -y jq` or `! brew install jq`)." Do not proceed until jq is available.
 
-4. Run `cd ${CLAUDE_PLUGIN_ROOT}/alsc/compiler && bun install` to ensure compiler dependencies are installed. This is idempotent and fast when dependencies already exist.
+4. Run `which git` to check if git is on PATH.
+   - If not found, tell the operator: "ALS requires git. Every pipeline transition creates a commit, so the system cannot operate in a non-git workspace. Install git for your platform, then restart and re-run `/install`." Do not proceed until git is available.
+
+5. Run `cd ${CLAUDE_PLUGIN_ROOT}/alsc/compiler && bun install` to ensure compiler dependencies are installed. This is idempotent and fast when dependencies already exist.
 
 Report the successful prerequisite check before continuing.
 
@@ -158,7 +161,7 @@ Use `references/final-report.md`.
 Report:
 
 - Acknowledged platform code (Phase 2)
-- Prerequisite checks (`bun`, `jq`, `CLAUDE_PLUGIN_ROOT`)
+- Prerequisite checks (`bun`, `jq`, `git`, `CLAUDE_PLUGIN_ROOT`)
 - System id (Phase 4)
 - Authored skeleton files (Phase 5)
 - Validation and deploy results (Phase 6)
