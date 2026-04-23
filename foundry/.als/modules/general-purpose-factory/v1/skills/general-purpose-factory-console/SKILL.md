@@ -86,6 +86,8 @@ When the operator selects a job in an operator-owned state, present the action m
 - `Exit` — leave the console.
 - `Other` — interpret freeform operator instructions for this job.
 
+**Commit policy (applies to every action in this skill).** Every time the console creates or edits a file as part of completing an action, commit the change before returning to the attention queue. Stage only the files this action modified — use explicit paths, never `git add -A` or `git add .`, so parallel agents working the same branch stay safe. The sections below call out specific commit subjects for creation and transitions; for `Other` (freeform operator instructions) or any ad-hoc edit the console makes on the operator's behalf, use a short subject that describes the change, prefixed with `general-purpose-factory: {id} ` so commits are greppable by job id. Do **not** invoke a `/commit` skill — no such skill ships on a fresh Foundry install of this module; run `git add` and `git commit` directly.
+
 ### 5. Respond for `drafted`
 
 1. Confirm the operator is ready to start the pipeline and that `PURPOSE`, `CURRENT_STATE`, and `REQUIREMENTS` are sufficient to begin. Ask **via `AskUserQuestion`**.

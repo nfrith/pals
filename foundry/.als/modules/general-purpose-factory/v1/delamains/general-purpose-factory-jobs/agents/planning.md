@@ -27,3 +27,4 @@ Turn the research baseline into an actionable implementation plan, or route the 
 6. If the work cannot be planned without operator input, write discrete questions in `PLAN_QUESTIONS`, record the blocker clearly, and move the job to `blocked`.
 7. If the plan is concrete and actionable, clear or leave `PLAN_QUESTIONS` as `null`, and move the job to `impl`.
 8. Update `updated` and append an `ACTIVITY_LOG` entry recording the planning outcome you chose.
+9. Commit your work. Stage only the files you created or modified in this run — use explicit paths (the job file plus any other paths you touched), never `git add -A` or `git add .`, so parallel agents on the same branch stay safe. Commit with subject `general-purpose-factory: {id} planning → {next-state}` where `{next-state}` is either `impl` or `blocked`. Example: `general-purpose-factory: GPF-003 planning → impl`. A one-line commit (no body) is fine.
