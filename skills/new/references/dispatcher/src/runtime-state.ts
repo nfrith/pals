@@ -26,6 +26,7 @@ export interface RuntimeDispatchIncident {
   kind: string;
   message: string;
   detected_at: string;
+  retry_count: number;
 }
 
 export interface RuntimeMountedSubmoduleRecord {
@@ -267,6 +268,7 @@ function normalizeIncident(value: unknown): RuntimeDispatchIncident | null {
     kind,
     message,
     detected_at: asString(incident.detected_at) ?? new Date().toISOString(),
+    retry_count: asNonNegativeInteger(incident.retry_count) ?? 0,
   };
 }
 
@@ -299,6 +301,11 @@ function asString(value: unknown): string | null {
 
 function asInteger(value: unknown): number | null {
   return typeof value === "number" && Number.isInteger(value) ? value : null;
+}
+
+function asNonNegativeInteger(value: unknown): number | null {
+  const integer = asInteger(value);
+  return integer !== null && integer >= 0 ? integer : null;
 }
 
 function asNumber(value: unknown): number | null {

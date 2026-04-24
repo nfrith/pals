@@ -3,8 +3,13 @@ import { existsSync } from "fs";
 import { writeFileSync, unlinkSync } from "fs";
 import { resolve as resolvePath, dirname, join } from "path";
 import { resolve, dispatch, type DispatchEntry } from "./dispatcher.js";
-import { DispatcherRuntime, type DispatcherRuntimeHeartbeat } from "./dispatcher-runtime.js";
+import {
+  DispatcherRuntime,
+  type BlockedDirtyRetryResult,
+  type DispatcherRuntimeHeartbeat,
+} from "./dispatcher-runtime.js";
 import { formatDispatcherVersionLine, loadDispatcherVersionInfo } from "./dispatcher-version.js";
+import { appendTelemetryEvent, DISPATCH_TELEMETRY_SCHEMA } from "./telemetry.js";
 import { scan } from "./watcher.js";
 
 function findSystemRoot(start: string): string {
@@ -124,6 +129,49 @@ async function updateHeartbeat() {
   await writeHeartbeat(lastItemsScanned);
 }
 
+async function writeRetryTelemetry(result: BlockedDirtyRetryResult): Promise<void> {
+  try {
+    await appendTelemetryEvent(BUNDLE_ROOT, {
+      schema: DISPATCH_TELEMETRY_SCHEMA,
+      event_id: crypto.randomUUID(),
+      event_type: result.action === "merged" ? "dispatch_merge_success" : "dispatch_merge_blocked",
+      timestamp: new Date().toISOString(),
+      dispatcher_name: config.delamainName,
+      module_id: config.moduleId,
+      dispatch_id: result.dispatchId,
+      item_id: result.itemId,
+      item_file: result.itemFile,
+      isolated_item_file: result.isolatedItemFile,
+      state: result.state,
+      agent_name: result.agentName,
+      sub_agent_name: null,
+      provider: result.provider,
+      resumable: result.resumable,
+      resume_requested: false,
+      session_field: result.sessionField,
+      runtime_session_id: result.sessionId,
+      resume_session_id: null,
+      worker_session_id: result.sessionId,
+      worktree_path: result.worktreePath,
+      branch_name: result.branchName,
+      mounted_submodules: result.mountedSubmodules,
+      worktree_commit: result.worktreeCommit,
+      integrated_commit: result.integratedCommit,
+      merge_outcome: result.mergeOutcome,
+      incident_kind: result.incidentKind,
+      transition_targets: result.transitionTargets,
+      duration_ms: result.durationMs,
+      num_turns: result.numTurns,
+      cost_usd: result.costUsd,
+      error: result.action === "merged" ? null : result.incidentMessage,
+    });
+  } catch (error) {
+    console.warn(
+      `[dispatcher] ${result.itemId} retry telemetry write failed: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+}
+
 function logCompletion(
   itemId: string,
   provider: DispatchEntry["provider"],
@@ -131,6 +179,12 @@ function logCompletion(
 ) {
   console.log(
     `[dispatcher] ${itemId} finished provider=${provider} (success=${result.success}, blocked=${result.blocked}, active=${lastRuntimeHeartbeat.active_dispatches}, blocked_total=${lastRuntimeHeartbeat.blocked_dispatches}, anthropic=${lastRuntimeHeartbeat.active_by_provider.anthropic}, openai=${lastRuntimeHeartbeat.active_by_provider.openai})`,
+  );
+}
+
+function logRetry(result: BlockedDirtyRetryResult) {
+  console.log(
+    `[dispatcher] mergeBack retry #${result.attempt} dispatch=${result.dispatchId} item=${result.itemId} incident=${result.previousIncidentKind} tree=${result.treeState} outcome=${result.action} next_incident=${result.incidentKind ?? "none"}`,
   );
 }
 
@@ -191,6 +245,12 @@ async function tick() {
     console.log(
       `[dispatcher] release ${release.itemId} after status change ${release.previousStatus} -> ${release.nextStatus} (${release.previousRecordStatus})`,
     );
+  }
+
+  const retries = await runtime.retryBlockedDirtyDispatches();
+  for (const retry of retries) {
+    logRetry(retry);
+    await writeRetryTelemetry(retry);
   }
 
   for (const item of items) {

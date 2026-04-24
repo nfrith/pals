@@ -79,6 +79,7 @@ export class OrphanSweeper {
               kind: "orphan_cleanup_failed",
               message: `Pristine orphan cleanup failed for worktree '${existing.worktree_path ?? "<missing>"}': ${incidentMessage}`,
               detected_at: now.toISOString(),
+              retry_count: 0,
             },
           }));
           continue;
@@ -98,6 +99,7 @@ export class OrphanSweeper {
           kind: "stale_dispatch",
           message: `Dispatch heartbeat went stale while worktree '${existing.worktree_path ?? "<missing>"}' still had preserved work`,
           detected_at: now.toISOString(),
+          retry_count: 0,
         },
       }));
       summary.dirtyOrphansPreserved += 1;

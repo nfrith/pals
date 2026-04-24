@@ -76,7 +76,7 @@ Entry point. Handles:
 - **Startup**: calls `resolve()` once to load `runtime-manifest.json`, local `delamain.yaml`, and state-agent files, then enters the poll loop.
 - **Effective limits**: resolves `runtime-manifest.json.limits` once at startup, falls back to canonical `50 / 10` when absent, and logs the active `maxTurns / maxBudgetUsd` pair before polling.
 - **Runtime boot**: creates one `DispatcherRuntime`, runs orphan sweep at startup, and keeps the persisted dispatch registry as the source of truth for active, blocked, orphaned, and guarded ownership.
-- **Poll loop**: scans items at a configurable interval (`POLL_MS`, default 30s). Reads committed `HEAD` state only, warns when a status transition exists in the checkout but not in `HEAD`, reconciles registry records against current item status, suppresses redispatch for unresolved incidents, runs periodic orphan sweeping, and refreshes the heartbeat after dispatch completions.
+- **Poll loop**: scans items at a configurable interval (`POLL_MS`, default 30s). Reads committed `HEAD` state only, warns when a status transition exists in the checkout but not in `HEAD`, reconciles registry records against current item status, retries blocked `dirty_integration_checkout` merge-backs under the existing repo-mutation lease, suppresses redispatch for all other unresolved incidents, runs periodic orphan sweeping, and refreshes the heartbeat after dispatch completions.
 - **Runtime hardening**: keeps the event loop alive with an internal keepalive server, logs tick and process lifecycle events, and ignores stray `SIGTERM` so dispatcher children do not accidentally kill the parent runtime.
 
 ### `src/preflight.ts`
@@ -95,6 +95,7 @@ Runtime coordinator for isolated dispatch execution.
 - Owns the persisted dispatch registry
 - Finalizes successful and failed dispatches
 - Holds the repo-mutation lease during merge-back
+- Retries blocked dirty-tree merge-backs until the bounded ceiling, then escalates them to `primary_dirty_timeout`
 - Produces heartbeat counts for active, blocked, orphaned, and guarded runtime state, including `active_by_provider`
 
 ### `src/dispatch-registry.ts`
@@ -118,6 +119,7 @@ Git-backed isolation strategy.
 - Auto-commits isolated worktrees into provisional single-commit snapshots, refreshes stale worktrees by merging current primary `HEAD` into the isolated checkout, fast-forwards mounted primaries first, pushes each mounted dispatch branch to the submodule `origin`, repoints the mounted checkout to the integrated SHA, then fast-forwards the host checkout to the refreshed worktree commit
 - If a host refresh stops on `UU <submodule>` conflicts only, performs a narrow mechanical reconciliation by merging the conflicting submodule SHA inside each mounted checkout, staging the resolved gitlink back into the host worktree, and sealing the outer merge with the dispatcher signature message
 - Blocks submodule-origin push failures as `submodule_push_failed`, preserving the host and mounted worktrees instead of landing an unreachable gitlink SHA
+- Treats dirty integration checkouts as a retryable wait condition; once the operator cleans the tree, the poll loop re-runs refresh + merge-back under the same lease and escalates long-lived waits to `primary_dirty_timeout`
 - Blocks concurrent-overlap refresh failures as `stale_base_conflict`, preserving the host and mounted worktrees for operator or agent-assist follow-up
 - Rolls back already-integrated primary clones if a later repo in the merge transaction fails, leaving the host worktree and mounted submodule worktrees preserved for inspection
 

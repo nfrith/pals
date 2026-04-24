@@ -3,7 +3,10 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { DispatcherRuntime } from "../../../skills/new/references/dispatcher/src/dispatcher-runtime.ts";
+import {
+  DIRTY_INTEGRATION_RETRY_LIMIT,
+  DispatcherRuntime,
+} from "../../../skills/new/references/dispatcher/src/dispatcher-runtime.ts";
 import { RepoMutationLock } from "../../../skills/new/references/dispatcher/src/repo-mutation-lock.ts";
 import { scan } from "../../../skills/new/references/dispatcher/src/watcher.ts";
 import {
@@ -417,10 +420,145 @@ test("runtime blocks submodule dispatch merge-back when the primary clone is dir
 
     const state = await readRuntimeState(bundleRoot);
     expect(state.records[0]?.status).toBe("blocked");
+    expect(state.records[0]?.incident?.retry_count).toBe(0);
     expect(state.records[0]?.mounted_submodules).toHaveLength(1);
     expect(state.records[0]?.mounted_submodules[0]?.worktree_path).toBe(
       prepared!.mountedSubmodules[0]!.worktreePath,
     );
+  });
+});
+
+test("runtime retries blocked dirty integration dispatches once the primary tree is clean", async () => {
+  await withWorktreeSandbox("dirty-retry-success", async ({
+    runtime,
+    bundleRoot,
+    systemRoot,
+    itemFile,
+  }) => {
+    const prepared = await runtime.prepareDispatch("ALS-001", itemFile, ENTRY);
+    expect(prepared).not.toBeNull();
+
+    await replaceStatus(prepared!.isolatedItemFile, "in-review");
+    await appendBody(itemFile, "Dirty integration marker.");
+
+    const blocked = await runtime.finalizeDispatch({
+      prepared: prepared!,
+      entry: ENTRY,
+      sessionId: "99999999-9999-4999-8999-999999999999",
+      durationMs: 1_700,
+      numTurns: 3,
+      costUsd: 0.09,
+      success: true,
+    });
+
+    expect(blocked.success).toBe(false);
+    expect(blocked.blocked).toBe(true);
+    expect(blocked.incidentKind).toBe("dirty_integration_checkout");
+
+    await gitCommit(systemRoot, "operator: clean dirty integration tree");
+
+    const retries = await runtime.retryBlockedDirtyDispatches();
+    expect(retries).toHaveLength(1);
+    expect(retries[0]?.action).toBe("merged");
+    expect(retries[0]?.treeState).toBe("clean");
+    expect(retries[0]?.incidentKind).toBeNull();
+    expect(await readFrontmatterStatus(itemFile)).toBe("in-review");
+    expect(await readFile(itemFile, "utf-8")).toContain("Dirty integration marker.");
+    expect(await runtime.hasOpenRecord("ALS-001")).toBe(false);
+    expect(existsSync(prepared!.worktreePath)).toBe(false);
+
+    const state = await readRuntimeState(bundleRoot);
+    expect(state.records).toEqual([]);
+  });
+});
+
+test("runtime escalates dirty integration retries after the retry ceiling", async () => {
+  await withWorktreeSandbox("dirty-retry-timeout", async ({ runtime, bundleRoot, itemFile }) => {
+    const prepared = await runtime.prepareDispatch("ALS-001", itemFile, ENTRY);
+    expect(prepared).not.toBeNull();
+
+    await replaceStatus(prepared!.isolatedItemFile, "in-review");
+    await appendBody(itemFile, "Dirty integration marker.");
+
+    const blocked = await runtime.finalizeDispatch({
+      prepared: prepared!,
+      entry: ENTRY,
+      sessionId: null,
+      durationMs: 1_500,
+      numTurns: 2,
+      costUsd: 0.07,
+      success: true,
+    });
+
+    expect(blocked.blocked).toBe(true);
+    expect(blocked.incidentKind).toBe("dirty_integration_checkout");
+
+    for (let attempt = 1; attempt <= DIRTY_INTEGRATION_RETRY_LIMIT; attempt += 1) {
+      const retries = await runtime.retryBlockedDirtyDispatches();
+      expect(retries).toHaveLength(1);
+      expect(retries[0]?.attempt).toBe(attempt);
+      expect(retries[0]?.action).toBe("blocked");
+      expect(retries[0]?.treeState).toBe("dirty");
+      expect(retries[0]?.incidentKind).toBe("dirty_integration_checkout");
+    }
+
+    const timedOut = await runtime.retryBlockedDirtyDispatches();
+    expect(timedOut).toHaveLength(1);
+    expect(timedOut[0]?.attempt).toBe(DIRTY_INTEGRATION_RETRY_LIMIT + 1);
+    expect(timedOut[0]?.action).toBe("timed_out");
+    expect(timedOut[0]?.treeState).toBe("dirty");
+    expect(timedOut[0]?.incidentKind).toBe("primary_dirty_timeout");
+    expect(timedOut[0]?.incidentMessage).toContain("timed out");
+
+    const state = await readRuntimeState(bundleRoot);
+    expect(state.records[0]?.status).toBe("blocked");
+    expect(state.records[0]?.incident?.kind).toBe("primary_dirty_timeout");
+    expect(state.records[0]?.incident?.retry_count).toBe(DIRTY_INTEGRATION_RETRY_LIMIT + 1);
+
+    const postTimeout = await runtime.retryBlockedDirtyDispatches();
+    expect(postTimeout).toEqual([]);
+  });
+});
+
+test("runtime reclassifies dirty retry failures when the clean tree reveals a real conflict", async () => {
+  await withWorktreeSandbox("dirty-retry-reclassify", async ({
+    runtime,
+    bundleRoot,
+    systemRoot,
+    itemFile,
+  }) => {
+    const prepared = await runtime.prepareDispatch("ALS-001", itemFile, ENTRY);
+    expect(prepared).not.toBeNull();
+
+    await replaceStatus(prepared!.isolatedItemFile, "in-review");
+    await replaceStatus(itemFile, "operator-edit");
+
+    const blocked = await runtime.finalizeDispatch({
+      prepared: prepared!,
+      entry: ENTRY,
+      sessionId: null,
+      durationMs: 1_600,
+      numTurns: 3,
+      costUsd: 0.08,
+      success: true,
+    });
+
+    expect(blocked.blocked).toBe(true);
+    expect(blocked.incidentKind).toBe("dirty_integration_checkout");
+
+    await gitCommit(systemRoot, "operator: commit conflicting status change");
+
+    const retries = await runtime.retryBlockedDirtyDispatches();
+    expect(retries).toHaveLength(1);
+    expect(retries[0]?.action).toBe("blocked");
+    expect(retries[0]?.treeState).toBe("clean");
+    expect(retries[0]?.incidentKind).toBe("stale_base_conflict");
+
+    const state = await readRuntimeState(bundleRoot);
+    expect(state.records[0]?.status).toBe("blocked");
+    expect(state.records[0]?.incident?.kind).toBe("stale_base_conflict");
+    expect(state.records[0]?.incident?.retry_count).toBe(0);
+    expect(state.records[0]?.base_commit).toBe(await runGit(systemRoot, ["rev-parse", "HEAD"]));
   });
 });
 
