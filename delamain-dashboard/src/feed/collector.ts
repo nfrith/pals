@@ -195,7 +195,7 @@ function buildDispatcherSnapshot(input: {
       orphaned: runtimeResult.summary.orphaned,
       guarded: runtimeResult.summary.guarded,
     },
-    journeyTelemetry: buildJourneyTelemetry(runtimeResult.summary.active, telemetryResult.events, input.now),
+    journeyTelemetry: buildJourneyTelemetry(runtimeResult.summary, telemetryResult.events, input.now),
     telemetry: {
       available: telemetryResult.available,
       legacyMode: !telemetryResult.available,
@@ -413,16 +413,24 @@ function summarizeItems(
 }
 
 function buildJourneyTelemetry(
-  activeRecords: RuntimeDispatchSummary["active"],
+  runtimeSummary: RuntimeDispatchSummary,
   events: DispatchTelemetryEvent[],
   now: Date,
 ): DispatcherSnapshot["journeyTelemetry"] {
-  const activeJobs = activeRecords.map((record) => {
+  const activeJobs = [
+    ...runtimeSummary.active,
+    ...runtimeSummary.guarded,
+    ...runtimeSummary.blocked,
+    ...runtimeSummary.orphaned,
+  ].map((record) => {
     const startedAt = Date.parse(record.started_at);
     return {
+      dispatchId: record.dispatch_id,
       jobId: record.item_id,
       state: record.state,
       age_ms: Number.isFinite(startedAt) ? Math.max(0, now.getTime() - startedAt) : 0,
+      provider: record.provider,
+      status: record.status,
     };
   });
 

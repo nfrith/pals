@@ -90,9 +90,12 @@ export interface DispatcherRuntimeState {
 
 export interface DispatcherJourneyTelemetry {
   activeJobs: Array<{
+    dispatchId: string;
     jobId: string;
     state: string;
     age_ms: number;
+    provider: DispatcherAgentProvider;
+    status: RuntimeDispatchRecord["status"];
   }>;
   recentEdges: Array<{
     from: string;

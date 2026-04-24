@@ -1,10 +1,12 @@
 import {
   Background,
-  Controls,
+  BaseEdge,
   Handle,
-  MiniMap,
   Position,
   ReactFlow,
+  getBezierPath,
+  type Edge,
+  type EdgeProps,
   type Node,
   type NodeProps,
 } from "@xyflow/react";
@@ -20,8 +22,29 @@ import {
 } from "react";
 import type { DashboardBootstrapPayload } from "../app-bootstrap.ts";
 import type { DashboardSnapshot, DispatcherSnapshot } from "../feed/types.ts";
-import { buildJourneyGraph, type JourneyNodeData } from "../journey.ts";
+import {
+  buildJourneyGraph,
+  type JourneyAnchorData,
+  type JourneyEdgeData,
+  type JourneyLaneData,
+  type JourneyNodeData,
+} from "../journey.ts";
 import { buildDashboardViewModel } from "../view-model.ts";
+
+const EMPTY_TELEMETRY = {
+  activeJobs: [],
+  recentEdges: [],
+} as const;
+
+const JOURNEY_NODE_TYPES = {
+  journey: JourneyNode,
+  journeyAnchor: JourneyAnchor,
+  journeyLane: JourneyLane,
+};
+
+const JOURNEY_EDGE_TYPES = {
+  journey: JourneyEdge,
+};
 
 export function DashboardApp({
   bootstrap,
@@ -166,8 +189,13 @@ function JourneyPage({
   snapshot: DashboardSnapshot;
 }): ReactNode {
   const dispatcher = snapshot.dispatchers.find((item) => item.name === dispatcherName) ?? null;
+  const journey = useMemo(() => dispatcher ? buildJourneyGraph(dispatcher) : null, [dispatcher]);
+  const flowNodes = useMemo<Node[]>(
+    () => journey ? [...journey.lanes, ...journey.anchors, ...journey.nodes] : [],
+    [journey],
+  );
 
-  if (!dispatcher) {
+  if (!dispatcher || !journey) {
     return (
       <main className="dashboard-shell">
         <header className="hero-panel journey-hero">
@@ -188,8 +216,8 @@ function JourneyPage({
     );
   }
 
-  const journey = useMemo(() => buildJourneyGraph(dispatcher), [dispatcher]);
-  const telemetry = dispatcher.journeyTelemetry ?? { activeJobs: [], recentEdges: [] };
+  const telemetry = dispatcher.journeyTelemetry ?? EMPTY_TELEMETRY;
+  const edgeCounts = journey.summary.edgeCounts;
 
   return (
     <main className="dashboard-shell">
@@ -199,23 +227,19 @@ function JourneyPage({
           <p className="hero-eyebrow">Journey View</p>
           <h1>{dispatcher.name}</h1>
           <p className="hero-subtitle">{dispatcher.moduleId ?? "module unavailable"} • {dispatcher.entityPath ?? "entity path unavailable"}</p>
-          <div className="hero-phase-row">
-            {journey.contract.phases.map((phase) => (
-              <span
-                key={phase}
-                className="phase-chip"
-                style={{ "--phase-color": journey.palette[phase] } as CSSProperties}
-              >
-                {phase}
-              </span>
-            ))}
-          </div>
+          <p className="hero-path">{dispatcher.bundleRoot}</p>
         </div>
-        <div className="hero-meta-grid">
-          <HeroStat label="Feed" value={connectionStatus} />
-          <HeroStat label="States" value={String(journey.nodes.length)} />
-          <HeroStat label="Edges" value={String(journey.edges.length)} />
-          <HeroStat label="Updated" value={formatTimestamp(snapshot.generatedAt)} />
+        <div className="journey-hero-meta">
+          <div className="journey-status-cluster">
+            <StatusChip label="Compiled journey graph" tone="neutral" />
+            <StatusChip label={connectionStatus} tone={connectionStatus === "Live" ? "live" : "warn"} />
+            <StatusChip label={dispatcher.runtime.available ? "Runtime connected" : "Runtime unavailable"} tone={dispatcher.runtime.available ? "live" : "offline"} />
+            <StatusChip label={`Dispatcher ${dispatcher.state}`} tone={dispatcher.state} />
+            <StatusChip label={`System ${labelForSystemRoot(snapshot.systemRoot)}`} tone="neutral" />
+          </div>
+          <p className="journey-caption">
+            Exit funnels are grouped for readability. Counts below still reflect the raw compiled definition.
+          </p>
         </div>
       </header>
 
@@ -227,32 +251,35 @@ function JourneyPage({
               <h2>Compiled journey graph</h2>
             </div>
             <div className="journey-caption">
-              Hover nodes and edges for state metadata. Drag to pan. Scroll to zoom.
+              Hover nodes and edges for compiled metadata. Drag to pan. Scroll to zoom.
             </div>
-          </div>
-          <div className="journey-phase-scale">
-            {journey.contract.phases.map((phase) => (
-              <div
-                key={phase}
-                className="journey-phase-scale-item"
-                style={{ "--phase-color": journey.palette[phase] } as CSSProperties}
-              >
-                <span>{phase}</span>
-              </div>
-            ))}
           </div>
           <ReactFlow
             className="journey-flow"
             defaultViewport={journey.viewport}
+            edgeTypes={JOURNEY_EDGE_TYPES}
             edges={journey.edges}
             fitView
-            nodeTypes={{ journey: JourneyNode }}
-            nodes={journey.nodes}
+            fitViewOptions={{ maxZoom: 1.05, minZoom: 0.5, padding: 0.14 }}
+            maxZoom={1.5}
+            minZoom={0.35}
+            nodeTypes={JOURNEY_NODE_TYPES}
+            nodes={flowNodes}
+            proOptions={{ hideAttribution: true }}
+            style={{ "--journey-flow-height": `${journey.layout.canvasHeight}px` } as CSSProperties}
           >
-            <Background color="rgba(255,255,255,0.065)" gap={28} size={1.3} />
-            <MiniMap />
-            <Controls />
+            <Background color="rgba(255,255,255,0.048)" gap={28} size={1.25} />
           </ReactFlow>
+          <div className="journey-metadata-strip">
+            <MetadataItem label="Journey" value={dispatcher.name} />
+            <MetadataItem label="Nodes" value={String(journey.summary.rawNodeCount)} />
+            <MetadataItem
+              label="Edges"
+              value={`${journey.summary.rawEdgeCount} (${edgeCounts.advance} adv / ${edgeCounts.rework} rework / ${edgeCounts.exit} exit)`}
+            />
+            <MetadataItem label="Status" tone={dispatcher.state} value={dispatcher.state} />
+            <MetadataItem label="Heartbeat" value={formatHeartbeatAge(dispatcher)} />
+          </div>
         </div>
 
         <aside className="journey-sidebar">
@@ -260,28 +287,29 @@ function JourneyPage({
             <LegendItem className="legend-line advance" label="Advance edge" />
             <LegendItem className="legend-line rework" label="Rework edge" />
             <LegendItem className="legend-line exit" label="Exit edge" />
-            <LegendItem className="legend-shape agent" label="Agent state" />
+            <LegendItem className="legend-shape agent anthropic" label="Anthropic agent" />
+            <LegendItem className="legend-shape agent openai" label="OpenAI agent" />
             <LegendItem className="legend-shape operator" label="Operator state" />
             <LegendItem className="legend-shape terminal" label="Terminal state" />
           </SidebarCard>
 
-          <SidebarCard title="Runtime seam">
-            <MetricLine label="Active jobs" value={String(telemetry.activeJobs.length)} />
-            <MetricLine label="Recent edges" value={String(telemetry.recentEdges.length)} />
-            <MetricLine label="Bundle root" value={dispatcher.bundleRoot} />
-            <MetricLine label="Heartbeat" value={dispatcher.detail} />
-          </SidebarCard>
-
-          <SidebarCard title="Recent edge activity">
-            {telemetry.recentEdges.length === 0 ? (
-              <p className="sidebar-empty">No recent transition telemetry recorded.</p>
+          <SidebarCard title="Active Jobs">
+            {telemetry.activeJobs.length === 0 ? (
+              <p className="sidebar-empty">No runtime dispatches are currently tracked for this journey.</p>
             ) : (
-              <ul className="sidebar-list">
-                {telemetry.recentEdges.slice(0, 6).map((edge) => (
-                  <li key={`${edge.from}-${edge.to}-${edge.t}`}>
-                    <strong>{edge.from}</strong>
-                    <span>{edge.to}</span>
-                    <em>{formatTimestamp(edge.t)}</em>
+              <ul className="active-job-list">
+                {telemetry.activeJobs.map((job) => (
+                  <li key={job.dispatchId} className={`active-job status-${job.status}`}>
+                    <div className="active-job-header">
+                      <strong>{job.dispatchId}</strong>
+                      <span className={`job-chip job-chip-status-${job.status}`}>{job.status}</span>
+                    </div>
+                    <p className="active-job-state">{job.state}</p>
+                    <div className="active-job-meta">
+                      <span className={`job-chip job-chip-provider-${job.provider}`}>{job.provider}</span>
+                      <span>{job.jobId}</span>
+                      <span>{formatDuration(job.age_ms)}</span>
+                    </div>
                   </li>
                 ))}
               </ul>
@@ -296,8 +324,13 @@ function JourneyPage({
 function JourneyNode({ data }: NodeProps<Node<JourneyNodeData, "journey">>): ReactNode {
   return (
     <div
-      className={`journey-node journey-node-${data.actor ?? "terminal"}`}
+      className={[
+        "journey-node",
+        `journey-node-${data.actor ?? "terminal"}`,
+        data.provider ? `journey-node-provider-${data.provider}` : "",
+      ].filter(Boolean).join(" ")}
       style={{ "--journey-accent": data.color } as CSSProperties}
+      title={data.tooltip}
     >
       <Handle position={Position.Left} type="target" />
       {!data.terminal ? <Handle position={Position.Right} type="source" /> : null}
@@ -308,6 +341,63 @@ function JourneyNode({ data }: NodeProps<Node<JourneyNodeData, "journey">>): Rea
         <small>{data.description}</small>
       </div>
     </div>
+  );
+}
+
+function JourneyLane({ data }: NodeProps<Node<JourneyLaneData, "journeyLane">>): ReactNode {
+  return (
+    <div
+      className="journey-lane"
+      style={{ "--phase-color": data.color } as CSSProperties}
+      title={`${data.phase} • ${data.stateCount} state${data.stateCount === 1 ? "" : "s"}`}
+    >
+      <div className="journey-lane-header">
+        <span>{data.phase}</span>
+        <small>{data.stateCount} state{data.stateCount === 1 ? "" : "s"}</small>
+      </div>
+    </div>
+  );
+}
+
+function JourneyAnchor({ data }: NodeProps<Node<JourneyAnchorData, "journeyAnchor">>): ReactNode {
+  return (
+    <div className="journey-anchor" title={`Grouped exit anchor • ${data.phase} -> ${data.target}`}>
+      <Handle className="journey-anchor-handle" position={Position.Right} type="source" />
+    </div>
+  );
+}
+
+function JourneyEdge({
+  id,
+  data,
+  markerEnd,
+  sourcePosition,
+  sourceX,
+  sourceY,
+  targetPosition,
+  targetX,
+  targetY,
+}: EdgeProps<Edge<JourneyEdgeData, "journey">>): ReactNode {
+  const edgeClassName = [
+    "journey-edge",
+    `journey-edge-${data?.class ?? "advance"}`,
+    data?.aggregated ? "journey-edge-aggregated" : "",
+  ].filter(Boolean).join(" ");
+  const [path] = getBezierPath({
+    sourceX,
+    sourceY,
+    targetX,
+    targetY,
+    sourcePosition,
+    targetPosition,
+    curvature: data?.class === "rework" ? 0.38 : data?.aggregated ? 0.28 : 0.24,
+  });
+
+  return (
+    <g>
+      {data?.tooltip ? <title>{data.tooltip}</title> : null}
+      <BaseEdge className={edgeClassName} id={id} markerEnd={markerEnd} path={path} />
+    </g>
   );
 }
 
@@ -352,20 +442,38 @@ function SidebarCard({ children, title }: { children: ReactNode; title: string }
   );
 }
 
-function MetricLine({ label, value }: { label: string; value: string }): ReactNode {
-  return (
-    <div className="metric-line">
-      <span>{label}</span>
-      <strong>{value}</strong>
-    </div>
-  );
-}
-
 function LegendItem({ className, label }: { className: string; label: string }): ReactNode {
   return (
     <div className="legend-item">
       <span className={className} />
       <span>{label}</span>
+    </div>
+  );
+}
+
+function StatusChip({
+  label,
+  tone,
+}: {
+  label: string;
+  tone: DispatcherSnapshot["state"] | "live" | "neutral" | "offline" | "warn";
+}): ReactNode {
+  return <span className={`status-chip status-chip-${tone}`}>{label}</span>;
+}
+
+function MetadataItem({
+  label,
+  tone,
+  value,
+}: {
+  label: string;
+  tone?: DispatcherSnapshot["state"];
+  value: string;
+}): ReactNode {
+  return (
+    <div className="metadata-item">
+      <span>{label}</span>
+      <strong className={tone ? `metadata-tone-${tone}` : undefined}>{value}</strong>
     </div>
   );
 }
@@ -381,4 +489,25 @@ function formatTimestamp(value: string): string {
     minute: "2-digit",
     second: "2-digit",
   });
+}
+
+function formatDuration(valueMs: number): string {
+  const totalSeconds = Math.max(0, Math.floor(valueMs / 1000));
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+
+  if (hours > 0) return `${hours}h ${minutes}m`;
+  if (minutes > 0) return `${minutes}m ${seconds}s`;
+  return `${seconds}s`;
+}
+
+function formatHeartbeatAge(dispatcher: DispatcherSnapshot): string {
+  if (dispatcher.lastTickAgeMs === null) return dispatcher.detail;
+  return `${formatDuration(dispatcher.lastTickAgeMs)} ago`;
+}
+
+function labelForSystemRoot(systemRoot: string): string {
+  const segments = systemRoot.split("/").filter(Boolean);
+  return segments.at(-1) ?? systemRoot;
 }
