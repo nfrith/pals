@@ -1,6 +1,9 @@
 {
   "limits": {
     "maxTurns": 100,
-    "maxBudgetUsd": 20
+    "maxBudgetUsdByProvider": {
+      "anthropic": 20,
+      "openai": 50
+    }
   }
 }

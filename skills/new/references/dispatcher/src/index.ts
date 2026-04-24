@@ -53,7 +53,9 @@ console.log(`[dispatcher] status field: ${config.statusField}`);
 console.log(`[dispatcher] entity: ${config.entityName}`);
 console.log(`[dispatcher] entity path: ${config.entityPath}`);
 console.log(`[dispatcher] module root: ${config.moduleRoot}`);
-console.log(`[dispatcher] limits: ${config.maxTurns} / ${config.maxBudgetUsd}`);
+console.log(
+  `[dispatcher] limits: maxTurns=${config.maxTurns} / maxBudgetUsdByProvider={anthropic:${config.maxBudgetUsdByProvider.anthropic}, openai:${config.maxBudgetUsdByProvider.openai}}`,
+);
 if (config.submodules.length > 0) {
   console.log(`[dispatcher] mounted submodules: ${config.submodules.join(", ")}`);
 }

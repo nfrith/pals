@@ -34,8 +34,11 @@ Authored manifest-sidecar declarations come from an optional `runtime-manifest.c
 - `submodules: string[]`
 - `limits.maxTurns?: positive integer`
 - `limits.maxBudgetUsd?: positive number`
+- `limits.maxBudgetUsdByProvider?: { anthropic?: positive number; openai?: positive number }`
 - `submodules` values are repo-relative paths such as `nfrith-repos/als`
 - `limits` are module-authored only in this release; there is no operator-local override layer yet
+
+Budget resolution is hybrid for backward compatibility: `maxBudgetUsdByProvider[provider] ?? maxBudgetUsd ?? providerDefault`. The canonical defaults are `openai: 50` and `anthropic: 20`, which intentionally give Codex-heavy dev dispatches more headroom than Anthropic reviewer-style runs.
 
 The dispatcher is supported from deployed `.claude/delamains/<name>/` bundles. Running it directly from authored `.als/modules/.../delamains/.../dispatcher` is not part of the runtime contract because authored bundles do not carry the generated manifest.
 
@@ -74,7 +77,7 @@ Entry point. Handles:
 - **System root discovery**: walks up directories from its own location looking for `.als/system.ts`. Also respects the `SYSTEM_ROOT` environment variable.
 - **Template version check**: reads local `dispatcher/VERSION` and canonical `${CLAUDE_PLUGIN_ROOT}/skills/new/references/dispatcher/VERSION`, logs the current/latest versions, and fails before polling when either source is missing or malformed.
 - **Startup**: calls `resolve()` once to load `runtime-manifest.json`, local `delamain.yaml`, and state-agent files, then enters the poll loop.
-- **Effective limits**: resolves `runtime-manifest.json.limits` once at startup, falls back to canonical `50 / 10` when absent, and logs the active `maxTurns / maxBudgetUsd` pair before polling.
+- **Effective limits**: resolves `runtime-manifest.json.limits` once at startup, applies `maxBudgetUsdByProvider[provider] ?? maxBudgetUsd ?? providerDefault`, falls back to canonical defaults `anthropic: 20` / `openai: 50` when absent, and logs `maxTurns` plus the active per-provider budget map before polling.
 - **Runtime boot**: creates one `DispatcherRuntime`, runs orphan sweep at startup, and keeps the persisted dispatch registry as the source of truth for active, blocked, orphaned, and guarded ownership.
 - **Poll loop**: scans items at a configurable interval (`POLL_MS`, default 30s). Reads committed `HEAD` state only, warns when a status transition exists in the checkout but not in `HEAD`, reconciles registry records against current item status, retries blocked `dirty_integration_checkout` merge-backs under the existing repo-mutation lease, suppresses redispatch for all other unresolved incidents, runs periodic orphan sweeping, and refreshes the heartbeat after dispatch completions.
 - **Runtime hardening**: keeps the event loop alive with an internal keepalive server, logs tick and process lifecycle events, and ignores stray `SIGTERM` so dispatcher children do not accidentally kill the parent runtime.
@@ -172,7 +175,7 @@ Runtime manifest loader and validator.
 - Reads `runtime-manifest.json` from the deployed bundle root
 - Validates the manifest schema and required binding fields
 - Normalizes the optional `submodules` list to `[]` when absent
-- Validates the optional `limits.maxTurns` and `limits.maxBudgetUsd` fields when present
+- Validates the optional `limits.maxTurns`, legacy `limits.maxBudgetUsd`, and `limits.maxBudgetUsdByProvider` fields when present
 - Fails closed with a redeploy message when the manifest is missing or malformed
 
 ### `src/dispatcher-version.ts`
@@ -221,7 +224,7 @@ The dispatcher reads one generated runtime manifest plus the local Delamain bund
 | Status field | `runtime-manifest.json` → `status_field` |
 | Variant discriminator | `runtime-manifest.json` → `discriminator_field` + `discriminator_value` |
 | Mounted nested repos | `runtime-manifest.json` → `submodules[]` |
-| Effective dispatch limits | `runtime-manifest.json` → `limits.maxTurns` / `limits.maxBudgetUsd`, else dispatcher defaults `50 / 10` |
+| Effective dispatch limits | `runtime-manifest.json` → `limits.maxTurns`, `limits.maxBudgetUsdByProvider`, and legacy `limits.maxBudgetUsd`; budget precedence is `byProvider[p] ?? maxBudgetUsd ?? default`, with defaults `anthropic: 20`, `openai: 50` |
 | Legal states | Delamain primary definition → `states` |
 | Dispatch rules | States where `actor: agent` and `path` is declared |
 | Agent prompts | Markdown files at delamain-relative `path` |
@@ -234,6 +237,13 @@ The dispatcher reads one generated runtime manifest plus the local Delamain bund
 Hosts generate `runtime-manifest.json` during Claude projection. One deployed Delamain bundle owns exactly one effective binding. Reusing the same Delamain name across multiple effective bindings is a deploy-planning error.
 
 This ship does not add any operator-local limit override layer. Limit changes are authored in module source and take effect on the next deploy plus dispatcher restart.
+
+## Budget Exhaustion
+
+Budget exhaustion remains provider-native at the subtype layer:
+
+- OpenAI budget enforcement is dispatcher-owned. When the OpenAI adapter crosses its configured cap, the dispatcher returns subtype `max_budget_exceeded` and records telemetry as `result:max_budget_exceeded provider=openai maxBudgetUsd=<value>`.
+- Anthropic budget enforcement is SDK-owned. The dispatcher passes through the Claude Agent SDK subtype `error_max_budget_usd` and records telemetry as `result:error_max_budget_usd provider=anthropic maxBudgetUsd=<value>` without rewriting the SDK subtype.
 
 ## Path Resolution
 

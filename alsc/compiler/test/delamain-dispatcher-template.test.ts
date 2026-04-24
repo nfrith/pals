@@ -23,11 +23,29 @@ test("dispatcher version parser accepts positive integers", () => {
 test("dispatch limits resolve authored overrides and canonical defaults", () => {
   expect(resolveDispatchLimits()).toEqual({
     maxTurns: 50,
-    maxBudgetUsd: 10,
+    maxBudgetUsdByProvider: {
+      anthropic: 20,
+      openai: 50,
+    },
   });
   expect(resolveDispatchLimits({ maxTurns: 100, maxBudgetUsd: 20 })).toEqual({
     maxTurns: 100,
+    maxBudgetUsdByProvider: {
+      anthropic: 20,
+      openai: 20,
+    },
+  });
+  expect(resolveDispatchLimits({
     maxBudgetUsd: 20,
+    maxBudgetUsdByProvider: {
+      openai: 50,
+    },
+  })).toEqual({
+    maxTurns: 50,
+    maxBudgetUsdByProvider: {
+      anthropic: 20,
+      openai: 50,
+    },
   });
 });
 
@@ -232,6 +250,48 @@ test("dispatcher resolve fails closed when runtime manifest is missing", async (
   });
 });
 
+test("dispatcher resolve rejects unsupported per-provider deployed runtime manifest limits", async () => {
+  const root = await mkdtemp(join(tmpdir(), "als-dispatcher-manifest-invalid-provider-"));
+  try {
+    const bundleRoot = join(root, ".claude/delamains/development-pipeline");
+    await mkdir(bundleRoot, { recursive: true });
+    await writeFile(
+      join(bundleRoot, "runtime-manifest.json"),
+      JSON.stringify(
+        {
+          schema: "als-delamain-runtime-manifest@1",
+          delamain_name: "development-pipeline",
+          module_id: "factory",
+          module_version: 1,
+          module_mount_path: "workspace/factory",
+          entity_name: "work-item",
+          entity_path: "items/{id}.md",
+          status_field: "status",
+          discriminator_field: null,
+          discriminator_value: null,
+          submodules: [],
+          state_providers: {
+            dev: "openai",
+          },
+          limits: {
+            maxBudgetUsdByProvider: {
+              other: 1,
+            },
+          },
+        },
+        null,
+        2,
+      ) + "\n",
+    );
+
+    await expect(loadRuntimeManifest(bundleRoot)).rejects.toThrow(
+      "limits.maxBudgetUsdByProvider.other",
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("dispatcher resolve uses deployed runtime manifest metadata", async () => {
   await withFixtureSandbox("delamain-dispatcher-resolve", async ({ root }) => {
     const validationContext = loadSystemValidationContext(root);
@@ -255,7 +315,10 @@ test("dispatcher resolve uses deployed runtime manifest metadata", async () => {
     expect(manifest.limits).toBeUndefined();
     expect(resolveDispatchLimits(manifest.limits)).toEqual({
       maxTurns: 50,
-      maxBudgetUsd: 10,
+      maxBudgetUsdByProvider: {
+        anthropic: 20,
+        openai: 50,
+      },
     });
   });
 });
@@ -271,6 +334,9 @@ test("dispatcher deploy merges authored runtime-manifest config into the generat
           limits: {
             maxTurns: 100,
             maxBudgetUsd: 20,
+            maxBudgetUsdByProvider: {
+              openai: 50,
+            },
           },
         },
         null,
@@ -291,10 +357,16 @@ test("dispatcher deploy merges authored runtime-manifest config into the generat
     expect(manifest.limits).toEqual({
       maxTurns: 100,
       maxBudgetUsd: 20,
+      maxBudgetUsdByProvider: {
+        openai: 50,
+      },
     });
     expect(resolveDispatchLimits(manifest.limits)).toEqual({
       maxTurns: 100,
-      maxBudgetUsd: 20,
+      maxBudgetUsdByProvider: {
+        anthropic: 20,
+        openai: 50,
+      },
     });
   });
 });
@@ -324,6 +396,36 @@ test("dispatcher deploy rejects malformed runtime-manifest limits config", async
 
     expect(output.status).toBe("fail");
     expect(output.error).toContain("'limits.maxTurns' must be a positive integer");
+  });
+});
+
+test("dispatcher deploy rejects unsupported per-provider runtime-manifest limits config", async () => {
+  await withFixtureSandbox("delamain-dispatcher-invalid-provider-limits-config", async ({ root }) => {
+    await writePath(
+      root,
+      ".als/modules/factory/v1/delamains/development-pipeline/runtime-manifest.config.json",
+      JSON.stringify(
+        {
+          limits: {
+            maxBudgetUsdByProvider: {
+              other: 5,
+            },
+          },
+        },
+        null,
+        2,
+      ) + "\n",
+    );
+
+    const validationContext = loadSystemValidationContext(root);
+    expect(validationContext.system_config).not.toBeNull();
+
+    const output = deployClaudeSkillsFromConfig(root, validationContext.system_config!, "pass", {
+      module_filter: "factory",
+    });
+
+    expect(output.status).toBe("fail");
+    expect(output.error).toContain("'limits.maxBudgetUsdByProvider.other' is not a supported field");
   });
 });
 

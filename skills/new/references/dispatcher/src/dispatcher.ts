@@ -63,7 +63,7 @@ export interface ResolvedConfig {
   delamainName: string;
   submodules: string[];
   maxTurns: number;
-  maxBudgetUsd: number;
+  maxBudgetUsdByProvider: Record<AgentProvider, number>;
   discriminatorField?: string;
   discriminatorValue?: string;
   agents: Record<string, AgentDef>;
@@ -184,7 +184,7 @@ export async function resolve(
     delamainName: manifest.delamain_name,
     submodules: manifest.submodules,
     maxTurns: effectiveLimits.maxTurns,
-    maxBudgetUsd: effectiveLimits.maxBudgetUsd,
+    maxBudgetUsdByProvider: effectiveLimits.maxBudgetUsdByProvider,
     discriminatorField: manifest.discriminator_field ?? undefined,
     discriminatorValue: manifest.discriminator_value ?? undefined,
     agents,
@@ -204,7 +204,7 @@ export async function dispatch(
   itemFile: string,
   entry: DispatchEntry,
   agents: Record<string, AgentDef>,
-  config: Pick<ResolvedConfig, "moduleId" | "delamainName" | "maxTurns" | "maxBudgetUsd">,
+  config: Pick<ResolvedConfig, "moduleId" | "delamainName" | "maxTurns" | "maxBudgetUsdByProvider">,
   bundleRoot: string,
   runtime: DispatcherRuntime,
 ): Promise<{ success: boolean; blocked: boolean; sessionId?: string; dispatchId?: string }> {
@@ -215,6 +215,8 @@ export async function dispatch(
     return { success: false, blocked: true };
   }
   const isolatedItemFile = prepared.isolatedItemFile;
+
+  const providerMaxBudgetUsd = config.maxBudgetUsdByProvider[entry.provider];
 
   let storedSessionId: string | null = null;
   if (entry.sessionField) {
@@ -504,7 +506,11 @@ export async function dispatch(
       cost_usd: resultSummary?.totalCostUsd ?? null,
       error:
         finalized.incidentMessage
-        ?? (dispatchSucceeded ? null : `result:${resultSummary?.subtype ?? "unknown"}`),
+        ?? (
+          dispatchSucceeded
+            ? null
+            : describeDispatchFailure(resultSummary?.subtype, entry.provider, providerMaxBudgetUsd)
+        ),
     });
 
     return {
@@ -575,7 +581,7 @@ export async function dispatch(
         ...(entry.provider === "anthropic" ? { tools } : {}),
       },
       maxTurns: config.maxTurns,
-      maxBudgetUsd: config.maxBudgetUsd,
+      maxBudgetUsd: providerMaxBudgetUsd,
       resumeSessionId: state.resumeSessionId,
       env: sdkEnv,
       ...(subAgents ? { subAgents } : {}),
@@ -587,4 +593,19 @@ export async function dispatch(
       },
     });
   }
+}
+
+function describeDispatchFailure(
+  subtype: string | undefined,
+  provider: AgentProvider,
+  maxBudgetUsd: number,
+): string {
+  if (provider === "openai" && subtype === "max_budget_exceeded") {
+    return `result:max_budget_exceeded provider=openai maxBudgetUsd=${maxBudgetUsd}`;
+  }
+  if (provider === "anthropic" && subtype === "error_max_budget_usd") {
+    return `result:error_max_budget_usd provider=anthropic maxBudgetUsd=${maxBudgetUsd}`;
+  }
+
+  return `result:${subtype ?? "unknown"}`;
 }

@@ -126,6 +126,52 @@ test("openai provider falls back fresh on resume turn.failed only", async () => 
   });
 });
 
+test("openai provider enforces the configured budget cap", async () => {
+  setCodexSdkLoaderForTests(async () => ({
+    Codex: class {
+      startThread() {
+        return {
+          async runStreamed() {
+            return {
+              events: (async function* () {
+                yield { type: "thread.started", thread_id: "fresh-thread-123" };
+                yield {
+                  type: "turn.completed",
+                  usage: {
+                    input_tokens: 0,
+                    cached_input_tokens: 0,
+                    output_tokens: 400_000,
+                  },
+                };
+              })(),
+            };
+          },
+        };
+      }
+      resumeThread() {
+        throw new Error("unexpected resume");
+      }
+    },
+  }));
+
+  const result = await getAgentProvider("openai").dispatch({
+    itemId: "ALS-041",
+    prompt: "Implement the dispatcher change",
+    cwd: process.cwd(),
+    agent: { description: "developer", prompt: "Implement the dispatcher change", model: "gpt-5.4" },
+    maxTurns: 4,
+    maxBudgetUsd: 5,
+    env: {},
+    onToolUse() {},
+    onDebugLog() {},
+  });
+
+  expect(result.sessionId).toBe("fresh-thread-123");
+  expect(result.subtype).toBe("max_budget_exceeded");
+  expect(result.numTurns).toBe(1);
+  expect(result.totalCostUsd).toBe(6);
+});
+
 test("anthropic provider falls back fresh when the SDK throws the real resume error", async () => {
   const debugLogs: string[] = [];
   setAnthropicSdkLoaderForTests(async () => ({
@@ -206,6 +252,42 @@ test("anthropic provider preserves non-session resume failures", async () => {
       onDebugLog() {},
     }),
   ).rejects.toThrow("Authentication failed");
+});
+
+test("anthropic provider passes the configured budget cap through to the SDK", async () => {
+  let observedMaxBudgetUsd: unknown;
+  setAnthropicSdkLoaderForTests(async () => ({
+    async getSessionInfo() {
+      throw new Error("unexpected getSessionInfo");
+    },
+    async *query(input) {
+      observedMaxBudgetUsd = input.options.maxBudgetUsd;
+      yield {
+        type: "result",
+        subtype: "error_max_budget_usd",
+        errors: ["Budget exceeded"],
+        duration_ms: 123,
+        num_turns: 1,
+        total_cost_usd: 0.02,
+      };
+    },
+  }));
+
+  const result = await getAgentProvider("anthropic").dispatch({
+    itemId: "ALS-041",
+    prompt: "Implement the dispatcher change",
+    cwd: process.cwd(),
+    agent: { description: "developer", prompt: "Implement the dispatcher change" },
+    maxTurns: 4,
+    maxBudgetUsd: 20,
+    env: {},
+    onToolUse() {},
+    onDebugLog() {},
+  });
+
+  expect(observedMaxBudgetUsd).toBe(20);
+  expect(result.subtype).toBe("error_max_budget_usd");
+  expect(result.totalCostUsd).toBe(0.02);
 });
 
 test("frontmatter setter can clear persisted dispatcher session ids", async () => {

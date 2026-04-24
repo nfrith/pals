@@ -278,7 +278,7 @@ const providers: Record<AgentProvider, AgentProviderAdapter> = {
             if (totalCostUsd > input.maxBudgetUsd) {
               failureSubtype = "max_budget_exceeded";
               throw new Error(
-                `OpenAI dispatch exceeded maxBudgetUsd (${input.maxBudgetUsd}) for ${input.itemId}`,
+                `OpenAI dispatch exceeded provider maxBudgetUsd (provider=openai, maxBudgetUsd=${input.maxBudgetUsd}) for ${input.itemId}`,
               );
             }
             continue;

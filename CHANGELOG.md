@@ -4,9 +4,10 @@ All notable changes to ALS preview releases should be recorded here.
 
 ## Unreleased
 
+- Split Delamain dispatcher budget caps by provider with `limits.maxBudgetUsdByProvider`, canonical defaults of `$50` for OpenAI and `$20` for Anthropic, and backward-compatible expansion of legacy scalar `maxBudgetUsd` to both providers.
 - Added explicit Delamain agent `provider` declarations (`anthropic` or `openai`), removed the old `delegated` state shape, and taught the dispatcher/runtime manifest to dispatch through provider-native SDK adapters with provider-aware logging and OpenAI turn/budget accounting.
 - Accepted and documented SDR 028 for Delamain agent providers, superseding SDR 021's delegated-state model.
-- Added per-Delamain dispatcher `limits` projection through `runtime-manifest.config.json` → `runtime-manifest.json`, so `maxTurns` / `maxBudgetUsd` survive `alsc deploy` without hand-patching deployed dispatcher source. Canonical fallback remains `50 / 10`, and there is still no operator-local override layer in this release.
+- Added per-Delamain dispatcher `limits` projection through `runtime-manifest.config.json` → `runtime-manifest.json`, so `maxTurns`, legacy `maxBudgetUsd`, and provider-specific `maxBudgetUsdByProvider` survive `alsc deploy` without hand-patching deployed dispatcher source. There is still no operator-local override layer in this release.
 - Relaxed the Delamain merge-back pre-flight dirty check on `systemRoot` to ignore submodule state (`--ignore-submodules=all`) so a mounted submodule advancing mid-dispatch no longer blocks integration before the ALS-020 refresh phase can reconcile it. Per-submodule primary clean checks are unchanged.
 - Refreshed Delamain merge-back worktrees onto the current primary `HEAD` before integration, replaced cherry-pick replay with rebase plus `merge --ff-only`, and introduced preserved `stale_base_conflict` incidents for stale-base overlaps and force-push-below-base blocks.
 - Added manifest-driven mounted submodule worktrees to the Delamain dispatcher runtime, including dual-repo audit trailers and atomic rollback on multi-repo merge-back failure.

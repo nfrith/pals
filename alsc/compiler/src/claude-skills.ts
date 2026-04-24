@@ -76,6 +76,10 @@ interface DelamainProjectionBinding {
 interface DelamainRuntimeLimits {
   maxTurns?: number;
   maxBudgetUsd?: number;
+  maxBudgetUsdByProvider?: {
+    anthropic?: number;
+    openai?: number;
+  };
 }
 
 interface DelamainRuntimeManifestConfig {
@@ -994,7 +998,7 @@ function normalizeDelamainRuntimeLimits(value: unknown): DelamainRuntimeLimits {
   const normalized: DelamainRuntimeLimits = {};
 
   for (const key of Object.keys(parsed)) {
-    if (key === "maxTurns" || key === "maxBudgetUsd") {
+    if (key === "maxTurns" || key === "maxBudgetUsd" || key === "maxBudgetUsdByProvider") {
       continue;
     }
     if (key === "agents") {
@@ -1023,6 +1027,36 @@ function normalizeDelamainRuntimeLimits(value: unknown): DelamainRuntimeLimits {
       throw new Error("'limits.maxBudgetUsd' must be a positive number");
     }
     normalized.maxBudgetUsd = parsed.maxBudgetUsd;
+  }
+
+  if (parsed.maxBudgetUsdByProvider !== undefined) {
+    if (
+      !parsed.maxBudgetUsdByProvider
+      || typeof parsed.maxBudgetUsdByProvider !== "object"
+      || Array.isArray(parsed.maxBudgetUsdByProvider)
+    ) {
+      throw new Error("'limits.maxBudgetUsdByProvider' must be an object");
+    }
+
+    const providerLimits = parsed.maxBudgetUsdByProvider as Record<string, unknown>;
+    const normalizedProviderLimits: NonNullable<DelamainRuntimeLimits["maxBudgetUsdByProvider"]> = {};
+
+    for (const [provider, value] of Object.entries(providerLimits)) {
+      if (provider !== "anthropic" && provider !== "openai") {
+        throw new Error(`'limits.maxBudgetUsdByProvider.${provider}' is not a supported field`);
+      }
+      if (
+        typeof value !== "number"
+        || !Number.isFinite(value)
+        || value <= 0
+      ) {
+        throw new Error(`'limits.maxBudgetUsdByProvider.${provider}' must be a positive number`);
+      }
+
+      normalizedProviderLimits[provider] = value;
+    }
+
+    normalized.maxBudgetUsdByProvider = normalizedProviderLimits;
   }
 
   return normalized;

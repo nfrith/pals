@@ -21,6 +21,10 @@ export interface RuntimeManifest {
 export interface RuntimeManifestLimits {
   maxTurns?: number;
   maxBudgetUsd?: number;
+  maxBudgetUsdByProvider?: {
+    anthropic?: number;
+    openai?: number;
+  };
 }
 
 const DELAMAIN_RUNTIME_MANIFEST_SCHEMA = "als-delamain-runtime-manifest@1";
@@ -213,6 +217,42 @@ function normalizeLimits(bundleRoot: string, value: unknown): RuntimeManifestLim
       );
     }
     normalized.maxBudgetUsd = limits.maxBudgetUsd;
+  }
+
+  if (limits.maxBudgetUsdByProvider !== undefined) {
+    if (
+      !limits.maxBudgetUsdByProvider
+      || typeof limits.maxBudgetUsdByProvider !== "object"
+      || Array.isArray(limits.maxBudgetUsdByProvider)
+    ) {
+      throw new Error(
+        `Invalid runtime-manifest.json in '${bundleRoot}': 'limits.maxBudgetUsdByProvider' must be an object`,
+      );
+    }
+
+    const providerLimits = limits.maxBudgetUsdByProvider as Record<string, unknown>;
+    const normalizedProviderLimits: NonNullable<RuntimeManifestLimits["maxBudgetUsdByProvider"]> = {};
+
+    for (const [provider, providerLimit] of Object.entries(providerLimits)) {
+      if (provider !== "anthropic" && provider !== "openai") {
+        throw new Error(
+          `Invalid runtime-manifest.json in '${bundleRoot}': 'limits.maxBudgetUsdByProvider.${provider}' is not a supported field`,
+        );
+      }
+      if (
+        typeof providerLimit !== "number"
+        || !Number.isFinite(providerLimit)
+        || providerLimit <= 0
+      ) {
+        throw new Error(
+          `Invalid runtime-manifest.json in '${bundleRoot}': 'limits.maxBudgetUsdByProvider.${provider}' must be a positive number`,
+        );
+      }
+
+      normalizedProviderLimits[provider] = providerLimit;
+    }
+
+    normalized.maxBudgetUsdByProvider = normalizedProviderLimits;
   }
 
   return normalized;
