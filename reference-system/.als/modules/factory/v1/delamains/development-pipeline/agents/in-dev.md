@@ -3,7 +3,8 @@ name: development-pipeline--in-dev
 description: Handle work items currently in the `in-dev` state of the `development-pipeline` Delamain.
 model: gpt-5.4
 sandbox-mode: workspace-write
-approval-policy: never
+approval-policy: on-request
+approvals-reviewer: auto_review
 reasoning-effort: medium
 color: blue
 ---
