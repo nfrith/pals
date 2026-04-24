@@ -58,7 +58,7 @@ Recent telemetry events include:
 - cleanup
 
 Each event records the Delamain name, module id, dispatch id, item id, current state, agent identity, resume metadata, worktree path and branch, merge outcome, transition targets, duration, turn count, cost, and error text when present.
-Submodule-targeting events also carry `mounted_submodules`, which records each mounted repo path plus its mounted worktree path and any worktree/integrated commit SHAs known at that point in the lifecycle.
+Submodule-targeting events also carry `mounted_submodules`, which records each mounted repo path plus its dispatch branch name, mounted worktree path, and any worktree/integrated commit SHAs known at that point in the lifecycle.
 
 Older dispatcher copies that only emit `status.json` remain valid. Consumers must degrade to heartbeat-only mode instead of failing when `telemetry/events.jsonl` is absent.
 
@@ -113,7 +113,8 @@ Git-backed isolation strategy.
 - Creates host worktrees under `~/.worktrees/delamain/<dispatcher>/<item>/<dispatch-id>/`
 - Mounts any declared `runtime-manifest.json.submodules` as nested git worktrees at the same repo-relative paths inside that host worktree
 - Rewrites bound item paths into the isolated workspace
-- Auto-commits isolated worktrees into provisional single-commit snapshots, refreshes each mounted submodule and the host worktree onto the current primary `HEAD`, fast-forwards mounted primaries first, repoints the mounted checkout to the integrated SHA, then re-squashes and fast-forwards the host worktree
+- Auto-commits isolated worktrees into provisional single-commit snapshots, refreshes each mounted submodule and the host worktree onto the current primary `HEAD`, fast-forwards mounted primaries first, pushes each mounted dispatch branch to the submodule `origin`, repoints the mounted checkout to the integrated SHA, then re-squashes and fast-forwards the host worktree
+- Blocks submodule-origin push failures as `submodule_push_failed`, preserving the host and mounted worktrees instead of landing an unreachable gitlink SHA
 - Blocks concurrent-overlap refresh failures as `stale_base_conflict`, preserving the host and mounted worktrees for operator or agent-assist follow-up
 - Rolls back already-integrated primary clones if a later repo in the merge transaction fails, leaving the host worktree and mounted submodule worktrees preserved for inspection
 

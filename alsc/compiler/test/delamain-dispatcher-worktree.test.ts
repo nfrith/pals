@@ -112,6 +112,7 @@ test("runtime mounts declared submodule worktrees and merges dual-repo dispatch 
     systemRoot,
     itemFile,
     primarySubmoduleRoot,
+    submoduleOrigin,
   }) => {
     const prepared = await runtime.prepareDispatch("ALS-001", itemFile, ENTRY);
     expect(prepared).not.toBeNull();
@@ -146,6 +147,10 @@ test("runtime mounts declared submodule worktrees and merges dual-repo dispatch 
     expect(await runGit(systemRoot, ["rev-parse", "HEAD:nfrith-repos/als"])).toBe(
       await runGit(primarySubmoduleRoot, ["rev-parse", "HEAD"]),
     );
+    expect(await runGit(submoduleOrigin, ["rev-parse", `refs/heads/${mounted.branchName}`])).toBe(
+      await runGit(primarySubmoduleRoot, ["rev-parse", "HEAD"]),
+    );
+    expect(result.mountedSubmodules[0]?.branch_name).toBe(mounted.branchName);
 
     const hostCommitMessage = await runGit(systemRoot, ["log", "-1", "--pretty=%B"]);
     const submoduleCommitMessage = await runGit(primarySubmoduleRoot, ["log", "-1", "--pretty=%B"]);
@@ -155,6 +160,52 @@ test("runtime mounts declared submodule worktrees and merges dual-repo dispatch 
     expect(hostDispatchId).toBeDefined();
     expect(submoduleDispatchId).toBe(hostDispatchId);
     expect(existsSync(prepared!.worktreePath)).toBe(false);
+  });
+});
+
+test("fresh clone can initialize a merged submodule dispatch from origin", async () => {
+  await withSubmoduleWorktreeSandbox("submodule-fresh-clone", async ({
+    root,
+    runtime,
+    systemRoot,
+    itemFile,
+    submoduleOrigin,
+  }) => {
+    const prepared = await runtime.prepareDispatch("ALS-001", itemFile, ENTRY);
+    expect(prepared).not.toBeNull();
+
+    const mounted = prepared!.mountedSubmodules[0]!;
+    await replaceStatus(prepared!.isolatedItemFile, "in-review");
+    await appendBody(join(mounted.worktreePath, "CHANGELOG.md"), "Fresh clone submodule note.");
+
+    const result = await runtime.finalizeDispatch({
+      prepared: prepared!,
+      entry: ENTRY,
+      sessionId: "55555555-5555-4555-8555-555555555555",
+      durationMs: 3_200,
+      numTurns: 5,
+      costUsd: 0.19,
+      success: true,
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.blocked).toBe(false);
+    expect(result.mergeOutcome).toBe("merged");
+
+    const freshCloneRoot = join(root, "fresh-checkout");
+    await runGit(root, ["clone", systemRoot, freshCloneRoot]);
+    await runGit(freshCloneRoot, ["-c", "protocol.file.allow=always", "submodule", "update", "--init"]);
+
+    const freshSubmoduleRoot = join(freshCloneRoot, "nfrith-repos", "als");
+    expect(await readFile(join(freshSubmoduleRoot, "CHANGELOG.md"), "utf-8")).toContain(
+      "Fresh clone submodule note.",
+    );
+    expect(await runGit(freshCloneRoot, ["rev-parse", "HEAD:nfrith-repos/als"])).toBe(
+      await runGit(freshSubmoduleRoot, ["rev-parse", "HEAD"]),
+    );
+    expect(await runGit(submoduleOrigin, ["rev-parse", `refs/heads/${mounted.branchName}`])).toBe(
+      await runGit(freshSubmoduleRoot, ["rev-parse", "HEAD"]),
+    );
   });
 });
 
@@ -200,6 +251,60 @@ test("runtime refreshes mounted submodule base onto an intervening submodule-pri
       await runGit(primarySubmoduleRoot, ["rev-parse", "HEAD"]),
     );
     expect(existsSync(prepared!.worktreePath)).toBe(false);
+  });
+});
+
+test("runtime blocks submodule dispatch merge-back when pushing the origin branch fails", async () => {
+  await withSubmoduleWorktreeSandbox("submodule-push-failure", async ({
+    root,
+    runtime,
+    bundleRoot,
+    systemRoot,
+    itemFile,
+    primarySubmoduleRoot,
+  }) => {
+    const prepared = await runtime.prepareDispatch("ALS-001", itemFile, ENTRY);
+    expect(prepared).not.toBeNull();
+
+    const mounted = prepared!.mountedSubmodules[0]!;
+    const hostHeadBefore = await runGit(systemRoot, ["rev-parse", "HEAD"]);
+    const submoduleHeadBefore = await runGit(primarySubmoduleRoot, ["rev-parse", "HEAD"]);
+
+    await replaceStatus(prepared!.isolatedItemFile, "in-review");
+    await appendBody(join(mounted.worktreePath, "CHANGELOG.md"), "Mounted submodule note.");
+    await runGit(primarySubmoduleRoot, [
+      "remote",
+      "set-url",
+      "origin",
+      join(root, "missing-submodule-origin"),
+    ]);
+
+    const result = await runtime.finalizeDispatch({
+      prepared: prepared!,
+      entry: ENTRY,
+      sessionId: "66666666-6666-4666-8666-666666666666",
+      durationMs: 1_900,
+      numTurns: 3,
+      costUsd: 0.11,
+      success: true,
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.blocked).toBe(true);
+    expect(result.mergeOutcome).toBe("blocked");
+    expect(result.incidentKind).toBe("submodule_push_failed");
+    expect(result.incidentMessage).toContain(`repo 'nfrith-repos/als' push origin ${mounted.branchName}`);
+    expect(await runGit(systemRoot, ["rev-parse", "HEAD"])).toBe(hostHeadBefore);
+    expect(await runGit(primarySubmoduleRoot, ["rev-parse", "HEAD"])).toBe(submoduleHeadBefore);
+    expect(await readFrontmatterStatus(itemFile)).toBe("in-dev");
+    expect(existsSync(prepared!.worktreePath)).toBe(true);
+    expect(existsSync(mounted.worktreePath)).toBe(true);
+
+    const state = await readRuntimeState(bundleRoot);
+    expect(state.records[0]?.status).toBe("blocked");
+    expect(state.records[0]?.incident?.kind).toBe("submodule_push_failed");
+    expect(state.records[0]?.mounted_submodules[0]?.branch_name).toBe(mounted.branchName);
+    expect(state.records[0]?.mounted_submodules[0]?.integrated_commit).toBeNull();
   });
 });
 
@@ -651,6 +756,7 @@ async function withSubmoduleWorktreeSandbox(
     itemFile: string;
     worktreeRoot: string;
     primarySubmoduleRoot: string;
+    submoduleOrigin: string;
     runtime: DispatcherRuntime;
   }) => Promise<void>,
 ): Promise<void> {
@@ -736,6 +842,7 @@ async function withSubmoduleWorktreeSandbox(
       itemFile,
       worktreeRoot,
       primarySubmoduleRoot,
+      submoduleOrigin,
       runtime,
     });
   } finally {

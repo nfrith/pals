@@ -11,6 +11,7 @@ import {
   gitIsClean,
   gitIsCleanIgnoreSubmodules,
   gitMergeFastForward,
+  gitPush,
   gitRebase,
   runCommand,
   runGit,
@@ -424,6 +425,33 @@ export class GitWorktreeIsolationStrategy {
       }
 
       for (const submodule of integratedSubmodules) {
+        const push = await gitPush(
+          submodule.primaryRepoPath,
+          "origin",
+          `+${submodule.branchName}:refs/heads/${submodule.branchName}`,
+        );
+        if (push.exitCode !== 0) {
+          await this.rollbackIntegratedRepos(integratedSubmodules);
+          return {
+            status: "blocked",
+            worktreeCommit: await gitHeadCommit(input.prepared.worktreePath).catch(() => null),
+            integratedCommit: null,
+            mountedSubmodules: buildMountedSubmoduleResults(
+              input.prepared.mountedSubmodules,
+              input.mountedSubmodules,
+            ),
+            error: formatRepoScopedPushError(
+              submodule.repoPath,
+              submodule.branchName,
+              submodule.integratedCommit,
+              push.stderr.trim() || push.stdout.trim() || "Push failed",
+            ),
+            incidentKind: "submodule_push_failed",
+          };
+        }
+      }
+
+      for (const submodule of integratedSubmodules) {
         await runGit(submodule.worktreePath, ["checkout", "--detach", submodule.integratedCommit]);
         detachedWorktrees.push(submodule);
       }
@@ -787,6 +815,15 @@ function formatRepoScopedRefreshError(repoPath: string, message: string): string
 function formatRepoScopedIntegrationError(repoPath: string, message: string, commit: string): string {
   const scope = repoPath === "." ? "host repo" : `repo '${repoPath}'`;
   return `${scope} fast-forward merge ${commit} failed: ${message}`;
+}
+
+function formatRepoScopedPushError(
+  repoPath: string,
+  branchName: string,
+  commit: string,
+  message: string,
+): string {
+  return `repo '${repoPath}' push origin ${branchName} (${commit}) failed: ${message}`;
 }
 
 function buildWorktreeBranchName(

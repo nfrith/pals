@@ -215,6 +215,14 @@ export async function gitRebase(
   return runCommand(["git", "rebase", onto], { cwd });
 }
 
+export async function gitPush(
+  cwd: string,
+  remote: string,
+  refspec: string,
+): Promise<{ stdout: string; stderr: string; exitCode: number }> {
+  return runCommand(["git", "push", remote, refspec], { cwd });
+}
+
 export async function gitAbortRebase(cwd: string): Promise<void> {
   const result = await runCommand(["git", "rebase", "--abort"], { cwd });
   const stderr = result.stderr.toLowerCase();
