@@ -77,6 +77,7 @@ export interface ProviderDispatchInput {
   env: Record<string, string | undefined>;
   subAgents?: Record<string, LoadedAgentPrompt>;
   onToolUse: (detail: string) => void;
+  onDebugLog?: (detail: string) => void;
 }
 
 export interface ProviderDispatchResult {
@@ -108,69 +109,88 @@ const providers: Record<AgentProvider, AgentProviderAdapter> = {
       let sessionId = input.resumeSessionId;
       let resultSummary: ProviderDispatchResult | null = null;
       const startedAt = Date.now();
+      let lastAnthropicErrors: string[] = [];
 
       if (input.resumeSessionId) {
         const sessionInfo = await getSessionInfo(input.resumeSessionId);
+        input.onDebugLog?.(
+          `[resume-recovery] anthropic pre-flight getSessionInfo(${shortSessionId(input.resumeSessionId)}) -> ${describeAnthropicSessionInfo(sessionInfo)}`,
+        );
         if (!sessionInfo) {
-          return {
-            sessionId,
-            subtype: "resume_session_missing",
-            totalCostUsd: null,
-            durationMs: Date.now() - startedAt,
-            numTurns: 0,
-            resumeRecovery: {
-              reason: "session_missing",
-              logMessage: "resume failed (session expired), spawning fresh",
-            },
-          };
+          return buildAnthropicResumeRecoveryResult(sessionId, startedAt);
         }
       }
 
-      for await (const message of query({
-        prompt: input.prompt,
-        options: {
-          cwd: input.cwd,
-          model: resolveAnthropicModel(input.agent.model),
-          allowedTools: [...(input.agent.tools ?? ["Read", "Edit"])],
-          ...(input.subAgents ? { agents: toAnthropicSubAgents(input.subAgents) } : {}),
-          ...(input.resumeSessionId ? { resume: input.resumeSessionId } : {}),
-          env: input.env,
-          permissionMode: "acceptEdits",
-          maxTurns: input.maxTurns,
-          maxBudgetUsd: input.maxBudgetUsd,
-        },
-      })) {
-        if (message.type === "system" && message.subtype === "init") {
-          sessionId = message.session_id;
-        }
+      try {
+        for await (const message of query({
+          prompt: input.prompt,
+          options: {
+            cwd: input.cwd,
+            model: resolveAnthropicModel(input.agent.model),
+            allowedTools: [...(input.agent.tools ?? ["Read", "Edit"])],
+            ...(input.subAgents ? { agents: toAnthropicSubAgents(input.subAgents) } : {}),
+            ...(input.resumeSessionId ? { resume: input.resumeSessionId } : {}),
+            env: input.env,
+            permissionMode: "acceptEdits",
+            maxTurns: input.maxTurns,
+            maxBudgetUsd: input.maxBudgetUsd,
+          },
+        })) {
+          if (message.type === "system" && message.subtype === "init") {
+            sessionId = message.session_id;
+          }
 
-        if (message.type === "assistant") {
-          for (const block of message.message.content) {
-            if (block.type === "tool_use") {
-              input.onToolUse(formatToolUse(block.name, block.input as Record<string, unknown>));
+          if (message.type === "assistant") {
+            for (const block of message.message.content) {
+              if (block.type === "tool_use") {
+                input.onToolUse(formatToolUse(block.name, block.input as Record<string, unknown>));
+              }
             }
+          }
+
+          if (message.type === "result") {
+            const errors = extractAnthropicResultErrors(message);
+            if (input.resumeSessionId) {
+              lastAnthropicErrors = errors;
+              input.onDebugLog?.(
+                `[resume-recovery] anthropic post-error matcher saw errors=${errors.length}: ${summarizeErrors(errors)}`,
+              );
+            }
+            resultSummary = {
+              sessionId,
+              subtype: message.subtype,
+              totalCostUsd:
+                typeof message.total_cost_usd === "number" ? message.total_cost_usd : null,
+              durationMs: message.duration_ms,
+              numTurns: message.num_turns,
+              ...(input.resumeSessionId && isAnthropicMissingSessionError(errors)
+                ? {
+                  resumeRecovery: {
+                    reason: "session_missing" as const,
+                    logMessage: "resume failed (session expired), spawning fresh",
+                  },
+                }
+                : {}),
+            };
+          }
+        }
+      } catch (error) {
+        if (input.resumeSessionId) {
+          const errorMessage = extractErrorMessage(error);
+          input.onDebugLog?.(
+            `[resume-recovery] anthropic query threw: ${truncateLogDetail(errorMessage, 240)}`,
+          );
+          if (
+            isAnthropicMissingSessionError(lastAnthropicErrors)
+            || isAnthropicMissingSessionMessage(errorMessage)
+          ) {
+            return withAnthropicResumeRecovery(
+              resultSummary ?? buildAnthropicResumeRecoveryResult(sessionId, startedAt),
+            );
           }
         }
 
-        if (message.type === "result") {
-          const errors = extractAnthropicResultErrors(message);
-          resultSummary = {
-            sessionId,
-            subtype: message.subtype,
-            totalCostUsd:
-              typeof message.total_cost_usd === "number" ? message.total_cost_usd : null,
-            durationMs: message.duration_ms,
-            numTurns: message.num_turns,
-            ...(input.resumeSessionId && isAnthropicMissingSessionError(errors)
-              ? {
-                resumeRecovery: {
-                  reason: "session_missing" as const,
-                  logMessage: "resume failed (session expired), spawning fresh",
-                },
-              }
-              : {}),
-          };
-        }
+        throw error;
       }
 
       return resultSummary ?? {
@@ -432,6 +452,18 @@ function extractAnthropicResultErrors(message: unknown): string[] {
   return errors.filter((entry): entry is string => typeof entry === "string");
 }
 
+function describeAnthropicSessionInfo(sessionInfo: unknown): string {
+  const value = asRecord(sessionInfo);
+  if (!value) {
+    return "missing";
+  }
+
+  const summary = asString(value["summary"]) ?? "n/a";
+  const cwd = asString(value["cwd"]) ?? "n/a";
+  const lastModified = asNumber(value["lastModified"]);
+  return `found summary=${JSON.stringify(summary)} cwd=${JSON.stringify(cwd)} lastModified=${lastModified ?? "n/a"}`;
+}
+
 function extractCodexUsage(event: unknown): OpenAIUsage | null {
   const value = asRecord(event);
   const usage = value ? asRecord(value["usage"]) : null;
@@ -525,4 +557,67 @@ function isAnthropicMissingSessionError(errors: string[]): boolean {
       || normalized.includes("session id")
       || normalized.includes("conversation no longer exists");
   });
+}
+
+function isAnthropicMissingSessionMessage(message: string): boolean {
+  const normalized = message.trim().toLowerCase();
+  return normalized.includes("claude code returned an error result:")
+    && (
+      normalized.includes("no conversation found")
+      || normalized.includes("conversation no longer exists")
+      || normalized.includes("session id")
+    );
+}
+
+function extractErrorMessage(error: unknown): string {
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  return String(error);
+}
+
+function summarizeErrors(errors: string[]): string {
+  if (errors.length === 0) {
+    return "<none>";
+  }
+
+  return truncateLogDetail(errors.join(" | "), 240);
+}
+
+function truncateLogDetail(detail: string, maxLength: number): string {
+  return detail.length > maxLength ? `${detail.slice(0, maxLength - 3)}...` : detail;
+}
+
+function shortSessionId(sessionId: string): string {
+  return sessionId.length > 8 ? `${sessionId.slice(0, 8)}...` : sessionId;
+}
+
+function buildAnthropicResumeRecoveryResult(
+  sessionId: string | undefined,
+  startedAt: number,
+): ProviderDispatchResult {
+  return {
+    sessionId,
+    subtype: "resume_session_missing",
+    totalCostUsd: null,
+    durationMs: Date.now() - startedAt,
+    numTurns: 0,
+    resumeRecovery: {
+      reason: "session_missing",
+      logMessage: "resume failed (session expired), spawning fresh",
+    },
+  };
+}
+
+function withAnthropicResumeRecovery(
+  result: ProviderDispatchResult,
+): ProviderDispatchResult {
+  return {
+    ...result,
+    resumeRecovery: {
+      reason: "session_missing",
+      logMessage: "resume failed (session expired), spawning fresh",
+    },
+  };
 }

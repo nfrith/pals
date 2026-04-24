@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   resetProviderSdkLoadersForTests,
+  setAnthropicSdkLoaderForTests,
   setCodexSdkLoaderForTests,
   getAgentProvider,
 } from "../../../skills/new/references/dispatcher/src/agent-providers.ts";
@@ -115,6 +116,7 @@ test("openai provider falls back fresh on resume turn.failed only", async () => 
     resumeSessionId: "stale-thread",
     env: {},
     onToolUse() {},
+    onDebugLog() {},
   });
 
   expect(result.subtype).toBe("error");
@@ -122,6 +124,88 @@ test("openai provider falls back fresh on resume turn.failed only", async () => 
     reason: "session_missing",
     logMessage: "codex resume turn.failed -> assuming session-gone, falling back fresh",
   });
+});
+
+test("anthropic provider falls back fresh when the SDK throws the real resume error", async () => {
+  const debugLogs: string[] = [];
+  setAnthropicSdkLoaderForTests(async () => ({
+    async getSessionInfo() {
+      return {
+        sessionId: "stale-session-123",
+        summary: "Existing session",
+        cwd: "/tmp/previous-worktree",
+        lastModified: 1_713_918_000_000,
+      };
+    },
+    async *query() {
+      yield {
+        type: "result",
+        subtype: "error_during_execution",
+        errors: ["No conversation found with session ID: stale-session-123"],
+        duration_ms: 123,
+        num_turns: 0,
+      };
+      throw new Error(
+        "Claude Code returned an error result: No conversation found with session ID: stale-session-123",
+      );
+    },
+  }));
+
+  const result = await getAgentProvider("anthropic").dispatch({
+    itemId: "ALS-030",
+    prompt: "Fix it",
+    cwd: process.cwd(),
+    agent: { description: "developer", prompt: "Fix it" },
+    maxTurns: 4,
+    maxBudgetUsd: 5,
+    resumeSessionId: "stale-session-123",
+    env: {},
+    onToolUse() {},
+    onDebugLog(detail) {
+      debugLogs.push(detail);
+    },
+  });
+
+  expect(result.subtype).toBe("error_during_execution");
+  expect(result.resumeRecovery).toEqual({
+    reason: "session_missing",
+    logMessage: "resume failed (session expired), spawning fresh",
+  });
+  expect(debugLogs).toEqual([
+    '[resume-recovery] anthropic pre-flight getSessionInfo(stale-se...) -> found summary="Existing session" cwd="/tmp/previous-worktree" lastModified=1713918000000',
+    "[resume-recovery] anthropic post-error matcher saw errors=1: No conversation found with session ID: stale-session-123",
+    "[resume-recovery] anthropic query threw: Claude Code returned an error result: No conversation found with session ID: stale-session-123",
+  ]);
+});
+
+test("anthropic provider preserves non-session resume failures", async () => {
+  setAnthropicSdkLoaderForTests(async () => ({
+    async getSessionInfo() {
+      return {
+        sessionId: "stale-session-123",
+        summary: "Existing session",
+        lastModified: 1_713_918_000_000,
+      };
+    },
+    async *query() {
+      throw new Error("Claude Code returned an error result: Authentication failed");
+    },
+  }));
+
+  await expect(
+    getAgentProvider("anthropic").dispatch({
+      itemId: "ALS-030",
+      prompt: "Fix it",
+      cwd: process.cwd(),
+      agent: { description: "developer", prompt: "Fix it" },
+      maxTurns: 4,
+      maxBudgetUsd: 5,
+      resumeSessionId: "stale-session-123",
+      env: {},
+      onToolUse() {},
+      onDebugLog() {},
+    }),
+  ).rejects.toThrow("Authentication failed");
 });
 
 test("frontmatter setter can clear persisted dispatcher session ids", async () => {

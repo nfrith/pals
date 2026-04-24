@@ -582,6 +582,9 @@ export async function dispatch(
       onToolUse: (detail) => {
         console.log(`[dispatcher]   ${itemId} provider=${entry.provider} | ${detail}`);
       },
+      onDebugLog: (detail) => {
+        console.log(`[dispatcher] ${itemId} ${detail}`);
+      },
     });
   }
 }
