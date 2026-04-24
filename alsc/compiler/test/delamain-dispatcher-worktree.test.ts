@@ -11,7 +11,7 @@ import {
   writeRuntimeState,
   type RuntimeDispatchState,
 } from "../../../skills/new/references/dispatcher/src/runtime-state.ts";
-import { runGit } from "../../../skills/new/references/dispatcher/src/git.ts";
+import { runCommand, runGit } from "../../../skills/new/references/dispatcher/src/git.ts";
 import type { DispatchEntry } from "../../../skills/new/references/dispatcher/src/dispatcher.ts";
 
 const ENTRY: DispatchEntry = {
@@ -289,6 +289,21 @@ test("dispatcher scan ignores staged status transitions until they are committed
     expect(capture.warnings).toEqual([
       "[dispatcher] status-drift: status transition is not committed; dispatcher only reads HEAD — commit the transition to proceed (ALS-001: in-dev -> in-review)",
     ]);
+  });
+});
+
+test("runCommand resolves concurrent git probes against a real repo", async () => {
+  await withWorktreeSandbox("run-command-concurrency", async ({ systemRoot }) => {
+    const results = await Promise.all(
+      Array.from({ length: 12 }, () => (
+        runCommand(["git", "rev-parse", "--show-prefix"], { cwd: systemRoot })
+      )),
+    );
+
+    expect(results).toHaveLength(12);
+    expect(results.every((result) => result.exitCode === 0)).toBe(true);
+    expect(results.every((result) => result.stdout.trim() === "")).toBe(true);
+    expect(results.every((result) => result.stderr === "")).toBe(true);
   });
 });
 

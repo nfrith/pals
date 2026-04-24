@@ -1,3 +1,5 @@
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import { expect, test } from "bun:test";
 import { createDashboardFixture } from "../test-fixtures.ts";
 import { collectSystemSnapshot } from "./collector.ts";
@@ -110,3 +112,87 @@ test("collector falls back to heartbeat-only mode for legacy dispatchers", async
     await fixture.cleanup();
   }
 });
+
+test("collector isolates bundle-local scan failures to one error card", async () => {
+  const fixture = await createDashboardFixture("collector-bundle-failure");
+
+  try {
+    await addBrokenBundle(fixture.root, "broken-jobs");
+
+    const snapshot = await collectSystemSnapshot({
+      systemRoot: fixture.root,
+      telemetryLimit: 10,
+    });
+
+    expect(snapshot.dispatcherCount).toBe(2);
+
+    const broken = snapshot.dispatchers.find((dispatcher) => dispatcher.name === "broken-jobs");
+    const healthy = snapshot.dispatchers.find((dispatcher) => dispatcher.name === "factory-jobs");
+
+    expect(healthy?.state).toBe("live");
+    expect(healthy?.itemSummary.totalItems).toBe(2);
+    expect(broken?.state).toBe("error");
+    expect(broken?.detail).toContain("Dispatcher snapshot failed:");
+    expect(broken?.detail).toContain("ENOENT");
+    expect(broken?.itemSummary.totalItems).toBe(0);
+  } finally {
+    await fixture.cleanup();
+  }
+});
+
+async function addBrokenBundle(systemRoot: string, name: string): Promise<void> {
+  const bundleRoot = join(systemRoot, ".claude", "delamains", name);
+  const templateRoot = join(systemRoot, ".claude", "delamains", "factory-jobs");
+  const definition = await readFile(join(templateRoot, "delamain.yaml"), "utf-8");
+
+  await mkdir(bundleRoot, { recursive: true });
+  await writeFile(join(bundleRoot, "delamain.yaml"), definition, "utf-8");
+  await writeFile(
+    join(bundleRoot, "runtime-manifest.json"),
+    JSON.stringify(
+      {
+        schema: "als-delamain-runtime-manifest@1",
+        delamain_name: name,
+        module_id: "factory",
+        module_version: 1,
+        module_mount_path: "workspace/missing",
+        entity_name: "work-item",
+        entity_path: "items/{id}.md",
+        status_field: "status",
+        discriminator_field: null,
+        discriminator_value: null,
+        state_providers: {
+          queued: "anthropic",
+          "in-dev": "openai",
+          "in-review": "anthropic",
+        },
+      },
+      null,
+      2,
+    ) + "\n",
+    "utf-8",
+  );
+  await writeFile(
+    join(bundleRoot, "status.json"),
+    JSON.stringify(
+      {
+        name,
+        pid: process.pid,
+        last_tick: new Date().toISOString(),
+        poll_ms: 1000,
+        active_dispatches: 0,
+        active_by_provider: {
+          anthropic: 0,
+          openai: 0,
+        },
+        blocked_dispatches: 0,
+        orphaned_dispatches: 0,
+        guarded_dispatches: 0,
+        items_scanned: 0,
+      },
+      null,
+      2,
+    ) + "\n",
+    "utf-8",
+  );
+}

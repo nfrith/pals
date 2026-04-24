@@ -1,6 +1,19 @@
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+
+const execFileAsync = promisify(execFile);
+// Dispatcher callers read whole git object contents via stdout/stderr.
+const MAX_COMMAND_OUTPUT_BYTES = 64 * 1024 * 1024;
+
 interface RunCommandOptions {
   cwd: string;
   env?: Record<string, string | undefined>;
+}
+
+interface CommandExecutionError extends Error {
+  code?: number | string | null;
+  stdout?: string;
+  stderr?: string;
 }
 
 export async function runGit(
@@ -26,26 +39,36 @@ export async function runCommand(
   cmd: string[],
   options: RunCommandOptions,
 ): Promise<{ stdout: string; stderr: string; exitCode: number }> {
-  const proc = Bun.spawn({
-    cmd,
-    cwd: options.cwd,
-    env: options.env,
-    stdin: "ignore",
-    stdout: "pipe",
-    stderr: "pipe",
-  });
+  const [file, ...args] = cmd;
+  if (!file) {
+    throw new Error("runCommand requires a command");
+  }
 
-  const [stdout, stderr, exitCode] = await Promise.all([
-    new Response(proc.stdout).text(),
-    new Response(proc.stderr).text(),
-    proc.exited,
-  ]);
+  try {
+    const { stdout, stderr } = await execFileAsync(file, args, {
+      cwd: options.cwd,
+      env: options.env,
+      encoding: "utf8",
+      maxBuffer: MAX_COMMAND_OUTPUT_BYTES,
+    });
 
-  return {
-    stdout,
-    stderr,
-    exitCode,
-  };
+    return {
+      stdout,
+      stderr,
+      exitCode: 0,
+    };
+  } catch (error) {
+    const commandError = error as CommandExecutionError;
+    if (typeof commandError.code !== "number") {
+      throw error;
+    }
+
+    return {
+      stdout: typeof commandError.stdout === "string" ? commandError.stdout : "",
+      stderr: typeof commandError.stderr === "string" ? commandError.stderr : "",
+      exitCode: commandError.code,
+    };
+  }
 }
 
 export async function gitHeadCommit(cwd: string): Promise<string> {

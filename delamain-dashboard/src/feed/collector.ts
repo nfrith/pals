@@ -58,27 +58,105 @@ async function collectDispatcherSnapshot(
   now: Date,
   telemetryLimit: number,
 ): Promise<DispatcherSnapshot> {
-  const heartbeatResult = await readHeartbeat(bundle.bundleRoot);
-  const manifestResult = await readRuntimeManifest(bundle.bundleRoot);
-  const definitionResult = await readDefinition(bundle.bundleRoot);
-  const runtimeResult = await readDispatcherRuntimeState(bundle.bundleRoot);
-  const telemetryResult = await readTelemetryEvents(bundle.bundleRoot, telemetryLimit);
   const telemetryPaths = resolveTelemetryPaths(bundle.bundleRoot);
-  const items = await readItems(bundle.systemRoot, manifestResult.manifest);
+  let heartbeatResult: Awaited<ReturnType<typeof readHeartbeat>> = {
+    heartbeat: null,
+    error: null,
+  };
+  let manifestResult: Awaited<ReturnType<typeof readRuntimeManifest>> = {
+    manifest: null,
+    error: null,
+  };
+  let definitionResult: Awaited<ReturnType<typeof readDefinition>> = {
+    definition: null,
+    error: null,
+  };
+  let runtimeResult: Awaited<ReturnType<typeof readDispatcherRuntimeState>> = {
+    available: false,
+    path: resolveRuntimeStatePaths(bundle.bundleRoot).stateFile,
+    summary: emptyRuntimeSummary(now),
+  };
+  let telemetryResult: Awaited<ReturnType<typeof readTelemetryEvents>> = {
+    available: false,
+    events: [],
+    parse_errors: 0,
+  };
+
+  try {
+    heartbeatResult = await readHeartbeat(bundle.bundleRoot);
+    manifestResult = await readRuntimeManifest(bundle.bundleRoot);
+    definitionResult = await readDefinition(bundle.bundleRoot);
+    runtimeResult = await readDispatcherRuntimeState(bundle.bundleRoot);
+    telemetryResult = await readTelemetryEvents(bundle.bundleRoot, telemetryLimit);
+    const items = await readItems(bundle.systemRoot, manifestResult.manifest);
+
+    return buildDispatcherSnapshot({
+      bundle,
+      now,
+      heartbeatResult,
+      manifestResult,
+      definitionResult,
+      runtimeResult,
+      telemetryResult,
+      telemetryPaths,
+      items,
+    });
+  } catch (error) {
+    console.warn(
+      `[delamain-dashboard] failed collecting dispatcher snapshot for '${bundle.name}': ${formatError(error)}`,
+    );
+
+    return buildDispatcherSnapshot({
+      bundle,
+      now,
+      heartbeatResult,
+      manifestResult,
+      definitionResult,
+      runtimeResult,
+      telemetryResult,
+      telemetryPaths,
+      items: [],
+      failureDetail: `Dispatcher snapshot failed: ${formatError(error)}`,
+    });
+  }
+}
+
+function buildDispatcherSnapshot(input: {
+  bundle: { name: string; systemRoot: string; bundleRoot: string };
+  now: Date;
+  heartbeatResult: Awaited<ReturnType<typeof readHeartbeat>>;
+  manifestResult: Awaited<ReturnType<typeof readRuntimeManifest>>;
+  definitionResult: Awaited<ReturnType<typeof readDefinition>>;
+  runtimeResult: Awaited<ReturnType<typeof readDispatcherRuntimeState>>;
+  telemetryResult: Awaited<ReturnType<typeof readTelemetryEvents>>;
+  telemetryPaths: ReturnType<typeof resolveTelemetryPaths>;
+  items: DispatcherItemRecord[];
+  failureDetail?: string;
+}): DispatcherSnapshot {
+  const { bundle } = input;
+  const { heartbeatResult, manifestResult, definitionResult, runtimeResult, telemetryResult } = input;
+  const items = input.items;
   const itemSummary = summarizeItems(items, definitionResult.definition);
   const recentRun = findRecentRun(telemetryResult.events);
   const recentError = findRecentError(telemetryResult.events);
 
-  const classification = classifyDispatcher({
-    bundleName: bundle.name,
-    heartbeat: heartbeatResult.heartbeat,
-    heartbeatError: heartbeatResult.error,
-    manifestError: manifestResult.error,
-    definitionError: definitionResult.error,
-    runtimeSummary: runtimeResult.summary,
-    recentRun,
-    now,
-  });
+  const classification = input.failureDetail
+    ? {
+      state: "error" as const,
+      detail: input.failureDetail,
+      pidLive: isProcessAlive(heartbeatResult.heartbeat?.pid ?? null),
+      lastTickAgeMs: measureAgeMs(heartbeatResult.heartbeat?.lastTick ?? null, input.now),
+    }
+    : classifyDispatcher({
+      bundleName: bundle.name,
+      heartbeat: heartbeatResult.heartbeat,
+      heartbeatError: heartbeatResult.error,
+      manifestError: manifestResult.error,
+      definitionError: definitionResult.error,
+      runtimeSummary: runtimeResult.summary,
+      recentRun,
+      now: input.now,
+    });
 
   return {
     name: bundle.name,
@@ -117,14 +195,22 @@ async function collectDispatcherSnapshot(
       orphaned: runtimeResult.summary.orphaned,
       guarded: runtimeResult.summary.guarded,
     },
-    journeyTelemetry: buildJourneyTelemetry(runtimeResult.summary.active, telemetryResult.events, now),
+    journeyTelemetry: buildJourneyTelemetry(runtimeResult.summary.active, telemetryResult.events, input.now),
     telemetry: {
       available: telemetryResult.available,
       legacyMode: !telemetryResult.available,
-      path: telemetryPaths.eventsFile,
+      path: input.telemetryPaths.eventsFile,
       parseErrors: telemetryResult.parse_errors,
     },
   };
+}
+
+function emptyRuntimeSummary(now: Date): RuntimeDispatchSummary {
+  return summarizeRuntimeState({
+    schema: "als-delamain-worktree-state@1",
+    updated_at: now.toISOString(),
+    records: [],
+  });
 }
 
 async function readHeartbeat(bundleRoot: string): Promise<{

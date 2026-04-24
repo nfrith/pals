@@ -1,8 +1,20 @@
 import { collectSystemSnapshot } from "../feed/collector.ts";
 import type { DashboardAppRoute } from "../app-bootstrap.ts";
 import type { DashboardSnapshot } from "../feed/types.ts";
-import { buildDashboardClientBundle, contentTypeForAsset, resolveAssetPath } from "./bundler.ts";
+import {
+  buildDashboardClientBundle,
+  contentTypeForAsset,
+  resolveAssetPath,
+  type DashboardClientAssets,
+} from "./bundler.ts";
 import { renderDashboardHtml } from "./html.ts";
+
+type DashboardSnapshotCollector = (options: {
+  systemRoot: string;
+  telemetryLimit?: number;
+  now?: Date;
+}) => Promise<DashboardSnapshot>;
+type DashboardAssetBuilder = () => Promise<DashboardClientAssets>;
 
 export interface DashboardServiceOptions {
   systemRoot: string;
@@ -10,6 +22,8 @@ export interface DashboardServiceOptions {
   port?: number;
   pollMs?: number;
   telemetryLimit?: number;
+  snapshotCollector?: DashboardSnapshotCollector;
+  assetBuilder?: DashboardAssetBuilder;
 }
 
 export interface DashboardServiceRuntime {
@@ -31,8 +45,10 @@ export async function createDashboardServiceRuntime(
   options: DashboardServiceOptions,
 ): Promise<DashboardServiceRuntime> {
   const telemetryLimit = options.telemetryLimit ?? 25;
-  const assets = await buildDashboardClientBundle();
-  let snapshot = await collectSystemSnapshot({
+  const collectSnapshot = options.snapshotCollector ?? collectSystemSnapshot;
+  const buildAssets = options.assetBuilder ?? buildDashboardClientBundle;
+  const assets = await buildAssets();
+  let snapshot = await collectSnapshot({
     systemRoot: options.systemRoot,
     telemetryLimit,
   });
@@ -111,7 +127,7 @@ export async function createDashboardServiceRuntime(
       refreshing = true;
 
       try {
-        const nextSnapshot = await collectSystemSnapshot({
+        const nextSnapshot = await collectSnapshot({
           systemRoot: options.systemRoot,
           telemetryLimit,
         });
@@ -122,6 +138,8 @@ export async function createDashboardServiceRuntime(
           serializedSnapshot = nextSerialized;
           broadcast(clients, snapshot);
         }
+      } catch (error) {
+        console.warn(`[delamain-dashboard] refresh failed: ${formatError(error)}`);
       } finally {
         refreshing = false;
       }
@@ -217,4 +235,8 @@ function resolveAppRoute(pathname: string): DashboardAppRoute | null {
     kind: "journey",
     dispatcherName,
   };
+}
+
+function formatError(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
