@@ -23,13 +23,13 @@ Extract `SYSTEM_ROOT` and delamain names from the scan output. The plugin root r
 
 ### 2. Kill running dispatchers
 
-If `RUNNING_PIDS` is present in the scan output, kill them all:
+If `RUNNING_PIDS` is present in the scan output, kill them all. If `PULSE_PID` is also present (statusline background data producer, GF-034), include it in the same kill call:
 
 ```bash
-kill {pid1} {pid2} {pid3} 2>/dev/null; rm -f {SYSTEM_ROOT}/.claude/delamains/*/status.json
+kill {pid1} {pid2} {pid3} {PULSE_PID} 2>/dev/null; rm -f {SYSTEM_ROOT}/.claude/delamains/*/status.json {SYSTEM_ROOT}/.claude/scripts/.cache/pulse/meta.json
 ```
 
-If no running PIDs, still clear stale status files.
+If no running PIDs, still clear stale status files and stale pulse meta.
 
 ### 3. Start all dispatchers
 
@@ -42,6 +42,14 @@ CLAUDE_PLUGIN_ROOT=${CLAUDE_PLUGIN_ROOT} bun run {SYSTEM_ROOT}/.claude/delamains
 Pass the command literally — the harness substitutes `${CLAUDE_PLUGIN_ROOT}` to an absolute path before Bash executes. The inline assignment (`CLAUDE_PLUGIN_ROOT=...`) propagates the path into the bun child process env so the dispatcher can read it.
 
 Use the Bash tool with `run_in_background: true`. One call per dispatcher, all in the same message.
+
+In the same message as the dispatcher spawns, also spawn PULSE (statusline background data producer, GF-034 Phase 2) as another `run_in_background: true` Bash call:
+
+```bash
+bun run ${CLAUDE_PLUGIN_ROOT}/statusline/pulse.ts {SYSTEM_ROOT} 2>&1
+```
+
+Pulse probes delamain health and OBS live-stream state every 3s, writing raw state to `{SYSTEM_ROOT}/.claude/scripts/.cache/pulse/{meta,delamains,live}.json`. The statusline face reads this cache on its render path. Pulse shares lifecycle with dispatchers — survives `clear`/`resume`, dies on real SessionEnd (reaped by `hooks/delamain-stop.sh`).
 
 ### 4. Verify
 

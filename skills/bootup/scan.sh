@@ -52,3 +52,14 @@ echo "ALL_DELAMAINS: ${all_names[*]}"
 if (( ${#running_pids[@]} > 0 )); then
     echo "RUNNING_PIDS: ${running_pids[*]}"
 fi
+
+# Detect PULSE (statusline background data producer, GF-034).
+# Pulse writes meta.json every tick with its PID; if the file exists and the
+# PID is alive, report it so /bootup can kill + respawn it alongside dispatchers.
+pulse_meta="$sys_root/.claude/scripts/.cache/pulse/meta.json"
+if [[ -f "$pulse_meta" ]]; then
+    p_pid=$(jq -r '.pid // empty' "$pulse_meta" 2>/dev/null)
+    if [[ -n "$p_pid" ]] && kill -0 "$p_pid" 2>/dev/null; then
+        echo "PULSE_PID: $p_pid"
+    fi
+fi

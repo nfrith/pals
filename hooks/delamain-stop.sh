@@ -38,3 +38,17 @@ for sf in "$sys_root"/.claude/delamains/*/status.json; do
     # Clean up heartbeat file
     rm -f "$sf"
 done
+
+# Reap PULSE (statusline background data producer, GF-034 Phase 2).
+# Shares the same reason filter as dispatchers — already skipped clear|resume
+# at the top of this hook, so we only get here on real SessionEnd.
+pulse_meta="$sys_root/.claude/scripts/.cache/pulse/meta.json"
+if [[ -f "$pulse_meta" ]]; then
+    p_pid=$(jq -r '.pid // empty' "$pulse_meta" 2>/dev/null)
+    if [[ -n "$p_pid" ]] && kill -0 "$p_pid" 2>/dev/null; then
+        kill "$p_pid" 2>/dev/null || true
+    fi
+    rm -f "$pulse_meta" \
+          "$sys_root/.claude/scripts/.cache/pulse/delamains.json" \
+          "$sys_root/.claude/scripts/.cache/pulse/live.json"
+fi

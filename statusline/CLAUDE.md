@@ -4,17 +4,67 @@ Canonical ALS statusline for Claude Code. Installed into operator projects via `
 
 The statusline is the compact badge surface for Delamain health. It is not the canonical monitoring implementation. Rich dispatcher history, queue state, and failure context belong to `nfrith-repos/als/delamain-dashboard/`.
 
-## Direction shift (2026-04-21) — tracked in GF-034
+## Architecture — PULSE + FACE (GF-034, Phase 2 landed 2026-04-24)
 
-**`statusline.sh` is now a single-file renderer (no daemon required).** Claude Code's `refreshInterval: 1` setting (issue 5685, closed 2026-04-11) gives us platform-native idle refresh, which removes the constraint that forced the two-process design below. Inline scanning fits comfortably in the 1-second render budget (~100ms measured).
+The statusline is split into two independent halves, connected through a source-agnostic raw-state cache:
 
-This module is evolving into a **PULSE + FACE** split tracked in [`ghost-factory/jobs/GF-034.md`](../../../ghost-factory/jobs/GF-034.md):
+```
+pulse.ts (background, long-running, spawned by /bootup)
+  │
+  │  writes every 3s (atomic .tmp + rename)
+  ▼
+{SYSTEM_ROOT}/.claude/scripts/.cache/pulse/
+    meta.json         {pid, last_tick, schema_version, tick_ms}
+    delamains.json    {last_tick, delamains: [{name, slug, pid, alive, state, active, blocked, error}]}
+    live.json         {last_tick, connected, streaming, recording, state}
+  │
+  │  reads when meta.mtime ≤ PULSE_STALE_SEC (default 10s)
+  │  falls back to inline scan otherwise
+  ▼
+statusline.sh (face, invoked by Claude Code per tick / per event)
+```
 
-- **FACE** (Phase 1 — done) — `statusline.sh` is the first face: the native Claude Code statusline renderer.
-- **PULSE** (Phase 2 — pending) — background data producer that publishes system state (delamain health, LIVE signal, git) into a source-agnostic cache. Replaces the legacy `statusline-daemon.sh`. Wires into `/bootup`.
-- **Second FACE** (future) — a tmux-pane face could consume the same pulse cache. Out of scope for GF-034 but designed for.
+### PULSE — the background data producer
 
-Legacy `statusline-daemon.sh`, `obs-status.py`, and the two-process architecture documented below are **deprecated.** They remain in the directory until Phase 3 cleanup lands. Read the rest of this file as history, not current architecture.
+`pulse.ts` runs as a long-lived bun process spawned by `/bootup` alongside delamain dispatchers. It probes:
+
+- **delamains** — walks `{SYSTEM_ROOT}/.claude/delamains/*/status.json`, reads `pid / active_dispatches / blocked_dispatches / last_error`, maps to 5 states (`offline / idle / active / warn / error`). Same mapping as the face's inline fallback so switching paths yields byte-identical badges.
+- **OBS WebSocket v5** — unauthenticated Hello→Identify→GetStreamStatus→GetRecordStatus sequence against `localhost:4455` with a 500ms timeout. Ported from the legacy `obs-status.py` onto bun's native `WebSocket`. Produces `{connected, streaming, recording, state: "live"|"offline"}`.
+
+Every write is atomic (`.tmp + rename`). `meta.json` is written **last** on each tick so its mtime is the canonical freshness signal — when meta looks fresh, the topic files behind it are guaranteed fresh.
+
+Lifecycle: survives `/clear` and `/resume` (same policy as dispatchers — matches GF-034 Q4(a)), reaped on real `SessionEnd` by `hooks/delamain-stop.sh`.
+
+### FACE — the Claude Code statusline renderer
+
+`statusline.sh` is the first (currently only) face. On each Claude Code tick it:
+
+1. Walks up from `cwd` for `.claude/delamains/` to discover SYSTEM_ROOT.
+2. Checks `pulse/meta.json` mtime against `PULSE_STALE_SEC`.
+3. **Pulse-fresh:** reads raw state from `pulse/delamains.json` + `pulse/live.json`, feeds it into `render_badge()` for the 3-row themed output.
+4. **Pulse-stale or missing:** falls back to the original inline filesystem scan. LIVE defaults to OFFLINE when pulse can't report it.
+
+The face owns its own ANSI / blink / glitch / breath-glow concerns. Pulse's cache format is intentionally free of presentation-layer detail — per GF-034 Q3(b), faces translate raw state for their own surface. Future faces (tmux-pane TUI at `ghost-factory/dotfiles/statusline/`, web, service endpoint) read the same cache and render without needing pulse to know about them.
+
+### Cache schema (public API for future faces)
+
+| File | Contents |
+|------|----------|
+| `meta.json` | `{schema_version: 1, pid: number, last_tick: ms, tick_ms: number}` |
+| `delamains.json` | `{schema_version: 1, last_tick: ms, delamains: [{name, slug, pid, alive, state, active, blocked, error}]}` where `state ∈ {offline, idle, active, warn, error}` |
+| `live.json` | `{schema_version: 1, last_tick: ms, connected: bool, streaming: bool, recording: bool, state: "live" \| "offline"}` |
+
+A future face reading this cache needs only:
+
+1. Read `meta.json`; check `last_tick` or file mtime against its own freshness budget.
+2. Read the topic files it cares about (`delamains.json`, `live.json`, or both).
+3. Render the raw state per its own surface's rules.
+
+No pulse changes required to add a face. Adding a new probe (e.g. YouTube live, deferred to Phase 3+) means adding a new topic file; existing faces that don't read it stay unaffected.
+
+### Legacy files (deprecated, pending Phase 3 cleanup)
+
+`statusline-daemon.sh`, `obs-status.py`, and `deploy.sh` still exist on disk as the pre-GF-034 two-process deploy. They are deprecated and no longer consulted by either half of the new architecture. The history-of-why content below is preserved because the GHOST-163 lessons (stderr kills statusline, `.tmp + mv` atomic writes, render budget discipline) still govern this module.
 
 ## Legacy architecture: Two-process model (deprecated)
 
