@@ -12,8 +12,8 @@ import { validateSystem } from "./validate.ts";
 const MAIN_USAGE = `Usage:
   alsc validate <system-root> [module-id]
   alsc deploy claude [--dry-run] [--require-empty-targets] <system-root> [module-id]
-  alsc operator-config path
-  alsc operator-config inspect [operator-config-path]
+  alsc operator-config path [system-root-or-cwd]
+  alsc operator-config inspect [system-root-or-cwd-or-operator-config-path]
   alsc operator-config session-start [cwd]
 
 Commands:
@@ -25,8 +25,8 @@ Commands:
 const VALIDATE_USAGE = "Usage: alsc validate <system-root> [module-id]";
 const DEPLOY_USAGE = "Usage: alsc deploy claude [--dry-run] [--require-empty-targets] <system-root> [module-id]";
 const OPERATOR_CONFIG_USAGE = `Usage:
-  alsc operator-config path
-  alsc operator-config inspect [operator-config-path]
+  alsc operator-config path [system-root-or-cwd]
+  alsc operator-config inspect [system-root-or-cwd-or-operator-config-path]
   alsc operator-config session-start [cwd]`;
 
 export interface CliIo {
@@ -37,7 +37,6 @@ export interface CliIo {
 export function runCli(
   args: string[],
   io: CliIo = createProcessCliIo(),
-  env: Record<string, string | undefined> = process.env,
 ): number {
   if (args.length === 0) {
     writeStderr(io, MAIN_USAGE);
@@ -60,7 +59,7 @@ export function runCli(
   }
 
   if (command === "operator-config") {
-    return runOperatorConfigCommand(rest, io, env);
+    return runOperatorConfigCommand(rest, io);
   }
 
   writeStderr(io, MAIN_USAGE);
@@ -108,7 +107,6 @@ function runDeployCommand(args: string[], io: CliIo): number {
 function runOperatorConfigCommand(
   args: string[],
   io: CliIo,
-  env: Record<string, string | undefined>,
 ): number {
   if (args.length === 0 || (args.length === 1 && isHelpFlag(args[0]))) {
     writeStdout(io, `${OPERATOR_CONFIG_USAGE}\n`);
@@ -118,14 +116,14 @@ function runOperatorConfigCommand(
   const [subcommand, ...rest] = args;
 
   if (subcommand === "path") {
-    if (rest.length !== 0) {
+    if (rest.length > 1) {
       writeStderr(io, `${OPERATOR_CONFIG_USAGE}\n`);
       return 2;
     }
 
-    const filePath = resolveOperatorConfigPath(env);
+    const filePath = resolveOperatorConfigPath(rest[0] ?? process.cwd());
     if (!filePath) {
-      writeStderr(io, "Unable to resolve operator config path: set XDG_CONFIG_HOME or HOME.\n");
+      writeStderr(io, "Unable to resolve operator config path: no ALS system root found.\n");
       return 1;
     }
 
@@ -139,9 +137,9 @@ function runOperatorConfigCommand(
       return 2;
     }
 
-    const filePath = rest[0] ? resolve(rest[0]) : resolveOperatorConfigPath(env);
+    const filePath = resolveOperatorConfigPath(rest[0] ?? process.cwd());
     if (!filePath) {
-      writeStderr(io, "Unable to resolve operator config path: set XDG_CONFIG_HOME or HOME.\n");
+      writeStderr(io, "Unable to resolve operator config path: no ALS system root found.\n");
       return 1;
     }
 
@@ -156,7 +154,7 @@ function runOperatorConfigCommand(
       return 2;
     }
 
-    const output = buildOperatorConfigSessionStartOutput(resolve(rest[0] ?? process.cwd()), env);
+    const output = buildOperatorConfigSessionStartOutput(resolve(rest[0] ?? process.cwd()));
     if (output.length > 0) {
       writeStdout(io, output);
     }

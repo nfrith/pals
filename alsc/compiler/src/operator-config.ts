@@ -1,5 +1,5 @@
 import { existsSync, readFileSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import matter from "gray-matter";
 import { stringify as stringifyYaml } from "yaml";
 import { z } from "zod";
@@ -10,8 +10,6 @@ export const OPERATOR_CONFIG_VERSION = 1;
 export const OPERATOR_PROFILES = ["operator", "als_developer", "als_architect"] as const;
 export const OPERATOR_COMPANY_TYPES = ["llc", "sole_prop", "corp", "ltd", "partnership", "nonprofit", "other"] as const;
 export const OPERATOR_REVENUE_BANDS = ["<100k", "100k-1M", "1M-10M", "10M+"] as const;
-
-type EnvironmentShape = Record<string, string | undefined>;
 
 const isoDateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "must use YYYY-MM-DD");
 const operatorProfileSchema = z.enum(OPERATOR_PROFILES);
@@ -216,20 +214,6 @@ const CREDENTIAL_PATTERNS: CredentialPattern[] = [
   },
 ];
 
-export function resolveOperatorConfigPath(env: EnvironmentShape = process.env): string | null {
-  const xdgConfigHome = env.XDG_CONFIG_HOME?.trim();
-  if (xdgConfigHome) {
-    return resolve(xdgConfigHome, "als", "operator.md");
-  }
-
-  const homeDir = env.HOME?.trim();
-  if (!homeDir) {
-    return null;
-  }
-
-  return resolve(homeDir, ".config", "als", "operator.md");
-}
-
 export function findAlsSystemRoot(startPath: string): string | null {
   let current = resolve(startPath);
 
@@ -245,6 +229,24 @@ export function findAlsSystemRoot(startPath: string): string | null {
 
     current = parent;
   }
+}
+
+export function resolveOperatorConfigPathFromSystemRoot(systemRoot: string): string {
+  return join(resolve(systemRoot), ".als", "operator.md");
+}
+
+export function resolveOperatorConfigPath(startPath = process.cwd()): string | null {
+  const candidate = resolve(startPath);
+  if (basename(candidate) === "operator.md") {
+    return candidate;
+  }
+
+  const systemRoot = findAlsSystemRoot(candidate);
+  if (!systemRoot) {
+    return null;
+  }
+
+  return resolveOperatorConfigPathFromSystemRoot(systemRoot);
 }
 
 export function serializeOperatorConfigDocument(document: OperatorConfigDocument): string {
@@ -320,18 +322,17 @@ export function inspectOperatorConfigSource(source: string, filePath = "operator
 
 export function buildOperatorConfigSessionStartOutput(
   cwd: string,
-  env: EnvironmentShape = process.env,
 ): string {
   const systemRoot = findAlsSystemRoot(cwd);
-  if (systemRoot && existsSync(join(systemRoot, ".als", "skip-operator-config"))) {
+  if (!systemRoot) {
     return "";
   }
 
-  const filePath = resolveOperatorConfigPath(env);
-  if (!filePath) {
+  if (existsSync(join(systemRoot, ".als", "skip-operator-config"))) {
     return "";
   }
 
+  const filePath = resolveOperatorConfigPathFromSystemRoot(systemRoot);
   const inspection = inspectOperatorConfigFile(filePath);
   if (inspection.status === "missing") {
     return "";
@@ -349,7 +350,7 @@ export function renderOperatorConfigReminder(config: OperatorConfig, filePath: s
   const lines = [
     "<system-reminder>",
     `Stable operator context loaded from ${filePath}.`,
-    `Use this as ambient operator-scoped context unless the operator says it changed.`,
+    "Use this as ambient context for the current ALS system unless the operator says it changed.",
     `- Name: ${displayName}`,
   ];
 

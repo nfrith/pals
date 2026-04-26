@@ -95,7 +95,7 @@ test("alsc help surfaces the main usage text", async () => {
   const { stdout } = process;
   expect(stdout).toContain("alsc validate <system-root> [module-id]");
   expect(stdout).toContain("alsc deploy claude");
-  expect(stdout).toContain("alsc operator-config path");
+  expect(stdout).toContain("alsc operator-config path [system-root-or-cwd]");
   expect(stdout).toContain("Project active ALS Claude assets into .als/ and .claude/.");
 });
 

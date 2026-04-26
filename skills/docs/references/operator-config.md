@@ -1,10 +1,10 @@
 # Operator Configuration
 
-Reference for the operator profile stored at `${XDG_CONFIG_HOME:-$HOME/.config}/als/operator.md`.
+Reference for the operator profile stored at `<system_root>/.als/operator.md`.
 
 ## Purpose
 
-`operator.md` is for stable, operator-scoped context ALS should remember across sessions:
+`operator.md` is for stable operator context ALS should remember inside one ALS system:
 - identity
 - primary email
 - stable role/business context
@@ -16,10 +16,10 @@ It is not for project-scoped data, task-scoped notes, or secrets.
 The canonical path is:
 
 ```text
-${XDG_CONFIG_HOME:-$HOME/.config}/als/operator.md
+<system_root>/.als/operator.md
 ```
 
-This keeps the profile operator-scoped rather than tied to one ALS system.
+The compiler resolves this path from the current ALS system root. Different ALS systems keep independent operator configs.
 
 ## Shape
 
@@ -70,6 +70,7 @@ revenue_band: 100k-1M
 - Updated later by re-running `/operator-config`
 - Read at SessionStart by the ALS operator-config hook
 - Suppressed per-system when `.als/skip-operator-config` exists in the current ALS system
+- Outside any ALS system, SessionStart does nothing and injects no reminder
 
 ## Validation and remediation
 
@@ -101,3 +102,9 @@ Use `/operator-config` to edit the file after onboarding. That skill:
 - lets the operator change only the fields they want
 - rewrites the file in the canonical shape
 - validates it before finishing
+
+## `.als/` edit boundary
+
+`.als/CLAUDE.md` is compiler-managed and should not be edited by hand. That warning does not prohibit `.als/operator.md`.
+
+`/operator-config` is the approved managed writer for `.als/operator.md`, and the SessionStart hook is the approved reader.

@@ -1,12 +1,12 @@
 ---
 name: operator-config
-description: Create or update the operator profile stored at ${XDG_CONFIG_HOME:-$HOME/.config}/als/operator.md, validate it, and keep it ready for SessionStart injection.
+description: Create or update the operator profile stored at <system_root>/.als/operator.md, validate it, and keep it ready for SessionStart injection.
 allowed-tools: AskUserQuestion, Bash(bash *)
 ---
 
 # operator-config
 
-Create or update the operator-scoped ALS profile at `${XDG_CONFIG_HOME:-$HOME/.config}/als/operator.md`.
+Create or update the ALS operator profile at `<system_root>/.als/operator.md`.
 
 For the file contract and sensitive-data boundary, see [`../docs/references/operator-config.md`](../docs/references/operator-config.md).
 
@@ -110,6 +110,7 @@ Report:
 
 ## Notes
 
-- This file is operator-scoped, not system-scoped.
+- This file is system-scoped. Each ALS system keeps its own `.als/operator.md`.
 - `/install` invokes this skill only when the config is missing.
 - Re-running `/install` does not reopen this flow; `/operator-config` is the ongoing edit surface.
+- The usual `.als/CLAUDE.md` "do not edit" warning does not block this file. `/operator-config` is the approved managed writer for `.als/operator.md`.

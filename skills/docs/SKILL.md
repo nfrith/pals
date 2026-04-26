@@ -107,7 +107,7 @@ Read this when:
 
 [`references/operator-config.md`](references/operator-config.md)
 
-The operator-scoped profile stored at `${XDG_CONFIG_HOME:-$HOME/.config}/als/operator.md`, validated by ALS and injected into sessions by the SessionStart hook.
+The system-scoped profile stored at `<system_root>/.als/operator.md`, validated by ALS and injected into sessions by the SessionStart hook.
 
 Read this when:
 - Setting up the operator profile during onboarding

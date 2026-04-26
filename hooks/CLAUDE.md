@@ -6,7 +6,7 @@ All hooks resolve the compiler path via `${CLAUDE_PLUGIN_ROOT}/alsc/compiler`.
 
 ### operator-config-session-start.sh (SessionStart)
 
-On session start, resolves `${XDG_CONFIG_HOME:-$HOME/.config}/als/operator.md`, validates it, and injects one `<system-reminder>` block with stable operator identity/business context. If the current ALS system contains `.als/skip-operator-config`, or the config file is missing, it injects nothing. If the config is invalid, it injects remediation instructions telling the operator to run `/operator-config`.
+On session start, walks up from the reported `cwd`, finds the current ALS system root, resolves `<system_root>/.als/operator.md`, validates it, and injects one `<system-reminder>` block with stable operator identity/business context. If no ALS system root is found, if the current ALS system contains `.als/skip-operator-config`, or if the config file is missing, it injects nothing. If the config is invalid, it injects remediation instructions telling the operator to run `/operator-config`.
 
 ### als-validate.sh (PostToolUse — Write|Edit)
 
