@@ -20,6 +20,7 @@ test("journey graph projects dispatcher states into lane nodes and visible edge 
     expect(graph.lanes.map((lane) => lane.data.phase)).toEqual(["implementation", "closed"]);
     expect(graph.nodes.map((node) => node.id)).toEqual(["queued", "in-dev", "in-review", "completed"]);
     expect(graph.edges.map((edge) => edge.id)).toEqual(["advance-queued-in-dev-0-0"]);
+    expect(graph.edges.map((edge) => edge.zIndex)).toEqual([1]);
     expect(graph.summary.rawNodeCount).toBe(4);
     expect(graph.summary.rawEdgeCount).toBe(1);
     expect(graph.summary.renderedEdgeCount).toBe(1);
@@ -56,6 +57,7 @@ test("journey graph aggregates multi-source exits per source phase while preserv
 
   const graph = buildJourneyGraph(dispatcher);
   const groupedEdges = graph.edges.filter((edge) => edge.data?.aggregated);
+  const directEdges = graph.edges.filter((edge) => !edge.data?.aggregated);
 
   expect(graph.lanes.map((lane) => lane.data.phase)).toEqual([
     "research",
@@ -71,6 +73,8 @@ test("journey graph aggregates multi-source exits per source phase while preserv
   expect(graph.summary.rawEdgeCount).toBe(9);
   expect(graph.summary.renderedEdgeCount).toBe(8);
   expect(groupedEdges).toHaveLength(3);
+  expect(groupedEdges.every((edge) => edge.zIndex === 1)).toBe(true);
+  expect(directEdges.every((edge) => edge.zIndex === 1)).toBe(true);
   expect(groupedEdges.map((edge) => edge.data?.sourcePhase)).toEqual([
     "research",
     "implementation",

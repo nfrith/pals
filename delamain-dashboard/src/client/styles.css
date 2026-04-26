@@ -660,26 +660,6 @@ a {
   transform-origin: top left;
 }
 
-.xyflow-edge-layer,
-.xyflow-node-layer {
-  position: absolute;
-  inset: 0;
-  overflow: visible;
-}
-
-.xyflow-edge {
-  fill: none;
-  stroke-width: 2.2;
-  color: rgba(255, 255, 255, 0.5);
-  stroke: currentColor;
-  transition: color 180ms ease;
-}
-
-.xyflow-edge.animated {
-  stroke-dasharray: 10 12;
-  animation: edge-flow 2.2s linear infinite;
-}
-
 .journey-edge-advance {
   color: rgba(239, 244, 249, 0.84);
 }
@@ -696,10 +676,6 @@ a {
 
 .journey-edge-aggregated {
   stroke-dasharray: 8 10;
-}
-
-.xyflow-node {
-  position: absolute;
 }
 
 .journey-lane {

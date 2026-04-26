@@ -385,6 +385,7 @@ function buildEdges(
           source: anchorId,
           target: transition.to,
           type: "journey",
+          zIndex: 1,
           className: `journey-edge journey-edge-${transition.class} journey-edge-aggregated`,
           markerEnd: { type: MarkerType.ArrowClosed },
           data: {
@@ -409,6 +410,7 @@ function buildEdges(
         source,
         target: transition.to,
         type: "journey",
+        zIndex: 1,
         className: `journey-edge journey-edge-${transition.class}`,
         markerEnd: { type: MarkerType.ArrowClosed },
         data: {
