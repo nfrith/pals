@@ -21,8 +21,10 @@
  * session.
  *
  * Lifecycle: spawned by /bootup alongside delamain dispatchers. Survives /clear
- * and /resume (same policy as dispatchers, per GF-034 Q4(a)); dies on real
- * SessionEnd via delamain-stop.sh reap.
+ * and /resume (same policy as dispatchers, per GF-034 Q4(a)); lone termination
+ * signals are advisory only, and shutdown requires a confirmed signal pair.
+ * Diagnostic breadcrumbs land in shutdown.log (pulse-side) and sessionend.log
+ * (hook-side) under the pulse cache dir.
  *
  * CACHE PATH INVARIANT: pulse receives SYSTEM_ROOT from /bootup's scan.sh,
  * which walks up for `.als/system.ts`. Faces walk up for `.claude/delamains/`.
@@ -32,6 +34,7 @@
  */
 
 import {
+  appendFileSync,
   existsSync,
   mkdirSync,
   readFileSync,
@@ -47,6 +50,8 @@ const OBS_HOST = process.env.OBS_WS_HOST ?? 'localhost';
 const OBS_PORT = Number(process.env.OBS_WS_PORT ?? 4455);
 const OBS_TIMEOUT_MS = Number(process.env.OBS_WS_TIMEOUT_MS ?? 500);
 const SCHEMA_VERSION = 1;
+const SIGNAL_CONFIRM_WINDOW_MS = Number(process.env.PULSE_SIGNAL_WINDOW_MS ?? 1500);
+const SESSIONEND_MATCH_WINDOW_MS = 5000;
 
 const systemRoot = process.argv[2];
 if (!systemRoot) {
@@ -61,6 +66,19 @@ try {
   console.error(`pulse: failed to create cache dir ${cacheDir}: ${String(err)}`);
   process.exit(3);
 }
+
+type TerminationSignal = 'SIGTERM' | 'SIGINT' | 'SIGHUP';
+
+interface SessionEndMatch {
+  timestamp: string | null;
+  reason: string | null;
+  action: string | null;
+  age_ms: number | null;
+  hook_pid: number | null;
+  pulse_signal_sent: boolean | null;
+}
+
+const textDecoder = new TextDecoder();
 
 // --- Atomic JSON writer (.tmp + rename) ----------------------------------
 function atomicWriteJSON(topic: string, data: unknown): void {
@@ -77,6 +95,102 @@ function atomicWriteJSON(topic: string, data: unknown): void {
       /* ignore — tmp may not exist */
     }
   }
+}
+
+function appendDiagnosticLog(filename: string, data: Record<string, unknown>): void {
+  try {
+    appendFileSync(join(cacheDir, filename), `${JSON.stringify(data)}\n`);
+  } catch (err) {
+    console.error(`pulse: failed to append ${filename}: ${String(err)}`);
+  }
+}
+
+function resolveParentCommand(ppid: number): string | null {
+  if (ppid <= 1) return null;
+
+  try {
+    const result = Bun.spawnSync({
+      cmd: ['ps', '-p', String(ppid), '-o', 'comm='],
+      stdout: 'pipe',
+      stderr: 'ignore',
+    });
+    if (result.exitCode !== 0) return null;
+
+    const parentCommand = textDecoder.decode(result.stdout).trim();
+    return parentCommand.length > 0 ? parentCommand : null;
+  } catch {
+    return null;
+  }
+}
+
+function readRecentSessionEndMatch(targetPid: number): SessionEndMatch | null {
+  const sessionEndLog = join(cacheDir, 'sessionend.log');
+  if (!existsSync(sessionEndLog)) return null;
+
+  let raw: string;
+  try {
+    raw = readFileSync(sessionEndLog, 'utf8');
+  } catch {
+    return null;
+  }
+
+  const lines = raw
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+  const now = Date.now();
+
+  for (let index = lines.length - 1; index >= 0; index -= 1) {
+    let entry: {
+      timestamp?: string;
+      reason?: string | null;
+      action?: string | null;
+      hook_pid?: number | null;
+      pulse_pid?: number | null;
+      pulse_signal_sent?: boolean | null;
+    };
+    try {
+      entry = JSON.parse(lines[index] ?? '{}') as typeof entry;
+    } catch {
+      continue;
+    }
+
+    if (entry.pulse_pid !== targetPid) continue;
+
+    const entryTimestamp = typeof entry.timestamp === 'string' ? entry.timestamp : null;
+    const ageMs = entryTimestamp ? now - Date.parse(entryTimestamp) : null;
+    if (ageMs == null || !Number.isFinite(ageMs) || ageMs > SESSIONEND_MATCH_WINDOW_MS) {
+      return null;
+    }
+
+    return {
+      timestamp: entryTimestamp,
+      reason: typeof entry.reason === 'string' ? entry.reason : null,
+      action: typeof entry.action === 'string' ? entry.action : null,
+      age_ms: ageMs,
+      hook_pid: typeof entry.hook_pid === 'number' ? entry.hook_pid : null,
+      pulse_signal_sent:
+        typeof entry.pulse_signal_sent === 'boolean' ? entry.pulse_signal_sent : null,
+    };
+  }
+
+  return null;
+}
+
+function buildSignalDiagnostic(signal: TerminationSignal): Record<string, unknown> {
+  const recentSessionEnd = readRecentSessionEndMatch(process.pid);
+  return {
+    signal,
+    pid: process.pid,
+    ppid: process.ppid,
+    parent_comm: resolveParentCommand(process.ppid),
+    recent_sessionend_timestamp: recentSessionEnd?.timestamp ?? null,
+    recent_sessionend_reason: recentSessionEnd?.reason ?? null,
+    recent_sessionend_action: recentSessionEnd?.action ?? null,
+    recent_sessionend_age_ms: recentSessionEnd?.age_ms ?? null,
+    recent_sessionend_hook_pid: recentSessionEnd?.hook_pid ?? null,
+    recent_sessionend_signal_sent: recentSessionEnd?.pulse_signal_sent ?? null,
+  };
 }
 
 // --- Delamain scan (port of face's inline scan; same 5-state mapping) -----
@@ -299,11 +413,38 @@ async function tick(): Promise<void> {
 
 // --- Shutdown ------------------------------------------------------------
 let interval: ReturnType<typeof setInterval> | null = null;
+let advisoryResetTimer: ReturnType<typeof setTimeout> | null = null;
+let pendingTermination: { signal: TerminationSignal; at_ms: number } | null = null;
 
-function shutdown(): void {
+function clearPendingTermination(): void {
+  pendingTermination = null;
+  if (advisoryResetTimer != null) {
+    clearTimeout(advisoryResetTimer);
+    advisoryResetTimer = null;
+  }
+}
+
+function armPendingTermination(signal: TerminationSignal): void {
+  clearPendingTermination();
+  pendingTermination = { signal, at_ms: Date.now() };
+  advisoryResetTimer = setTimeout(() => {
+    pendingTermination = null;
+    advisoryResetTimer = null;
+  }, SIGNAL_CONFIRM_WINDOW_MS);
+}
+
+function shutdown(signal: TerminationSignal, firstSignal: TerminationSignal | null): void {
   if (shuttingDown) return;
   shuttingDown = true;
   if (interval != null) clearInterval(interval);
+  clearPendingTermination();
+  appendDiagnosticLog('shutdown.log', {
+    timestamp: new Date().toISOString(),
+    event: 'shutdown',
+    first_signal: firstSignal,
+    confirm_window_ms: SIGNAL_CONFIRM_WINDOW_MS,
+    ...buildSignalDiagnostic(signal),
+  });
   // Unlink meta.json so faces flip to inline fallback immediately rather than
   // reading stale delamain/live data until the 10s staleness threshold kicks in.
   try {
@@ -314,8 +455,27 @@ function shutdown(): void {
   process.exit(0);
 }
 
+function handleTerminationSignal(signal: TerminationSignal): void {
+  if (shuttingDown) return;
+
+  const priorSignal = pendingTermination;
+  if (priorSignal != null && Date.now() - priorSignal.at_ms <= SIGNAL_CONFIRM_WINDOW_MS) {
+    shutdown(signal, priorSignal.signal);
+    return;
+  }
+
+  appendDiagnosticLog('shutdown.log', {
+    timestamp: new Date().toISOString(),
+    event: 'signal_advisory',
+    confirm_window_ms: SIGNAL_CONFIRM_WINDOW_MS,
+    prior_signal: priorSignal?.signal ?? null,
+    ...buildSignalDiagnostic(signal),
+  });
+  armPendingTermination(signal);
+}
+
 for (const sig of ['SIGTERM', 'SIGINT', 'SIGHUP'] as const) {
-  process.on(sig, shutdown);
+  process.on(sig, () => handleTerminationSignal(sig));
 }
 
 // First tick fires immediately so cache populates within ~1s of startup.

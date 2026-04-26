@@ -59,7 +59,7 @@ In the same message as the dispatcher spawns, also spawn PULSE (statusline backg
 bun run ${CLAUDE_PLUGIN_ROOT}/statusline/pulse.ts {SYSTEM_ROOT} 2>&1
 ```
 
-Pulse probes delamain health and OBS live-stream state every 3s, writing raw state to `{SYSTEM_ROOT}/.claude/scripts/.cache/pulse/{meta,delamains,live}.json`. The statusline face reads this cache on its render path. Pulse shares lifecycle with dispatchers — survives `clear`/`resume`, dies on real SessionEnd (reaped by `hooks/delamain-stop.sh`).
+Pulse probes delamain health and OBS live-stream state every 3s, writing raw state to `{SYSTEM_ROOT}/.claude/scripts/.cache/pulse/{meta,delamains,live}.json`. The statusline face reads this cache on its render path. Pulse shares lifecycle with dispatchers — survives `clear`/`resume`, treats lone termination signals as advisory, and logs shutdown diagnostics to `{SYSTEM_ROOT}/.claude/scripts/.cache/pulse/{shutdown,sessionend}.log` so real SessionEnd cleanup can be distinguished from stray signal noise.
 
 ### 5. Verify
 

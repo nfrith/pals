@@ -17,6 +17,8 @@ pulse.ts (background, long-running, spawned by /bootup)
     meta.json         {pid, last_tick, schema_version, tick_ms}
     delamains.json    {last_tick, delamains: [{name, slug, pid, alive, state, active, blocked, error}]}
     live.json         {last_tick, connected, streaming, recording, state}
+    shutdown.log      JSONL diagnostics for advisory/final pulse signals
+    sessionend.log    JSONL diagnostics for SessionEnd hook invocations
   │
   │  reads when meta.mtime ≤ PULSE_STALE_SEC (default 10s)
   │  falls back to inline scan otherwise
@@ -33,7 +35,7 @@ statusline.sh (face, invoked by Claude Code per tick / per event)
 
 Every write is atomic (`.tmp + rename`). `meta.json` is written **last** on each tick so its mtime is the canonical freshness signal — when meta looks fresh, the topic files behind it are guaranteed fresh.
 
-Lifecycle: survives `/clear` and `/resume` (same policy as dispatchers — matches GF-034 Q4(a)), reaped on real `SessionEnd` by `hooks/delamain-stop.sh`.
+Lifecycle: survives `/clear` and `/resume` (same policy as dispatchers — matches GF-034 Q4(a)). Lone `SIGTERM` / `SIGHUP` / `SIGINT` signals are treated as advisory and logged to `shutdown.log`; pulse only exits on a confirmed shutdown pair inside the signal-confirm window. `hooks/delamain-stop.sh` still emits the SessionEnd reap signal and logs each invocation to `sessionend.log`, which gives operators enough context to tell hook-driven deaths from parent-shell-driven ones.
 
 ### FACE — the Claude Code statusline renderer
 
