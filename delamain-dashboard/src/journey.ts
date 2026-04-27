@@ -323,6 +323,7 @@ function buildStateNodes(
         // see `buildLaneNode` comment — `measured` keeps handleBounds
         // stable across `adoptUserNodes` re-runs so edges stay drawn.
         measured: { width: nodeSize.width, height: nodeSize.height },
+        handles: buildJourneyStateHandles(nodeSize, state.terminal),
         sourcePosition: state.terminal ? Position.Left : Position.Right,
         targetPosition: Position.Left,
         data: {
@@ -402,6 +403,7 @@ function buildEdges(
           // see `buildLaneNode` comment — `measured` keeps handleBounds
           // stable so grouped exit edges stay drawn.
           measured: { width: AGGREGATE_ANCHOR_SIZE, height: AGGREGATE_ANCHOR_SIZE },
+          handles: [buildRightSourceHandle(AGGREGATE_ANCHOR_SIZE, AGGREGATE_ANCHOR_SIZE)],
           sourcePosition: Position.Right,
           targetPosition: Position.Left,
           draggable: false,
@@ -551,6 +553,37 @@ function measureNode(state: DispatcherDefinitionState): { height: number; width:
   }
 
   return { width: 194, height: 92 };
+}
+
+function buildJourneyStateHandles(
+  size: { height: number; width: number },
+  terminal: boolean,
+) {
+  return terminal
+    ? [buildLeftTargetHandle(size.width, size.height)]
+    : [buildLeftTargetHandle(size.width, size.height), buildRightSourceHandle(size.width, size.height)];
+}
+
+function buildLeftTargetHandle(width: number, height: number) {
+  return {
+    type: "target" as const,
+    position: Position.Left,
+    x: 0,
+    y: (height - 1) / 2,
+    width: 1,
+    height: 1,
+  };
+}
+
+function buildRightSourceHandle(width: number, height: number) {
+  return {
+    type: "source" as const,
+    position: Position.Right,
+    x: width - 1,
+    y: (height - 1) / 2,
+    width: 1,
+    height: 1,
+  };
 }
 
 function buildBadge(state: DispatcherDefinitionState): string {

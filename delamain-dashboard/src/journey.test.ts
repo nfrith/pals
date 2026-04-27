@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { ConnectionMode, adoptUserNodes, getEdgePosition } from "@xyflow/system";
 import { buildJourneyEdgeRoute } from "./client/journey-routing.ts";
 import type { DispatcherSnapshot } from "./feed/types.ts";
 import { collectSystemSnapshot } from "./feed/collector.ts";
@@ -181,6 +182,19 @@ test("aggregated exits route from the anchor through the top channel without cro
   );
 });
 
+test("journey nodes expose explicit handles so edge positions resolve without DOM measurement", () => {
+  const initialGraph = buildJourneyGraph(createRoutingDispatcher());
+  const refreshedGraph = buildJourneyGraph(createRoutingDispatcher());
+  const nodeLookup = new Map();
+  const parentLookup = new Map();
+
+  adoptUserNodes([...initialGraph.lanes, ...initialGraph.anchors, ...initialGraph.nodes], nodeLookup, parentLookup);
+  assertEveryEdgeResolvesPosition(initialGraph, nodeLookup);
+
+  adoptUserNodes([...refreshedGraph.lanes, ...refreshedGraph.anchors, ...refreshedGraph.nodes], nodeLookup, parentLookup);
+  assertEveryEdgeResolvesPosition(refreshedGraph, nodeLookup);
+});
+
 function createDispatcher(
   input: Pick<DispatcherSnapshot, "phaseOrder" | "states" | "transitions">,
 ): DispatcherSnapshot {
@@ -341,6 +355,35 @@ function normalizePosition(
   return position === "left" || position === "right" || position === "top" || position === "bottom"
     ? position
     : fallback;
+}
+
+function assertEveryEdgeResolvesPosition(
+  graph: ReturnType<typeof buildJourneyGraph>,
+  nodeLookup: Map<string, unknown>,
+) {
+  const errors: Array<{ code: string; edgeId: string }> = [];
+
+  for (const edge of graph.edges) {
+    const sourceNode = nodeLookup.get(edge.source);
+    const targetNode = nodeLookup.get(edge.target);
+
+    expect(sourceNode).toBeDefined();
+    expect(targetNode).toBeDefined();
+
+    const edgePosition = getEdgePosition({
+      id: edge.id,
+      sourceNode: sourceNode as Parameters<typeof getEdgePosition>[0]["sourceNode"],
+      targetNode: targetNode as Parameters<typeof getEdgePosition>[0]["targetNode"],
+      sourceHandle: edge.sourceHandle ?? null,
+      targetHandle: edge.targetHandle ?? null,
+      connectionMode: ConnectionMode.Strict,
+      onError: (code) => errors.push({ code, edgeId: edge.id }),
+    });
+
+    expect(edgePosition).not.toBeNull();
+  }
+
+  expect(errors).toEqual([]);
 }
 
 function assertRouteAvoidsNodes(
