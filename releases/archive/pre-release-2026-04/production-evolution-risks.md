@@ -131,7 +131,7 @@ If production users are expected to automate upgrades, the machine-readable diag
 
 The compiler now treats module-filtered validation as dependency-aware for its declared scope:
 
-- `pre-release/current-state-and-next-steps.md`
+- `releases/archive/pre-release-2026-04/current-state-and-next-steps.md`
 - `alsc/compiler/README.md`
 - `alsc/compiler/src/validate.ts`
 - `alsc/compiler/test/system-negative.test.ts`

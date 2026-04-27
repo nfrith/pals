@@ -24,7 +24,8 @@ End user. Present with all of the above. Enables each profile to do whatever the
 
 ## Project Status
 
-- This project is under active development and is not officially released yet.
+- ALS has a public beta research preview.
+- The broader world-facing launch, release/update model, and stability posture are still being finished.
 - ALS is not being used in any production environment yet.
 
 ## Current Focus

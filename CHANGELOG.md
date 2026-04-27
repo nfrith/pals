@@ -2,6 +2,8 @@
 
 All notable changes to ALS preview releases should be recorded here.
 
+Compatibility-class policy for release notes lives in [releases/update-model/version-policy.md](releases/update-model/version-policy.md).
+
 ## 0.1.0-beta.28 - 2026-04-26
 
 - **ALS-046 — operator-config.** Added `/operator-config` skill, the typed operator profile schema, the `operator-config-session-start` hook (registered in `plugin.json` so the operator profile from `<system_root>/.als/operator.md` is injected as a `<system-reminder>` on every session start when a valid config exists), and the bootup migration that renames legacy `.als/config.md` to `.als/bootup.md`. Sensitive-data boundary documented in `skills/docs/references/operator-config.md` — credentials must not be stored in `operator.md`.

@@ -8,6 +8,8 @@ A model harness engineering SDK — built for Claude.
 
 ALS is public for early adopters who are comfortable with breakage, manual rewrites, and rapid iteration. Read the preview contract in [RESEARCH-PREVIEW.md](RESEARCH-PREVIEW.md).
 
+The release/update model and the current world-facing launch gate live in [releases/CLAUDE.md](releases/CLAUDE.md).
+
 </div>
 
 ---
@@ -238,7 +240,7 @@ This is a research preview, not a stability release.
 - ALS does not yet ship a real warning or deprecation lifecycle.
 - Claude projection is the only harness projection surfaced in this preview.
 
-The longer-form contract and known gaps live in [RESEARCH-PREVIEW.md](RESEARCH-PREVIEW.md).
+The longer-form preview contract lives in [RESEARCH-PREVIEW.md](RESEARCH-PREVIEW.md). The release/update model and launch punchlist live under [releases/CLAUDE.md](releases/CLAUDE.md).
 
 ## Repository Structure
 
@@ -248,7 +250,7 @@ alsc/
   skills/         # ALS skill definitions and workflow material
 sdr/              # Spec Decision Records
 reference-system/ # Canonical reference fixture
-pre-release/      # Internal risk analysis and current-state notes
+releases/         # Release/update model, launch gate, and archived legacy notes
 ```
 
 ## Watch It Being Built
