@@ -4,6 +4,8 @@ ALS is being released publicly as a beta research preview.
 
 The goal of this phase is not to present ALS as stable. The goal is to get real pressure from risky early adopters so ALS can learn what actually matters before its compatibility story hardens.
 
+This file is the preview contract. The deeper release/update model and the world-facing launch gate live under [releases/CLAUDE.md](releases/CLAUDE.md).
+
 ## What This Preview Is
 
 - A public preview of the ALS v1 authored-source contract
