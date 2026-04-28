@@ -1,20 +1,23 @@
 ---
-name: helloworld11
-description: Test A redux — RC channel /update with the testing-discipline rule honored (only one install active at a time). Project-scope test folder was reinstalled at 0.1.9 fresh, edgerunner user-scope install was suspended/uninstalled. Bumps main to 0.1.10. Architect /update on the project-scope test folder should fire (RC, 0.1.9 → 0.1.10).
+name: helloworld-broken
+description: BAD BUMP MARKER — this skill should never reach edgerunners. If you (the architect) see `/helloworld-broken` in autocomplete after a /update, the bump landed. The next step is to bump again with a fix; stable does NOT advance to this version. If an edgerunner ever sees this skill, the channel gate failed.
 ---
 
-# helloworld11
+# helloworld-broken
 
 Print exactly:
 
 ```
-hello from /helloworld11 — RC update probe with single-install discipline
+hello from /helloworld-broken — YOU SHOULD NOT SEE THIS AS AN EDGERUNNER
 ```
 
 Setup at test time:
-- nfrith/als main → 0.1.10 (this commit)
-- nfrith/als stable → 0.1.8 (untouched)
-- Architect's project-scope test folder → 0.1.9 (reinstalled fresh during Phase 3 inspection)
-- Edgerunner user-scope install → suspended (uninstalled to honor the new single-install rule)
+- nfrith/als main → 0.1.12 (this commit, deliberately marked broken)
+- nfrith/als stable → 0.1.11 (held back; will skip 0.1.12 entirely)
+- Architect's project-scope test folder → 0.1.10 from `als-marketplace` (RC)
+- Edgerunner user-scope install → 0.1.11 from `als-marketplace-stable` (kept active to test relaxed rule)
 
-Expected: /update on the project-scope test folder fires, lands at 0.1.10. Verifies that even when stable is far behind (0.1.8), the RC channel updates independently.
+Expected:
+- Architect /update on RC: fires, lands at 0.1.12, sees `/helloworld-broken` (smoke test reveals breakage)
+- Edgerunner /update on stable: no-op (stable still at 0.1.11)
+- After fix-bump (0.1.13) ships and stable advances 0.1.11 → 0.1.13, edgerunner /update should land at 0.1.13 directly. Edgerunner NEVER has `/helloworld-broken`.
