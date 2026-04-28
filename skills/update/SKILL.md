@@ -30,25 +30,31 @@ Map to a platform code per [`platforms.md`](../docs/references/platforms.md):
 
 Report the platform. The flow is the same regardless, but knowing where we are helps explain what to expect (e.g., a session restart is required on Desktop for hooks/skills to reload).
 
-## Phase 2: Detect channel, version, and scope
+## Phase 2: Detect own channel, then read version and scope for THAT channel
 
-Find the `als@*` key in `installed_plugins.json`. There should be exactly one — either `als@als-marketplace` (RC) or `als@als-marketplace-stable` (stable):
+The skill operates only on the channel it was loaded from. This avoids cross-channel confusion when both `als@als-marketplace` (RC) and `als@als-marketplace-stable` (stable) are installed simultaneously on the same machine.
+
+Detect the marketplace name from `${CLAUDE_PLUGIN_ROOT}`. The plugin install path is `~/.claude/plugins/cache/<marketplace>/als/<version>/`, so:
 
 ```bash
-jq -r '.plugins | to_entries | map(select(.key | startswith("als@"))) | .[0].key' ~/.claude/plugins/installed_plugins.json
+MARKETPLACE=$(echo "${CLAUDE_PLUGIN_ROOT}" | sed 's|.*/cache/||;s|/als/.*||')
+echo "Marketplace: $MARKETPLACE"
 ```
 
-Capture the full key (e.g. `als@als-marketplace-stable`). Extract the marketplace name (everything after `@`).
-
-Then read the install version and scope using that key:
+Construct the lookup key:
 
 ```bash
-KEY="<full key from above>"
+KEY="als@$MARKETPLACE"
+```
+
+Read the install version and scope for THIS key only:
+
+```bash
 jq -r --arg k "$KEY" '.plugins[$k][0].version' ~/.claude/plugins/installed_plugins.json
 jq -r --arg k "$KEY" '.plugins[$k][0].scope' ~/.claude/plugins/installed_plugins.json
 ```
 
-Report: `"Currently installed: <version> (<scope> scope, <channel> channel)"`. If no `als@*` key is present at all, tell the operator ALS isn't installed yet and they should run `/install` instead.
+Report: `"Currently installed: <version> (<scope> scope, <channel> channel)"`. If the key is not present in `installed_plugins.json`, tell the operator the running ALS install was loaded from a marketplace that has no record in `installed_plugins.json` — likely a `--plugin-dir` development load — and `/update` doesn't apply.
 
 The scope value gates Phase 4 — `claude plugin update` defaults to user scope, so a project-scoped install must pass `--scope project` explicitly or the apply step fails.
 
