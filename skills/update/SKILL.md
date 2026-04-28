@@ -1,6 +1,6 @@
 ---
 name: update
-description: Update the installed ALS plugin to the latest version published in whichever marketplace it was installed from. Detects the marketplace name (RC `als-marketplace` for architects, stable `als-marketplace-stable` for edgerunners) and the install scope, then shells out to `claude plugin update als@<marketplace> --scope <scope>` — the universal CLI primitive. Works for Claude Code CLI and Desktop, project and user scope, both channels.
+description: Update the installed ALS plugin to the latest version published in whichever marketplace it was installed from. Self-detects channel (RC `als-marketplace` for architects, stable `als-marketplace-stable` for edgerunners) via `${CLAUDE_PLUGIN_ROOT}`, refreshes the right marketplace clone, then shells out to `claude plugin update als@<marketplace> --scope <scope>` — the universal CLI primitive. Works across CLI and Desktop, project and user scope, both channels. Output is verbose by design — useful for architect UAT (`/copy` paste into a release report) and edgerunner support (full diagnostic context).
 allowed-tools: AskUserQuestion, Bash, Read
 ---
 
@@ -11,118 +11,143 @@ Move the installed ALS plugin from whatever version the operator is currently on
 - **`als-marketplace`** (RC channel) — what architects install for pre-release testing. Source: `nfrith/als` repo at default ref (`main`).
 - **`als-marketplace-stable`** (stable channel) — what edgerunners install for production use. Source: `nfrith/als-stable` repo, which points at `nfrith/als` at ref `stable`.
 
-This skill detects which channel the operator is on (by scanning `installed_plugins.json` for any `als@*` key) and updates within that channel. It does not switch channels — channel switching is a separate operator-driven action (uninstall + reinstall from the other marketplace).
+This skill detects which channel the operator is on (via `${CLAUDE_PLUGIN_ROOT}`) and updates within that channel. It does not switch channels — channel switching is a separate operator-driven action (uninstall + reinstall from the other marketplace).
 
-## Phase 1: Detect platform (informational)
+## Output discipline
 
-Read the runtime identifier:
+The skill's output is intentionally verbose. Two audiences depend on the detail:
+
+1. **ALS architect during UAT.** After running `/update` as part of a release smoke test, the architect uses `/copy` to paste the full skill output into a release report or back to the agent that initiated the test. Every phase needs to surface enough info that the report stands alone — version readouts, paths inspected, command outputs, decision points.
+2. **Edgerunner experiencing an issue.** When something goes wrong, the edgerunner pastes the skill output to support. Support needs the full diagnostic picture without follow-up questions: platform, channel, scope, paths, file states, command outputs.
+
+Each phase below specifies what to surface. Do not condense or summarize away the diagnostic details.
+
+## Phase 1: Detect platform
 
 ```bash
 echo "ENTRYPOINT=${CLAUDE_CODE_ENTRYPOINT:-unknown}"
 ```
 
-Map to a platform code per [`platforms.md`](../docs/references/platforms.md):
+Map per [`platforms.md`](../docs/references/platforms.md):
 
 | Entrypoint | Platform code |
 |------------|---------------|
 | `cli` | [`ALS-PLAT-CCLI`](../docs/references/platforms.md) |
 | `claude-desktop` | [`ALS-PLAT-CDSK`](../docs/references/platforms.md) |
 
-Report the platform. The flow is the same regardless, but knowing where we are helps explain what to expect (e.g., a session restart is required on Desktop for hooks/skills to reload).
+**Surface:**
+- `Platform: <code> (<human name>)`
+- `Entrypoint: <raw $CLAUDE_CODE_ENTRYPOINT value>`
+- One sentence on what restart-required means for this platform (Desktop: full session restart; CLI: new `claude` invocation)
 
-## Phase 2: Detect own channel, then read version and scope for THAT channel
-
-The skill operates only on the channel it was loaded from. This avoids cross-channel confusion when both `als@als-marketplace` (RC) and `als@als-marketplace-stable` (stable) are installed simultaneously on the same machine.
-
-Detect the marketplace name from `${CLAUDE_PLUGIN_ROOT}`. The plugin install path is `~/.claude/plugins/cache/<marketplace>/als/<version>/`, so:
+## Phase 2: Detect own channel, version, scope
 
 ```bash
+echo "CLAUDE_PLUGIN_ROOT=${CLAUDE_PLUGIN_ROOT}"
 MARKETPLACE=$(echo "${CLAUDE_PLUGIN_ROOT}" | sed 's|.*/cache/||;s|/als/.*||')
 echo "Marketplace: $MARKETPLACE"
-```
-
-Construct the lookup key:
-
-```bash
 KEY="als@$MARKETPLACE"
+echo "Lookup key: $KEY"
+
+jq -r --arg k "$KEY" '.plugins[$k][0]' ~/.claude/plugins/installed_plugins.json
 ```
 
-Read the install version and scope for THIS key only:
+The full jq read returns the entire entry (version, scope, installPath, gitCommitSha, installedAt, lastUpdated, projectPath if project-scope).
+
+**Surface:**
+- `CLAUDE_PLUGIN_ROOT: <full path>` — proves which cache the running skill came from
+- `Marketplace: <name>` (`als-marketplace` or `als-marketplace-stable`)
+- `Channel: <RC | stable>` (derived from marketplace name)
+- `Lookup key: <key>` — the JSON path queried
+- The full installed-plugin entry as JSON (operator can verify gitCommitSha, install timestamps, etc.)
+- One-line summary: `Installed: <version> (<scope> scope, <channel> channel)`
+
+If the key isn't present in `installed_plugins.json`: explain that the running ALS install has no `installed_plugins.json` record — likely a `--plugin-dir` development load — and `/update` doesn't apply. Stop.
+
+## Phase 3: Refresh the marketplace clone, read latest
 
 ```bash
-jq -r --arg k "$KEY" '.plugins[$k][0].version' ~/.claude/plugins/installed_plugins.json
-jq -r --arg k "$KEY" '.plugins[$k][0].scope' ~/.claude/plugins/installed_plugins.json
+claude plugin marketplace update "$MARKETPLACE" 2>&1
 ```
 
-Report: `"Currently installed: <version> (<scope> scope, <channel> channel)"`. If the key is not present in `installed_plugins.json`, tell the operator the running ALS install was loaded from a marketplace that has no record in `installed_plugins.json` — likely a `--plugin-dir` development load — and `/update` doesn't apply.
+This is the actual command — surface its full output. If it fails, the error message is what support needs.
 
-The scope value gates Phase 4 — `claude plugin update` defaults to user scope, so a project-scoped install must pass `--scope project` explicitly or the apply step fails.
-
-## Phase 3: Refresh the marketplace clone
-
-Pull the latest `marketplace.json` and plugin source from origin into the local marketplace clone at `~/.claude/plugins/marketplaces/<marketplace-name>/`. Use the marketplace name detected in Phase 2:
+After refresh, read the latest version. Try in this order:
 
 ```bash
-claude plugin marketplace update <marketplace-name> 2>&1
+# RC source (plugin source = "./") — plugin.json lives in the marketplace clone
+jq -r '.version // empty' ~/.claude/plugins/marketplaces/$MARKETPLACE/.claude-plugin/plugin.json 2>/dev/null
+
+# Stable source (plugin source = github/url with ref) — fetch plugin.json from the source URL
+SOURCE_URL=$(jq -r '.plugins[0].source.url // .plugins[0].source.repo // empty' ~/.claude/plugins/marketplaces/$MARKETPLACE/.claude-plugin/marketplace.json)
+SOURCE_REF=$(jq -r '.plugins[0].source.ref // "main"' ~/.claude/plugins/marketplaces/$MARKETPLACE/.claude-plugin/marketplace.json)
+# Convert https://github.com/owner/repo.git → owner/repo, or owner/repo (already)
+REPO=$(echo "$SOURCE_URL" | sed 's|https://github.com/||;s|\.git$||')
+curl -sL "https://raw.githubusercontent.com/$REPO/$SOURCE_REF/.claude-plugin/plugin.json" | jq -r '.version // empty' 2>/dev/null
 ```
 
-If the command fails, surface the error and stop — the operator likely has a network or auth problem we can't fix from inside a skill.
-
-After success, read the latest version. The plugin source path differs by channel:
-
-- **RC (`als-marketplace`):** plugin source is the same repo (`source: "./"`), so plugin.json lives at `~/.claude/plugins/marketplaces/als-marketplace/.claude-plugin/plugin.json`.
-- **Stable (`als-marketplace-stable`):** plugin source points to `nfrith/als@stable` (a different repo), so the plugin clone lives separately. The marketplace.json's `plugins[0].version` field is the served version if explicitly declared; otherwise read from the resolved plugin clone.
-
-The simplest read that works for both channels — read the version that ends up being served:
-
-```bash
-# Try plugin.json in the marketplace clone first (works for RC, source: "./")
-jq -r '.version // empty' ~/.claude/plugins/marketplaces/<marketplace-name>/.claude-plugin/plugin.json 2>/dev/null
-# If empty, fall back to checking the marketplace catalog's declared version
-jq -r '.plugins[0].version // empty' ~/.claude/plugins/marketplaces/<marketplace-name>/.claude-plugin/marketplace.json 2>/dev/null
-```
-
-Per the version-resolution waterfall, `plugin.json` wins when present. Report: `"Latest available: <version>"`.
-
-If the latest version equals the currently-installed version, tell the operator they're already on the newest published release and stop.
+**Surface:**
+- `Refreshing marketplace clone: $MARKETPLACE`
+- The full output of `claude plugin marketplace update` (whatever it returns — success line, error, etc.)
+- For stable channel, the source URL and ref being fetched (so support can verify the curl target)
+- `Latest available: <version>` — the resolved version
+- If the latest matches the installed version: `Already on latest. No update needed.` Stop here for clean output.
 
 ## Phase 4: Apply the update
 
-Shell out to the CLI primitive, passing the marketplace name from Phase 2 and the scope:
-
 ```bash
-claude plugin update als@<marketplace-name> --scope <scope> 2>&1
+SCOPE=$(jq -r --arg k "$KEY" '.plugins[$k][0].scope' ~/.claude/plugins/installed_plugins.json)
+claude plugin update "$KEY" --scope "$SCOPE" 2>&1
 ```
 
-Examples:
-- Architect on RC (project scope): `claude plugin update als@als-marketplace --scope project`
-- Edgerunner on stable (user scope): `claude plugin update als@als-marketplace-stable --scope user`
+Surface the full command output. The CLI primitive prints status/error directly.
 
-The `--scope` flag is required — `claude plugin update` defaults to user scope, so omitting the flag fails for project-scoped installs. Verified empirically 2026-04-28.
+**Surface:**
+- The full command being run (with `$KEY` and `$SCOPE` resolved): `claude plugin update als@<marketplace> --scope <scope>`
+- The full stdout+stderr of the command
+- One-line outcome: `Update applied.` or `Update failed: <one-line summary>`
 
-Surface the command's output to the operator. If the command fails, report the error and stop. The operator can fall back to manual steps from inside a separate `claude` session (start a new session, type `/plugins`, navigate to ALS, update from menu).
+If the command fails: stop and report. Suggest manual fallback — opening a separate `claude` session, typing `/plugins`, navigating to ALS, updating from the menu.
 
-## Phase 5: Verify
+## Phase 5: Verify the new version landed
 
 ```bash
-KEY="als@<marketplace-name>"
-jq -r --arg k "$KEY" '.plugins[$k][0].version' ~/.claude/plugins/installed_plugins.json
+jq -r --arg k "$KEY" '.plugins[$k][0]' ~/.claude/plugins/installed_plugins.json
 ```
 
-If the version matches what was reported as "Latest available" in Phase 3, tell the operator the update succeeded.
+Read the full entry again — version, gitCommitSha, lastUpdated should all reflect the new state.
 
-If it doesn't match, tell the operator what version is installed vs what was expected, and ask them to report back so we can investigate what's pinning them.
+**Surface:**
+- The full updated installed-plugin entry as JSON
+- One-line confirmation: `Verified: <new version> installed.`
+- If the installed version doesn't match the "Latest available" reported in Phase 3: surface the mismatch and ask the operator to investigate (could be a partial update, cache state issue, etc.)
 
 ## Phase 6: Final report
 
-Briefly tell the operator:
+Surface a single, formatted summary block that captures the whole run. This is what the architect copies into a release report or the edgerunner pastes to support:
 
-- Channel (RC or stable)
-- Old version → New version
-- Whether a session restart is required (yes on Desktop for hooks/skills/agents to fully reload; usually yes on CLI as well)
+```
+## ALS /update report
+
+- **Platform:** <code> (<human name>)
+- **Channel:** <RC | stable> (`<marketplace name>`)
+- **Scope:** <user | project>
+- **Marketplace clone path:** ~/.claude/plugins/marketplaces/<marketplace>/
+- **Plugin install path:** <installPath from installed_plugins.json>
+- **Version:** <old> → <new>  (or: <version> — no change)
+- **Git commit SHA:** <new gitCommitSha>
+- **Action taken:** <"Update applied" | "Already on latest, no action" | "Failed">
+- **Restart required:** yes — <one-line reason for this platform>
+
+<If applicable: any non-fatal warnings or notes from Phase 3 or Phase 4 outputs>
+```
+
+The architect uses `/copy` to grab this. Edgerunner support can read this and reconstruct the full state without needing to ask follow-up questions.
 
 ## Why this skill exists
 
-The CLI primitive `claude plugin update als@<marketplace> --scope <scope>` is the documented universal update path. It works the same way regardless of platform, scope, or channel. This skill packages that primitive into an in-session flow with platform reporting, version readouts, and verification — so the operator gets a guided experience without having to remember the exact command or its arguments.
+The CLI primitive `claude plugin update als@<marketplace> --scope <scope>` is the documented universal update path. It works the same way regardless of platform, scope, or channel. This skill packages that primitive into an in-session flow with channel self-detection, scope resolution, version readouts, verbose diagnostics, and verification — so the operator gets a guided experience and a complete release/support trail in one command.
 
-Empirical history: Earlier (2026-04-28) iterations walked the operator through Claude Code Desktop's GUI Update button. That path was unreliable in user scope (button stayed greyed) and broken in project scope (button activated after Cmd+R refresh but apply step failed with a false "192 files modified" warning). The CLI primitive — invoked directly via Bash shellout — worked in both scopes once the `--scope` flag was passed correctly. Channels were added later (2026-04-28) to give the architect a pre-release test surface (RC) without affecting edgerunners (stable).
+Empirical history: Earlier (2026-04-28) iterations walked the operator through Claude Code Desktop's GUI Update button. That path was unreliable in user scope (button stayed greyed) and broken in project scope (button activated after Cmd+R refresh but apply step failed with a false "192 files modified" warning). The CLI primitive — invoked directly via Bash shellout — worked in both scopes once the `--scope` flag was passed correctly. Channels were added (2026-04-28) to give the architect a pre-release test surface (RC) without affecting edgerunners (stable). Channel self-detection via `${CLAUDE_PLUGIN_ROOT}` (also 2026-04-28) eliminated the need for any "single-install" testing rule on the architect's machine.
+
+The verbose-by-design output is for: (1) architect UAT — the architect runs this skill as part of release smoke tests and uses `/copy` to ship the full output into a release report; (2) edgerunner support — when something goes wrong, the edgerunner pastes the output and support sees the full diagnostic picture without follow-ups.

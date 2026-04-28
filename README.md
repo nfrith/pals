@@ -42,22 +42,35 @@ The current public preview is centered on two usable surfaces:
 
 ALS is distributed as a Claude Code plugin. Requires [Bun](https://bun.sh) >= 1.3.0 and [jq](https://jqlang.github.io/jq/).
 
-### Option A: From the terminal
+ALS uses a **two-channel release model**:
+
+- **Stable channel** (`als-marketplace-stable`) — recommended for everyone. Source: [`nfrith/als-stable`](https://github.com/nfrith/als-stable). Receives versions only after RC validation passes.
+- **RC channel** (`als-marketplace`) — for the maintainer's pre-release testing only. Source: this repo. Versions land here first to be validated before advancing to stable.
+
+### Option A: From the terminal (stable channel — recommended)
+
+```bash
+claude plugin marketplace add https://github.com/nfrith/als-stable
+claude plugin install als@als-marketplace-stable
+```
+
+### Option B: From inside Claude Code Desktop (stable channel — recommended)
+
+1. Open Customize → Plugins → Add plugin → Add marketplace
+2. Enter `nfrith/als-stable` as the marketplace source
+3. From the Plugins Directory, find **ALS** and click **Install**
+4. Run `/reload-plugins` to activate
+
+### Option C: RC channel (maintainer / contributor only)
 
 ```bash
 claude plugin marketplace add https://github.com/nfrith/als
 claude plugin install als@als-marketplace
 ```
 
-### Option B: From inside Claude Code
+Use only if you need the latest unreleased commits. Edgerunners should NOT use this channel — bumps land here first and may be reverted.
 
-1. Type `/plugin`
-2. Navigate to the **Marketplaces** tab and select **+ Add Marketplace**
-3. Enter `https://github.com/nfrith/als` as the marketplace source
-4. Go to the **Discover** tab, select **als**, press `Space` to toggle, then `i` to install
-5. Run `/reload-plugins` to activate
-
-Once installed, ALS skills (`/install`, `/new`, `/validate`, `/change`, `/migrate`) are available inside Claude Code sessions.
+Once installed, ALS skills (`/install`, `/new`, `/validate`, `/change`, `/migrate`, `/update`) are available inside Claude Code sessions.
 
 ## How to Use
 
