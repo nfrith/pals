@@ -10,7 +10,6 @@
     {
       "name": "als",
       "source": "./",
-      "version": "0.1.0-beta.32",
       "description": "ALS tools and skills — create modules, validate systems, and deploy Claude skills",
       "author": {
         "name": "Nicholas Frith"
