@@ -9,11 +9,7 @@
   "plugins": [
     {
       "name": "als",
-      "source": {
-        "source": "url",
-        "url": "https://github.com/nfrith/als.git",
-        "ref": "stable"
-      },
+      "source": "./",
       "description": "ALS tools and skills — create modules, validate systems, and deploy Claude skills",
       "author": {
         "name": "Nicholas Frith"
