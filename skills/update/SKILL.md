@@ -25,13 +25,16 @@ Map to a platform code per [`platforms.md`](../docs/references/platforms.md):
 
 Report the platform to the operator. The flow is the same regardless, but knowing where we are helps explain what they should expect (e.g., a session restart is required on Desktop for hooks/skills to reload).
 
-## Phase 2: Read current installed version
+## Phase 2: Read current installed version and scope
 
 ```bash
 jq -r '.plugins["als@als-marketplace"][0].version' ~/.claude/plugins/installed_plugins.json
+jq -r '.plugins["als@als-marketplace"][0].scope' ~/.claude/plugins/installed_plugins.json
 ```
 
-The first entry is read regardless of `scope` — both `user` and `project` scope installs are tracked in this file. Capture the value. Report it: `"Currently installed: <version>"`. If `als@als-marketplace` is not present at all, tell the operator ALS isn't installed yet and they should run `/install` instead.
+Both `user` and `project` scope installs are tracked in this file. Capture the version and the scope value (`user` or `project`). Report: `"Currently installed: <version> (<scope> scope)"`. If `als@als-marketplace` is not present at all, tell the operator ALS isn't installed yet and they should run `/install` instead.
+
+The scope value gates Phase 4 — `claude plugin update` defaults to user scope, so a project-scoped install must pass `--scope project` explicitly or the apply step fails.
 
 ## Phase 3: Refresh the marketplace clone
 
@@ -55,13 +58,17 @@ If the latest version equals the currently-installed version, tell the operator 
 
 ## Phase 4: Apply the update
 
-Shell out to the universal CLI primitive:
+Shell out to the CLI primitive, passing the scope detected in Phase 2:
 
 ```bash
-claude plugin update als@als-marketplace 2>&1
+claude plugin update als@als-marketplace --scope <scope-from-phase-2> 2>&1
 ```
 
-This works regardless of platform or scope. On Desktop, the Bash subprocess inherits cwd from the running Claude Code session, so project-scope installs are picked up automatically.
+For example:
+- Project-scope install → `claude plugin update als@als-marketplace --scope project`
+- User-scope install → `claude plugin update als@als-marketplace --scope user`
+
+The `--scope` flag is required — `claude plugin update` defaults to user scope, so omitting the flag fails for project-scoped installs. Verified empirically 2026-04-28.
 
 Surface the command's output to the operator. If the command fails, report the error and stop. The operator can fall back to manual steps from inside a separate `claude` session (start a new session, type `/plugins`, navigate to ALS, update from menu).
 
@@ -86,4 +93,4 @@ Briefly tell the operator:
 
 The CLI primitive `claude plugin update als@als-marketplace` is the documented universal update path. It works the same way regardless of platform or scope. This skill packages that primitive into an in-session flow with platform reporting, version readouts, and verification — so the operator gets a guided experience without having to remember the exact command or its arguments.
 
-Empirical history: Earlier (2026-04-28) iterations of this skill walked the operator through Claude Code Desktop's GUI Update button. That path was unreliable in user scope (button stayed greyed) and broken in project scope (button activated but apply step failed with a false "192 files modified" warning). The CLI primitive — invoked directly via Bash shellout — worked in both scopes. So the skill was simplified to use only that path.
+Empirical history: Earlier (2026-04-28) iterations of this skill walked the operator through Claude Code Desktop's GUI Update button. That path was unreliable in user scope (button stayed greyed) and broken in project scope (button activated after Cmd+R refresh but apply step failed with a false "192 files modified" warning). The CLI primitive — invoked directly via Bash shellout — worked in both scopes once the `--scope` flag was passed correctly. The skill was simplified to use only that path, with scope detected from `installed_plugins.json` in Phase 2.
