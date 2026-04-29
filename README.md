@@ -36,6 +36,7 @@ The current public preview is centered on two usable surfaces:
 
 - `alsc validate` validates an ALS system and emits machine-readable JSON
 - `alsc deploy claude` projects active ALS Claude assets into `.claude/skills/` and `.claude/delamains/`
+- `alsc changelog inspect` validates the ALS repo's structured `CHANGELOG.md` staging area
 - `reference-system/` provides the canonical reference fixture for the current ALS v1 contract
 
 ## Install

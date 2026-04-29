@@ -95,6 +95,7 @@ test("alsc help surfaces the main usage text", async () => {
   const { stdout } = process;
   expect(stdout).toContain("alsc validate <system-root> [module-id]");
   expect(stdout).toContain("alsc deploy claude");
+  expect(stdout).toContain("alsc changelog inspect [als-repo-or-changelog-path]");
   expect(stdout).toContain("alsc operator-config path [system-root-or-cwd]");
   expect(stdout).toContain("Project active ALS Claude assets into .als/ and .claude/.");
 });
@@ -104,6 +105,13 @@ test("alsc validate help surfaces command usage", async () => {
 
   expect(process.exitCode).toBe(0);
   expect(process.stdout).toContain("Usage: alsc validate <system-root> [module-id]");
+});
+
+test("alsc changelog help surfaces command usage", async () => {
+  const process = captureCli(["changelog", "--help"]);
+
+  expect(process.exitCode).toBe(0);
+  expect(process.stdout).toContain("Usage: alsc changelog inspect [als-repo-or-changelog-path]");
 });
 
 test("alsc rejects invalid command usage with a usage error", async () => {

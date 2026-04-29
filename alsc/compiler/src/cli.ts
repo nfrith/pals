@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
 
 import { resolve } from "node:path";
+import { inspectChangelogFile } from "./changelog.ts";
 import { deployClaudeSkills } from "./claude-skills.ts";
 import {
   buildOperatorConfigSessionStartOutput,
@@ -12,6 +13,7 @@ import { validateSystem } from "./validate.ts";
 const MAIN_USAGE = `Usage:
   alsc validate <system-root> [module-id]
   alsc deploy claude [--dry-run] [--require-empty-targets] <system-root> [module-id]
+  alsc changelog inspect [als-repo-or-changelog-path]
   alsc operator-config path [system-root-or-cwd]
   alsc operator-config inspect [system-root-or-cwd-or-operator-config-path]
   alsc operator-config session-start [cwd]
@@ -19,11 +21,13 @@ const MAIN_USAGE = `Usage:
 Commands:
   validate        Validate an ALS system and emit JSON.
   deploy claude   Project active ALS Claude assets into .als/ and .claude/.
+  changelog       Inspect ALS CHANGELOG.md structure and staged release entries.
   operator-config Inspect the operator config or render SessionStart output.
 `;
 
 const VALIDATE_USAGE = "Usage: alsc validate <system-root> [module-id]";
 const DEPLOY_USAGE = "Usage: alsc deploy claude [--dry-run] [--require-empty-targets] <system-root> [module-id]";
+const CHANGELOG_USAGE = "Usage: alsc changelog inspect [als-repo-or-changelog-path]";
 const OPERATOR_CONFIG_USAGE = `Usage:
   alsc operator-config path [system-root-or-cwd]
   alsc operator-config inspect [system-root-or-cwd-or-operator-config-path]
@@ -58,6 +62,10 @@ export function runCli(
     return runDeployCommand(rest, io);
   }
 
+  if (command === "changelog") {
+    return runChangelogCommand(rest, io);
+  }
+
   if (command === "operator-config") {
     return runOperatorConfigCommand(rest, io);
   }
@@ -82,6 +90,28 @@ function runValidateCommand(args: string[], io: CliIo): number {
   const result = validateSystem(systemRoot, moduleId);
   writeStdout(io, JSON.stringify(result, null, 2));
   return result.status === "fail" ? 1 : 0;
+}
+
+function runChangelogCommand(args: string[], io: CliIo): number {
+  if (args.length === 0 || (args.length === 1 && isHelpFlag(args[0]))) {
+    writeStdout(io, `${CHANGELOG_USAGE}\n`);
+    return args.length === 0 ? 2 : 0;
+  }
+
+  const [subcommand, ...rest] = args;
+  if (subcommand !== "inspect") {
+    writeStderr(io, `${CHANGELOG_USAGE}\n`);
+    return 2;
+  }
+
+  if (rest.length > 1) {
+    writeStderr(io, `${CHANGELOG_USAGE}\n`);
+    return 2;
+  }
+
+  const inspection = inspectChangelogFile(rest[0] ?? process.cwd());
+  writeStdout(io, JSON.stringify(inspection, null, 2));
+  return inspection.status === "pass" ? 0 : 1;
 }
 
 function runDeployCommand(args: string[], io: CliIo): number {
