@@ -12,7 +12,7 @@ On session start, walks up from the reported `cwd`, finds the current ALS system
 
 After Write/Edit operations, validates the affected module and blocks further edits if validation fails. This is the inline feedback loop — it catches errors immediately.
 
-Silent on success (no stdout). On failure, outputs a structured JSON block decision with compiler diagnostics.
+Silent on clean success. Warn-only validation stays non-blocking but emits immediate context so deprecated-value usage is visible during the edit loop. On failure, outputs a structured JSON block decision with compiler diagnostics.
 
 ### als-breadcrumb.sh (PostToolUse — Write|Edit)
 
@@ -26,7 +26,7 @@ TODO: Does not capture Bash-based file mutations (e.g. `echo ... > file.md`).
 
 Before Claude finishes, reads the breadcrumb file for this session. If ALS systems/modules were touched, validates only those. Blocks stop if any have errors.
 
-If no breadcrumb file exists (session didn't touch ALS files), exits immediately — no validation, no blocking.
+Warn-only results never block stop, but the hook emits a final reminder summary when the touched system/module still carries warnings. If no breadcrumb file exists (session didn't touch ALS files), exits immediately — no validation, no blocking.
 
 Written for bash 3.2 compatibility (macOS default). No associative arrays.
 

@@ -2,6 +2,14 @@ import type { AlsUpgradeAssistance, AlsUpgradeMode } from "./contracts.ts";
 
 export type DiagnosticSeverity = "error" | "warning";
 
+export interface DeprecationDiagnosticPayload {
+  contract: string;
+  value: string;
+  since: string;
+  removed_in: string;
+  replacement: string | null;
+}
+
 export type ValidationPhase =
   | "system_config"
   | "module_shape"
@@ -30,6 +38,7 @@ export interface CompilerDiagnostic {
   expected: unknown;
   actual: unknown;
   hint: string | null;
+  deprecation: DeprecationDiagnosticPayload | null;
 }
 
 export interface ModuleValidationSummary {

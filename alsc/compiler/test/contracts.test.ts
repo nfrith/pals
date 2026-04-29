@@ -1,8 +1,10 @@
 import { expect, test } from "bun:test";
 import {
   COMPATIBILITY_CLASSES,
+  COMPATIBILITY_CLASS_DEPRECATIONS,
   COMPATIBILITY_CLASS_METADATA,
   COMPATIBILITY_CLASS_RELEASE_HEADLINE_ORDER,
+  findCompilerEnumValueDeprecation,
   highestCompatibilityClass,
   sortCompatibilityClassesByPrecedence,
 } from "../src/contracts.ts";
@@ -43,4 +45,23 @@ test("compatibility precedence collapses lists to the most disruptive class", ()
     "additive",
     "docs_only",
   ]);
+});
+
+test("compiler enum deprecations stay empty for live contracts and resolve for the synthetic fixture", () => {
+  expect(COMPATIBILITY_CLASS_DEPRECATIONS).toEqual({});
+  expect(findCompilerEnumValueDeprecation(COMPATIBILITY_CLASSES, "additive")).toBeNull();
+  expect(findCompilerEnumValueDeprecation([
+    "synthetic-supported",
+    "synthetic-deprecated",
+  ], "synthetic-supported")).toBeNull();
+  expect(findCompilerEnumValueDeprecation([
+    "synthetic-supported",
+    "synthetic-deprecated",
+  ], "synthetic-deprecated")).toEqual({
+    contract: "synthetic_deprecation_fixture",
+    value: "synthetic-deprecated",
+    since: "v1.4",
+    removed_in: "v1.6",
+    replacement: "synthetic-supported",
+  });
 });

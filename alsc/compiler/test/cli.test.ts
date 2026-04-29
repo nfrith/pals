@@ -1,6 +1,30 @@
 import { expect, test } from "bun:test";
 import { runCli } from "../src/cli.ts";
-import { withFixtureSandbox } from "./helpers/fixture.ts";
+import { updateRecord, updateShapeYaml, withFixtureSandbox } from "./helpers/fixture.ts";
+
+const syntheticDeprecationValues = [
+  "synthetic-supported",
+  "synthetic-deprecated",
+] as const;
+const backlogRecordIds = ["ITEM-0001", "ITEM-0002", "ITEM-0003"] as const;
+
+async function configureSyntheticDeprecationFixture(root: string): Promise<void> {
+  await updateShapeYaml(root, "backlog", 1, (shape) => {
+    const entities = shape.entities as Record<string, Record<string, unknown>>;
+    const itemFields = entities.item.fields as Record<string, Record<string, unknown>>;
+    itemFields.warning_status = {
+      type: "enum",
+      allow_null: true,
+      allowed_values: [...syntheticDeprecationValues],
+    };
+  });
+
+  for (const recordId of backlogRecordIds) {
+    await updateRecord(root, `workspace/backlog/items/${recordId}.md`, (record) => {
+      record.data.warning_status = recordId === "ITEM-0001" ? "synthetic-deprecated" : null;
+    });
+  }
+}
 
 function captureCli(args: string[]): { exitCode: number; stdout: string; stderr: string } {
   let stdout = "";
@@ -52,6 +76,73 @@ test("alsc validate supports module-filtered runs", async () => {
     expect(output.status).toBe("pass");
     expect(output.module_filter).toBe("backlog");
     expect(output.modules.map((report) => report.module_id)).toEqual(["backlog"]);
+  });
+});
+
+test("alsc validate exits zero and reports warn when only deprecations are present", async () => {
+  await withFixtureSandbox("cli-validate-warn", async ({ root }) => {
+    await configureSyntheticDeprecationFixture(root);
+
+    const process = captureCli(["validate", root, "backlog"]);
+    expect(process.exitCode).toBe(0);
+
+    const output = JSON.parse(process.stdout) as {
+      status: string;
+      summary: { error_count: number; warning_count: number };
+      modules: Array<{
+        module_id: string;
+        diagnostics: Array<{
+          code: string;
+          severity: string;
+          deprecation: {
+            contract: string;
+            value: string;
+            since: string;
+            removed_in: string;
+            replacement: string | null;
+          } | null;
+        }>;
+      }>;
+    };
+    expect(output.status).toBe("warn");
+    expect(output.summary.error_count).toBe(0);
+    expect(output.summary.warning_count).toBe(1);
+    expect(output.modules[0].module_id).toBe("backlog");
+    const warning = output.modules[0].diagnostics.find((diagnostic) => diagnostic.code === "PAL-RV-FM-011");
+    expect(warning).toBeDefined();
+    expect(warning?.severity).toBe("warning");
+    expect(warning?.deprecation).toEqual({
+      contract: "synthetic_deprecation_fixture",
+      value: "synthetic-deprecated",
+      since: "v1.4",
+      removed_in: "v1.6",
+      replacement: "synthetic-supported",
+    });
+  });
+});
+
+test("alsc validate exits one when errors and deprecation warnings coexist", async () => {
+  await withFixtureSandbox("cli-validate-fail-with-warning", async ({ root }) => {
+    await configureSyntheticDeprecationFixture(root);
+    await updateRecord(root, "workspace/backlog/items/ITEM-0001.md", (record) => {
+      delete record.data.title;
+    });
+
+    const process = captureCli(["validate", root, "backlog"]);
+    expect(process.exitCode).toBe(1);
+
+    const output = JSON.parse(process.stdout) as {
+      status: string;
+      summary: { error_count: number; warning_count: number };
+      modules: Array<{
+        diagnostics: Array<{ code: string }>;
+      }>;
+    };
+    expect(output.status).toBe("fail");
+    expect(output.summary.error_count).toBeGreaterThan(0);
+    expect(output.summary.warning_count).toBe(1);
+    expect(output.modules[0].diagnostics.some((diagnostic) => diagnostic.code === "PAL-RV-FM-001")).toBe(true);
+    expect(output.modules[0].diagnostics.some((diagnostic) => diagnostic.code === "PAL-RV-FM-011")).toBe(true);
   });
 });
 

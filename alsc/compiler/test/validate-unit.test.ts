@@ -2,6 +2,31 @@ import { expect, test } from "bun:test";
 import { codes } from "../src/diagnostics.ts";
 import { moduleShapeSchema, systemConfigSchema, type VariantEntityShape } from "../src/schema.ts";
 import { resolveEffectiveEntityContract } from "../src/validate.ts";
+import { updateRecord, updateShapeYaml, validateFixture, withFixtureSandbox } from "./helpers/fixture.ts";
+
+const syntheticDeprecationValues = [
+  "synthetic-supported",
+  "synthetic-deprecated",
+] as const;
+const backlogRecordIds = ["ITEM-0001", "ITEM-0002", "ITEM-0003"] as const;
+
+async function configureSyntheticDeprecationFixture(root: string): Promise<void> {
+  await updateShapeYaml(root, "backlog", 1, (shape) => {
+    const entities = shape.entities as Record<string, Record<string, unknown>>;
+    const itemFields = entities.item.fields as Record<string, Record<string, unknown>>;
+    itemFields.warning_status = {
+      type: "enum",
+      allow_null: true,
+      allowed_values: [...syntheticDeprecationValues],
+    };
+  });
+
+  for (const recordId of backlogRecordIds) {
+    await updateRecord(root, `workspace/backlog/items/${recordId}.md`, (record) => {
+      record.data.warning_status = recordId === "ITEM-0001" ? "synthetic-deprecated" : null;
+    });
+  }
+}
 
 test("missing section definitions surface a shape diagnostic instead of crashing", () => {
   const entityShape: VariantEntityShape = {
@@ -261,4 +286,52 @@ test("jsonl entity shapes validate without markdown-only surfaces", () => {
   });
 
   expect(result.success).toBe(true);
+});
+
+test("deprecated enum values downgrade otherwise-valid records to warn with a structured payload", async () => {
+  await withFixtureSandbox("validate-unit-deprecation-warn", async ({ root }) => {
+    await configureSyntheticDeprecationFixture(root);
+
+    const result = validateFixture(root, "backlog");
+    expect(result.status).toBe("warn");
+    expect(result.summary.error_count).toBe(0);
+    expect(result.summary.warning_count).toBe(1);
+
+    const backlogReport = result.modules.find((report) => report.module_id === "backlog");
+    expect(backlogReport).toBeDefined();
+    expect(backlogReport?.status).toBe("warn");
+    expect(backlogReport?.summary.warning_count).toBe(1);
+
+    const warning = backlogReport?.diagnostics.find((diagnostic) => diagnostic.code === codes.FM_ENUM_DEPRECATED);
+    expect(warning).toBeDefined();
+    expect(warning?.severity).toBe("warning");
+    expect(warning?.field).toBe("warning_status");
+    expect(warning?.deprecation).toEqual({
+      contract: "synthetic_deprecation_fixture",
+      value: "synthetic-deprecated",
+      since: "v1.4",
+      removed_in: "v1.6",
+      replacement: "synthetic-supported",
+    });
+  });
+});
+
+test("deprecated enum warnings survive alongside real validation errors", async () => {
+  await withFixtureSandbox("validate-unit-deprecation-fail", async ({ root }) => {
+    await configureSyntheticDeprecationFixture(root);
+    await updateRecord(root, "workspace/backlog/items/ITEM-0001.md", (record) => {
+      delete record.data.title;
+    });
+
+    const result = validateFixture(root, "backlog");
+    expect(result.status).toBe("fail");
+    expect(result.summary.error_count).toBeGreaterThan(0);
+    expect(result.summary.warning_count).toBe(1);
+
+    const backlogReport = result.modules.find((report) => report.module_id === "backlog");
+    expect(backlogReport).toBeDefined();
+    expect(backlogReport?.status).toBe("fail");
+    expect(backlogReport?.diagnostics.some((diagnostic) => diagnostic.code === codes.FM_MISSING_FIELD)).toBe(true);
+    expect(backlogReport?.diagnostics.some((diagnostic) => diagnostic.code === codes.FM_ENUM_DEPRECATED)).toBe(true);
+  });
 });

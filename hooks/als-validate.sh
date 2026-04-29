@@ -35,6 +35,10 @@ if ! command -v bun &>/dev/null; then
   exit 0
 fi
 
+if ! command -v jq &>/dev/null; then
+  exit 0
+fi
+
 # --- Module resolution ---
 # Make file_path relative to system root
 rel_path="${file_path#"$system_root"/}"
@@ -75,9 +79,56 @@ fi
 # Capture exit code explicitly — set -e must not kill us on validation failure
 output=$(bun "$COMPILER/src/index.ts" "$system_root" "$module_id" 2>&1) && exit_code=0 || exit_code=$?
 
+render_warning_context() {
+  jq -r --arg module_id "$module_id" '
+    [
+      "ALS validation warnings for module \"" + $module_id + "\". These warnings do not block further edits.",
+      "Summary: " + ((.summary.warning_count // 0) | tostring) + " warning(s), "
+        + ((.summary.error_count // 0) | tostring) + " error(s).",
+      (
+        [
+          .system_diagnostics[],
+          (.modules[]?.diagnostics[]?)
+        ]
+        | map(select(.severity == "warning"))
+        | .[]
+        | "- [" + .code + "] " + .message
+          + (
+            if .deprecation == null then
+              ""
+            else
+              " (contract: " + .deprecation.contract
+              + ", value: " + .deprecation.value
+              + ", since: " + .deprecation.since
+              + ", removed_in: " + .deprecation.removed_in
+              + (
+                if .deprecation.replacement == null then
+                  ""
+                else
+                  ", replacement: " + .deprecation.replacement
+                end
+              )
+              + ")"
+            end
+          )
+      )
+    ] | map(select(length > 0)) | join("\n")
+  ' 2>/dev/null
+}
+
 case $exit_code in
   0)
-    # Silent success — no stdout, clean exit
+    status=$(echo "$output" | jq -r '.status // ""' 2>/dev/null || true)
+    if [[ "$status" != "warn" ]]; then
+      # Silent success — no stdout, clean exit
+      exit 0
+    fi
+
+    warning_context=$(echo "$output" | render_warning_context || true)
+    [[ -n "$warning_context" ]] || exit 0
+    echo "$warning_context" | jq -Rs \
+      '{hookSpecificOutput: {hookEventName: "PostToolUse", additionalContext: .}}' 2>/dev/null \
+    || true
     ;;
   1)
     # Validation failed — structured block decision with compiler diagnostics
@@ -92,3 +143,5 @@ case $exit_code in
     exit 0
     ;;
 esac
+
+exit 0

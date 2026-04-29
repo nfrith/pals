@@ -8,6 +8,7 @@ import {
   ALS_UPGRADE_MODE,
   SUPPORTED_ALS_VERSIONS,
   VALIDATION_OUTPUT_SCHEMA_LITERAL,
+  findCompilerEnumValueDeprecation,
   isSupportedAlsVersion,
 } from "./contracts.ts";
 import { codes, computeStatus, diag, reasons } from "./diagnostics.ts";
@@ -137,6 +138,58 @@ interface EffectiveBodyContract {
   title?: TitleShape;
   preamble?: BodyRegionShape;
   sections: SectionShape[];
+}
+
+function appendDeprecatedEnumWarning(
+  diagnostics: CompilerDiagnostic[],
+  allowedValues: readonly string[],
+  value: string,
+  context: {
+    code: string;
+    phase: "record_frontmatter" | "record_rows";
+    file: string;
+    module_id: string;
+    entity: string;
+    field: string;
+    line?: number;
+    column?: number;
+  },
+): void {
+  const deprecation = findCompilerEnumValueDeprecation(allowedValues, value);
+  if (!deprecation) {
+    return;
+  }
+
+  const subject = context.phase === "record_rows"
+    ? `JSONL row ${context.line ?? "?"} field '${context.field}'`
+    : `Field '${context.field}'`;
+  const replacementClause = deprecation.replacement
+    ? ` Use '${deprecation.replacement}' instead.`
+    : "";
+
+  diagnostics.push(
+    diag(
+      context.code,
+      "warning",
+      context.phase,
+      context.file,
+      `${subject} uses deprecated enum value '${value}'. Deprecated in ${deprecation.since}; planned removal in ${deprecation.removed_in}.${replacementClause}`,
+      {
+        module_id: context.module_id,
+        entity: context.entity,
+        field: context.field,
+        reason: reasons.AUTHORED_SOURCE_VALUE_DEPRECATED,
+        expected: allowedValues,
+        actual: value,
+        hint: deprecation.replacement
+          ? `Replace '${value}' with '${deprecation.replacement}' before ${deprecation.removed_in}.`
+          : `Remove '${value}' before ${deprecation.removed_in}.`,
+        deprecation,
+        line: context.line,
+        column: context.column,
+      },
+    ),
+  );
 }
 
 class FrontmatterProcessingError extends Error {
@@ -1220,6 +1273,15 @@ function validateFieldValue(
             actual: value,
           }),
         );
+      } else {
+        appendDeprecatedEnumWarning(diagnostics, fieldShape.allowed_values, value, {
+          code: codes.FM_ENUM_DEPRECATED,
+          phase: "record_frontmatter",
+          file: record.file_rel,
+          module_id: record.module_id,
+          entity: record.entity_name,
+          field: fieldName,
+        });
       }
       break;
 
@@ -1341,6 +1403,14 @@ function validateFieldValue(
               );
             } else {
               seenEnumValues!.add(item);
+              appendDeprecatedEnumWarning(diagnostics, fieldShape.items.allowed_values, item, {
+                code: codes.FM_ENUM_DEPRECATED,
+                phase: "record_frontmatter",
+                file: record.file_rel,
+                module_id: record.module_id,
+                entity: record.entity_name,
+                field: `${fieldName}[${index}]`,
+              });
             }
           } else if (fieldShape.items.type === "file_path") {
             const itemFieldName = `${fieldName}[${index}]`;
@@ -1523,6 +1593,17 @@ function validateJsonlRowFieldValue(
             column: 1,
           }),
         );
+      } else {
+        appendDeprecatedEnumWarning(diagnostics, fieldShape.allowed_values, value, {
+          code: codes.ROW_ENUM_DEPRECATED,
+          phase: "record_rows",
+          file: record.file_rel,
+          module_id: record.module_id,
+          entity: record.entity_name,
+          field: fieldName,
+          line: lineNumber,
+          column: 1,
+        });
       }
       break;
 
@@ -1602,6 +1683,16 @@ function validateJsonlRowFieldValue(
           );
         } else {
           seenEnumValues!.add(item);
+          appendDeprecatedEnumWarning(diagnostics, fieldShape.items.allowed_values, item, {
+            code: codes.ROW_ENUM_DEPRECATED,
+            phase: "record_rows",
+            file: record.file_rel,
+            module_id: record.module_id,
+            entity: record.entity_name,
+            field: indexedFieldName,
+            line: lineNumber,
+            column: 1,
+          });
         }
       });
       break;

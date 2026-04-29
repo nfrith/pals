@@ -20,6 +20,12 @@ export const COMPATIBILITY_CLASS_RELEASE_HEADLINE_ORDER = [
   "docs_only",
 ] as const;
 
+export interface EnumValueDeprecation {
+  since: string;
+  removed_in: string;
+  replacement: string | null;
+}
+
 // One system targets one ALS version at a time. Upgrades rewrite the system before
 // the next compiler run becomes authoritative.
 export const ALS_UPGRADE_MODE = "whole-system-cutover" as const;
@@ -36,6 +42,11 @@ interface CompatibilityClassMetadataShape {
   operator_action_required: boolean;
   release_headline_precedence: number;
 }
+
+type EnumContractValues = readonly string[];
+type EnumValueDeprecationMap<TValues extends EnumContractValues> = Partial<
+  Record<TValues[number], EnumValueDeprecation>
+>;
 
 export const COMPATIBILITY_CLASS_METADATA = {
   docs_only: {
@@ -65,11 +76,54 @@ export const COMPATIBILITY_CLASS_METADATA = {
   },
 } as const satisfies Record<CompatibilityClass, CompatibilityClassMetadataShape>;
 
+export const COMPATIBILITY_CLASS_DEPRECATIONS = {} as const satisfies EnumValueDeprecationMap<
+  typeof COMPATIBILITY_CLASSES
+>;
+
 export type CompatibilityClassMetadata = (typeof COMPATIBILITY_CLASS_METADATA)[CompatibilityClass];
+
+const SYNTHETIC_DEPRECATION_FIXTURE_VALUES = [
+  "synthetic-supported",
+  "synthetic-deprecated",
+] as const;
+
+const SYNTHETIC_DEPRECATION_FIXTURE_DEPRECATIONS = {
+  "synthetic-deprecated": {
+    since: "v1.4",
+    removed_in: "v1.6",
+    replacement: "synthetic-supported",
+  },
+} as const satisfies EnumValueDeprecationMap<typeof SYNTHETIC_DEPRECATION_FIXTURE_VALUES>;
+
+const COMPILER_ENUM_DEPRECATION_CONTRACTS = {
+  compatibility_classes: {
+    values: COMPATIBILITY_CLASSES,
+    deprecations: COMPATIBILITY_CLASS_DEPRECATIONS,
+  },
+  synthetic_deprecation_fixture: {
+    values: SYNTHETIC_DEPRECATION_FIXTURE_VALUES,
+    deprecations: SYNTHETIC_DEPRECATION_FIXTURE_DEPRECATIONS,
+  },
+} as const;
+
+export type CompilerEnumDeprecationContract = keyof typeof COMPILER_ENUM_DEPRECATION_CONTRACTS;
+
+export interface CompilerEnumValueDeprecation extends EnumValueDeprecation {
+  contract: CompilerEnumDeprecationContract;
+  value: string;
+}
 
 const compatibilityClassPrecedence = new Map<CompatibilityClass, number>(
   COMPATIBILITY_CLASS_RELEASE_HEADLINE_ORDER.map((value, index) => [value, index]),
 );
+
+function enumContractValuesMatch(left: readonly string[], right: readonly string[]): boolean {
+  if (left.length !== right.length) {
+    return false;
+  }
+
+  return left.every((value, index) => value === right[index]);
+}
 
 export function isSupportedAlsVersion(value: number): value is SupportedAlsVersion {
   return SUPPORTED_ALS_VERSIONS.includes(value as SupportedAlsVersion);
@@ -98,4 +152,30 @@ export function highestCompatibilityClass(
 ): CompatibilityClass | null {
   const [highest] = sortCompatibilityClassesByPrecedence(classes);
   return highest ?? null;
+}
+
+export function findCompilerEnumValueDeprecation(
+  allowedValues: readonly string[],
+  value: string,
+): CompilerEnumValueDeprecation | null {
+  for (const [contract, definition] of Object.entries(COMPILER_ENUM_DEPRECATION_CONTRACTS) as Array<
+    [CompilerEnumDeprecationContract, (typeof COMPILER_ENUM_DEPRECATION_CONTRACTS)[CompilerEnumDeprecationContract]]
+  >) {
+    if (!enumContractValuesMatch(definition.values, allowedValues)) {
+      continue;
+    }
+
+    const deprecation = definition.deprecations[value as keyof typeof definition.deprecations];
+    if (!deprecation) {
+      return null;
+    }
+
+    return {
+      contract,
+      value,
+      ...deprecation,
+    };
+  }
+
+  return null;
 }

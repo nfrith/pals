@@ -1,4 +1,9 @@
-import type { CompilerDiagnostic, DiagnosticSeverity, ValidationPhase } from "./types.ts";
+import type {
+  CompilerDiagnostic,
+  DeprecationDiagnosticPayload,
+  DiagnosticSeverity,
+  ValidationPhase,
+} from "./types.ts";
 
 export const codes = {
   SYSTEM_INVALID: "PAL-CV-SYS-001",
@@ -40,6 +45,7 @@ export const codes = {
   FM_VARIANT_UNRESOLVED: "PAL-RV-FM-008",
   FM_FILE_PATH_FORMAT: "PAL-RV-FM-009",
   FM_FILE_PATH_TARGET: "PAL-RV-FM-010",
+  FM_ENUM_DEPRECATED: "PAL-RV-FM-011",
 
   ROW_MISSING_FIELD: "PAL-RV-ROW-001",
   ROW_UNKNOWN_FIELD: "PAL-RV-ROW-002",
@@ -47,6 +53,7 @@ export const codes = {
   ROW_TYPE_MISMATCH: "PAL-RV-ROW-004",
   ROW_DATE_FORMAT: "PAL-RV-ROW-005",
   ROW_ARRAY_ITEM: "PAL-RV-ROW-006",
+  ROW_ENUM_DEPRECATED: "PAL-RV-ROW-007",
 
   BODY_MISSING_SECTION: "PAL-RV-BODY-001",
   BODY_UNKNOWN_SECTION: "PAL-RV-BODY-002",
@@ -133,6 +140,7 @@ export const reasons = {
   BODY_MARKDOWN_INLINE_HTML_UNSUPPORTED: "body.markdown.inline_html_unsupported",
   BODY_MARKDOWN_THEMATIC_BREAK_UNSUPPORTED: "body.markdown.thematic_break_unsupported",
   FRONTMATTER_LIST_ITEM_DUPLICATE: "frontmatter.list_item.duplicate",
+  AUTHORED_SOURCE_VALUE_DEPRECATED: "authored_source.value_deprecated",
   JSONL_LINE_INVALID: "jsonl.line.invalid",
   JSONL_LINE_NOT_OBJECT: "jsonl.line.not_object",
   ROW_LIST_ITEM_DUPLICATE: "row.list_item.duplicate",
@@ -156,6 +164,7 @@ export function diag(
     expected?: unknown;
     actual?: unknown;
     hint?: string;
+    deprecation?: DeprecationDiagnosticPayload;
     line?: number;
     column?: number;
   } = {},
@@ -177,6 +186,7 @@ export function diag(
     expected: opts.expected ?? null,
     actual: opts.actual ?? null,
     hint: opts.hint ?? null,
+    deprecation: opts.deprecation ?? null,
   };
 }
 
