@@ -8,7 +8,7 @@ A model harness engineering SDK — built for Claude.
 
 ALS is public for early adopters who are comfortable with breakage, manual rewrites, and rapid iteration. Read the preview contract in [RESEARCH-PREVIEW.md](RESEARCH-PREVIEW.md).
 
-The release/update model and the current world-facing launch gate live in [releases/CLAUDE.md](releases/CLAUDE.md).
+Install from the stable marketplace, update with `/update`, and expect fix-forward recovery while preview-era lifecycle tooling is still incomplete.
 
 </div>
 
@@ -44,22 +44,22 @@ ALS is distributed as a Claude Code plugin. Requires [Bun](https://bun.sh) >= 1.
 
 ALS uses a **two-channel release model**:
 
-- **Stable channel** (`als-marketplace-stable`) — recommended for everyone. Source: [`nfrith/als-stable`](https://github.com/nfrith/als-stable). Receives versions only after RC validation passes.
+- **Stable channel** (`als-marketplace-stable`) — recommended for everyone. Source: [`nfrith/als-marketplace-stable`](https://github.com/nfrith/als-marketplace-stable). Receives versions only after RC validation passes.
 - **RC channel** (`als-marketplace`) — for the maintainer's pre-release testing only. Source: this repo. Versions land here first to be validated before advancing to stable.
 
 ### Option A: From the terminal (stable channel — recommended)
 
 ```bash
-claude plugin marketplace add https://github.com/nfrith/als-stable
+claude plugin marketplace add https://github.com/nfrith/als-marketplace-stable
 claude plugin install als@als-marketplace-stable
 ```
 
 ### Option B: From inside Claude Code Desktop (stable channel — recommended)
 
 1. Open Customize → Plugins → Add plugin → Add marketplace
-2. Enter `nfrith/als-stable` as the marketplace source
+2. Enter `nfrith/als-marketplace-stable` as the marketplace source
 3. From the Plugins Directory, find **ALS** and click **Install**
-4. Run `/reload-plugins` to activate
+4. Type `/install` to bootstrap your first ALS system
 
 ### Option C: RC channel (maintainer / contributor only)
 
@@ -68,9 +68,15 @@ claude plugin marketplace add https://github.com/nfrith/als
 claude plugin install als@als-marketplace
 ```
 
-Use only if you need the latest unreleased commits. Edgerunners should NOT use this channel — bumps land here first and may be reverted.
+Use only if you need the latest unreleased commits. Edgerunners should NOT use this channel — bumps land here first and may still need hotfixes before stable advances.
 
 Once installed, ALS skills (`/install`, `/new`, `/validate`, `/change`, `/migrate`, `/update`) are available inside Claude Code sessions.
+
+## Update
+
+ALS does not auto-update installed systems in the background. When a newer preview release is available, run `/update` from inside Claude Code.
+
+If a preview release is bad, the recovery path is fix-forward: ship a hotfix bump, then run `/update` again. ALS does not promise rollback or automatic reverse migration during preview.
 
 ## How to Use
 
@@ -253,7 +259,7 @@ This is a research preview, not a stability release.
 - ALS does not yet ship a real warning or deprecation lifecycle.
 - Claude projection is the only harness projection surfaced in this preview.
 
-The longer-form preview contract lives in [RESEARCH-PREVIEW.md](RESEARCH-PREVIEW.md). The release/update model and launch punchlist live under [releases/CLAUDE.md](releases/CLAUDE.md).
+The longer-form preview contract lives in [RESEARCH-PREVIEW.md](RESEARCH-PREVIEW.md). Public docs intentionally stay compact: install from the stable marketplace, update with `/update`, and expect fix-forward recovery rather than rollback.
 
 ## Repository Structure
 
@@ -263,7 +269,6 @@ alsc/
   skills/         # ALS skill definitions and workflow material
 sdr/              # Spec Decision Records
 reference-system/ # Canonical reference fixture
-releases/         # Release/update model, launch gate, and archived legacy notes
 ```
 
 ## Watch It Being Built

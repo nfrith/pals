@@ -195,7 +195,7 @@ test("dispatcher version check logs stale upgrade instruction without failing", 
     });
 
     expect(formatDispatcherVersionLine(info)).toBe(
-      "[dispatcher] version: 1 (latest: 2 — run /upgrade-dispatchers to update)",
+      "[dispatcher] version: 1 (latest: 2 — run /update to update)",
     );
   });
 });

@@ -99,7 +99,7 @@ cp template/VERSION target/dispatcher/VERSION
 
 This ensures all dispatchers stay consistent with the latest features (multi-module support, variant scanning, OAuth, UUID validation, session context injection, version checks).
 
-At startup, dispatchers compare their local `dispatcher/VERSION` with `${CLAUDE_PLUGIN_ROOT}/skills/new/references/dispatcher/VERSION`. Stale but readable versions log `run /upgrade-dispatchers to update` and keep polling. Missing or malformed local or canonical version files fail startup before polling.
+At startup, dispatchers compare their local `dispatcher/VERSION` with `${CLAUDE_PLUGIN_ROOT}/skills/new/references/dispatcher/VERSION`. Stale but readable versions log `run /update to update` and keep polling. Missing or malformed local or canonical version files fail startup before polling.
 
 <!-- UPDATE THIS MAP when drift is discovered between the template and its targets. -->
 

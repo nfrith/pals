@@ -6,7 +6,7 @@ ALS is currently a beta research preview. Contributions should help the project 
 
 Read [RESEARCH-PREVIEW.md](RESEARCH-PREVIEW.md) first.
 
-For the current release/update policy and the remaining world-facing launch blockers, read [releases/CLAUDE.md](releases/CLAUDE.md).
+Preview updates are manual `/update`, exact-version-pinned, and fix-forward. Keep that posture in mind when reporting lifecycle or breakage issues.
 
 If your report is about breakage, include:
 

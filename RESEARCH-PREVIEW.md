@@ -4,7 +4,7 @@ ALS is being released publicly as a beta research preview.
 
 The goal of this phase is not to present ALS as stable. The goal is to get real pressure from risky early adopters so ALS can learn what actually matters before its compatibility story hardens.
 
-This file is the preview contract. The deeper release/update model and the world-facing launch gate live under [releases/CLAUDE.md](releases/CLAUDE.md).
+This file is the preview contract. Install from the stable marketplace, update manually with `/update`, and expect fix-forward recovery if a preview release breaks.
 
 ## What This Preview Is
 
@@ -48,7 +48,8 @@ If you adopt ALS during this preview, assume the following:
 - preview releases may break authored systems
 - manual rewrites may be required
 - exact version pinning is required
-- you should branch or snapshot before upgrading
+- manual `/update` is the supported move to a newer release
+- rollback is not the promised recovery path; bad releases are handled by hotfix-forward
 - some features may be removed, renamed, or reframed before ALS stabilizes
 
 ## Known Missing Lifecycle Pieces

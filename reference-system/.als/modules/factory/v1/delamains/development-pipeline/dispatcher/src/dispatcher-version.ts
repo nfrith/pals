@@ -39,7 +39,7 @@ export async function loadDispatcherVersionInfo(
 
 export function formatDispatcherVersionLine(info: DispatcherVersionInfo): string {
   if (info.localVersion < info.latestVersion) {
-    return `[dispatcher] version: ${info.localVersion} (latest: ${info.latestVersion} — run /upgrade-dispatchers to update)`;
+    return `[dispatcher] version: ${info.localVersion} (latest: ${info.latestVersion} — run /update to update)`;
   }
   return `[dispatcher] version: ${info.localVersion} (latest: ${info.latestVersion})`;
 }

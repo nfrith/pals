@@ -12,7 +12,7 @@ ALS Developer, ALS Architect, Claude.
 
 The dispatcher template lives at `${CLAUDE_PLUGIN_ROOT}/skills/new/references/dispatcher/` and is copied into new Delamain bundles during module creation. Once copied, it runs without modification for any deployed Delamain bundle in any module.
 
-The canonical template exposes its latest template version in `${CLAUDE_PLUGIN_ROOT}/skills/new/references/dispatcher/VERSION`. Every copied dispatcher bundle carries a local `dispatcher/VERSION` file. Startup reads both files, logs `[dispatcher] version: X (latest: Y)`, and appends `run /upgrade-dispatchers to update` when the local version is stale. Missing or malformed local or canonical `VERSION` files are hard startup errors.
+The canonical template exposes its latest template version in `${CLAUDE_PLUGIN_ROOT}/skills/new/references/dispatcher/VERSION`. Every copied dispatcher bundle carries a local `dispatcher/VERSION` file. Startup reads both files, logs `[dispatcher] version: X (latest: Y)`, and appends `run /update to update` when the local version is stale. Missing or malformed local or canonical `VERSION` files are hard startup errors.
 
 Every dispatcher entrypoint begins with `import "./preflight.js";`. That sibling module deletes `process.env.ANTHROPIC_API_KEY` before the Anthropic SDK loads, which keeps plain `bun run src/index.ts` on Max-subscription routing instead of cached API-key billing. OpenAI-provider dispatches continue to use `CODEX_API_KEY`.
 
@@ -331,7 +331,7 @@ Environment variables:
 - `POLL_MS` — polling interval in milliseconds (default: 30000)
 - `CLAUDE_PLUGIN_ROOT` — installed ALS plugin root used to read the canonical dispatcher `VERSION` file (required)
 
-If `dispatcher/VERSION`, `CLAUDE_PLUGIN_ROOT`, the canonical dispatcher `VERSION`, or `runtime-manifest.json` is missing or invalid, the dispatcher fails closed before polling. Stale but readable dispatcher versions continue running and instruct the operator to run `/upgrade-dispatchers`.
+If `dispatcher/VERSION`, `CLAUDE_PLUGIN_ROOT`, the canonical dispatcher `VERSION`, or `runtime-manifest.json` is missing or invalid, the dispatcher fails closed before polling. Stale but readable dispatcher versions continue running and instruct the operator to run `/update`.
 
 ## Heartbeat Shape
 

@@ -2,7 +2,7 @@
 
 All notable changes to ALS preview releases should be recorded here.
 
-Compatibility-class policy for release notes lives in [releases/update-model/version-policy.md](releases/update-model/version-policy.md).
+Release entries should classify operator impact as `docs_only`, `refresh_required`, `additive`, `migration_required`, or `breaking_without_path`, and should state the required operator action for every non-trivial update.
 
 ## 0.1.0-beta.28 - 2026-04-26
 
