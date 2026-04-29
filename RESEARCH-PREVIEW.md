@@ -50,6 +50,7 @@ If you adopt ALS during this preview, assume the following:
 - exact version pinning is required
 - manual `/update` is the supported move to a newer release
 - rollback is not the promised recovery path; bad releases are handled by hotfix-forward
+- automatic migration of plugin-bundled constructs (delamain dispatchers, hooks, statusline, dashboard service) is not promised — if a construct's internal schema changes between releases, manual remediation may be required and the hotfix pipeline ships the fix-forward
 - some features may be removed, renamed, or reframed before ALS stabilizes
 
 ## Known Missing Lifecycle Pieces
