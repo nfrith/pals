@@ -64,8 +64,8 @@ Report the successful prerequisite check before continuing.
 
 Follow `references/platform-detection.md`.
 
-- Produce one explicit platform acknowledgement using [`ALS-PLAT-CCLI`](nfrith-repos/als/skills/docs/references/platforms.md) or [`ALS-PLAT-CDSK`](nfrith-repos/als/skills/docs/references/platforms.md).
-- If the platform is ambiguous, use AskUserQuestion to confirm.
+- Produce one explicit platform acknowledgement using the matching `ALS-PLAT-XXXX` row from [`platforms.md`](nfrith-repos/als/skills/docs/references/platforms.md).
+- If `$CLAUDE_CODE_ENTRYPOINT` is unset or unrecognized, use AskUserQuestion to confirm in plain language. Do not show technical platform codes as visible options.
 - Do not branch behavior yet beyond acknowledgement. Call out that platform-specific install behavior is future work.
 
 ## Phase 3: Existing-system guard
