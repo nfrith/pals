@@ -4,6 +4,12 @@ For pre-2026-04-29 release history, see git tags.
 
 ## [Unreleased]
 
+### ALS-057
+- Compatibility: breaking_without_path, refresh_required
+- Summary: Tighten the operator-config interview to require `AskUserQuestion` for every field (free-text fields use the open-input slot), hard-reject the legacy `operator` profile in favor of the canonical `edgerunner` (the `OPERATOR_PROFILES` enum becomes `["edgerunner", "als_developer", "als_architect"]` with no alias-rewrite), separate role examples from profile names, and remove the dead `.als/config.md` → `.als/bootup.md` rename plumbing from `/init`, `/bootup`, and the bootup-config reference.
+- Operator action: Rerun `alsc deploy claude` (or the equivalent install/refresh) to pick up the updated `/operator-config`, `/install`, `/init`, and `/bootup` skill text. After redeploy, `alsc operator-config inspect` rejects `profiles: [operator]` immediately with `invalid_enum_value` on `profiles.0`; hand-edit any persisted `.als/operator.md` files that still use the legacy value to read `profiles: [edgerunner, ...]`. The repo-tracked `.als/operator.md` was migrated in this release; locally-created or fixture copies (e.g. `~/test-systems/agent-edge-rc-002/.als/operator.md`) must be updated by hand. Fresh `/install` runs default to `profiles: ["edgerunner"]` and never surface a profile-selection question.
+- Affected surfaces: `nfrith-repos/als/alsc/compiler/src/operator-config.ts`, `nfrith-repos/als/alsc/compiler/test/operator-config.test.ts`, `nfrith-repos/als/skills/operator-config/SKILL.md`, `nfrith-repos/als/skills/docs/references/operator-config.md`, `nfrith-repos/als/skills/init/SKILL.md`, `nfrith-repos/als/skills/bootup/SKILL.md`, `nfrith-repos/als/skills/docs/references/bootup-config.md`, `.als/operator.md`
+
 ### ALS-058
 - Compatibility: refresh_required, additive
 - Summary: Promote the 5-class compatibility vocabulary into a compiler-owned primitive (`COMPATIBILITY_CLASSES`, per-class metadata, release-headline precedence + helpers), add an SDLC-side `alsc changelog inspect` command with a structured `CHANGELOG.md` baseline and a `/release-prep` skill, and insert a `uat → changelog → changelog-gate → (changelog-input | done)` lifecycle on the als-factory delamain so every job stages a typed `compatibility_classes` list and a matching `### ALS-XXX` entry under `## [Unreleased]` before reaching `done`.
