@@ -32,6 +32,11 @@ Accepted
 - Rejected: a separate edgerunner-facing dispatcher upgrade command.
 - Rejected: rollback or reverse migration as the normal response to stale dispatcher code.
 
+## Compiler Impact
+
+- No parser, validator, or authored-syntax changes are introduced by this decision.
+- Dispatcher template coverage must assert the `/update` wording for stale-version advisories.
+
 ## Docs and Fixture Impact
 
 - Update dispatcher reference docs and module-integration docs to point to `/update`.
@@ -39,8 +44,17 @@ Accepted
 - Delete the placeholder `skills/upgrade-dispatchers/` bundle once the string sweep and tests pass.
 - Keep SDR-024 untouched as the superseded historical artifact.
 
+## Alternatives Considered
+
+- Amend SDR-024 in place.
+- Rejected because the operator wants SDRs to remain point-in-time records rather than living documents that silently change meaning over time.
+
 ## Non-Goals
 
 - Implementing the future dispatcher refresh orchestration inside `/update`.
 - Changing the numeric dispatcher `VERSION` contract introduced by SDR-024.
 - Changing module version semantics or language migration semantics.
+
+## Supersedes
+
+- `024-delamain-dispatcher-template-version-contract.md`
