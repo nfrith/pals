@@ -78,14 +78,9 @@ ALS uses:
 2. `deprecated`
 3. `removed`
 
-The policy details for minimum runway and release classification live in `als-factory/docs/release-model/update-mechanics/version-policy.md`.
+Current policy requires a construct to remain deprecated for at least two released ALS versions before removal.
 
-Current policy:
-- a construct must remain deprecated for at least two released ALS versions before removal
-- announcing a deprecation is `additive`
-- removing the construct takes the compat class of the actual removal
-
-Those class meanings are defined in [Compatibility Classes](./compatibility-classes.md).
+Compatibility-class treatment for deprecation announcements and removals lives in [Compatibility Classes](./compatibility-classes.md).
 
 ## Non-Goal
 
