@@ -46,11 +46,11 @@ Deprecated-value diagnostics carry a `deprecation` object:
 
 ```json
 {
-  "contract": "synthetic_deprecation_fixture",
-  "value": "synthetic-deprecated",
+  "contract": "<compiler_enum_contract>",
+  "value": "<deprecated-value>",
   "since": "v1.4",
   "removed_in": "v1.6",
-  "replacement": "synthetic-supported"
+  "replacement": "<replacement-value-or-null>"
 }
 ```
 

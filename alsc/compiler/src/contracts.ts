@@ -48,6 +48,13 @@ type EnumValueDeprecationMap<TValues extends EnumContractValues> = Partial<
   Record<TValues[number], EnumValueDeprecation>
 >;
 
+export interface CompilerEnumDeprecationDefinition {
+  values: readonly string[];
+  deprecations: Readonly<Record<string, EnumValueDeprecation | undefined>>;
+}
+
+const COMPILER_ENUM_DEPRECATION_FIXTURES_ENV = "ALS_COMPILER_ENUM_DEPRECATION_FIXTURES_JSON";
+
 export const COMPATIBILITY_CLASS_METADATA = {
   docs_only: {
     description: "Docs or wording changed with no contract or runtime impact.",
@@ -82,31 +89,17 @@ export const COMPATIBILITY_CLASS_DEPRECATIONS = {} as const satisfies EnumValueD
 
 export type CompatibilityClassMetadata = (typeof COMPATIBILITY_CLASS_METADATA)[CompatibilityClass];
 
-const SYNTHETIC_DEPRECATION_FIXTURE_VALUES = [
-  "synthetic-supported",
-  "synthetic-deprecated",
-] as const;
+const COMPILER_ENUM_DEPRECATION_CONTRACTS = new Map<string, CompilerEnumDeprecationDefinition>([
+  [
+    "compatibility_classes",
+    {
+      values: COMPATIBILITY_CLASSES,
+      deprecations: COMPATIBILITY_CLASS_DEPRECATIONS,
+    },
+  ],
+]);
 
-const SYNTHETIC_DEPRECATION_FIXTURE_DEPRECATIONS = {
-  "synthetic-deprecated": {
-    since: "v1.4",
-    removed_in: "v1.6",
-    replacement: "synthetic-supported",
-  },
-} as const satisfies EnumValueDeprecationMap<typeof SYNTHETIC_DEPRECATION_FIXTURE_VALUES>;
-
-const COMPILER_ENUM_DEPRECATION_CONTRACTS = {
-  compatibility_classes: {
-    values: COMPATIBILITY_CLASSES,
-    deprecations: COMPATIBILITY_CLASS_DEPRECATIONS,
-  },
-  synthetic_deprecation_fixture: {
-    values: SYNTHETIC_DEPRECATION_FIXTURE_VALUES,
-    deprecations: SYNTHETIC_DEPRECATION_FIXTURE_DEPRECATIONS,
-  },
-} as const;
-
-export type CompilerEnumDeprecationContract = keyof typeof COMPILER_ENUM_DEPRECATION_CONTRACTS;
+export type CompilerEnumDeprecationContract = string;
 
 export interface CompilerEnumValueDeprecation extends EnumValueDeprecation {
   contract: CompilerEnumDeprecationContract;
@@ -116,6 +109,7 @@ export interface CompilerEnumValueDeprecation extends EnumValueDeprecation {
 const compatibilityClassPrecedence = new Map<CompatibilityClass, number>(
   COMPATIBILITY_CLASS_RELEASE_HEADLINE_ORDER.map((value, index) => [value, index]),
 );
+let compilerEnumDeprecationContractsHydratedFromEnv = false;
 
 function enumContractValuesMatch(left: readonly string[], right: readonly string[]): boolean {
   if (left.length !== right.length) {
@@ -123,6 +117,89 @@ function enumContractValuesMatch(left: readonly string[], right: readonly string
   }
 
   return left.every((value, index) => value === right[index]);
+}
+
+function isEnumValueDeprecationShape(value: unknown): value is EnumValueDeprecation {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return false;
+  }
+
+  const candidate = value as Partial<EnumValueDeprecation>;
+  return typeof candidate.since === "string"
+    && typeof candidate.removed_in === "string"
+    && (typeof candidate.replacement === "string" || candidate.replacement === null);
+}
+
+function isCompilerEnumDeprecationDefinitionShape(
+  value: unknown,
+): value is CompilerEnumDeprecationDefinition {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return false;
+  }
+
+  const candidate = value as Partial<CompilerEnumDeprecationDefinition>;
+  if (!Array.isArray(candidate.values) || !candidate.values.every((entry) => typeof entry === "string")) {
+    return false;
+  }
+
+  if (!candidate.deprecations || typeof candidate.deprecations !== "object" || Array.isArray(candidate.deprecations)) {
+    return false;
+  }
+
+  return Object.values(candidate.deprecations).every(
+    (entry) => entry === undefined || isEnumValueDeprecationShape(entry),
+  );
+}
+
+function hydrateCompilerEnumDeprecationContractsFromEnv(): void {
+  if (compilerEnumDeprecationContractsHydratedFromEnv) {
+    return;
+  }
+
+  compilerEnumDeprecationContractsHydratedFromEnv = true;
+  const serializedDefinitions = process.env[COMPILER_ENUM_DEPRECATION_FIXTURES_ENV];
+  if (!serializedDefinitions) {
+    return;
+  }
+
+  let parsedDefinitions: unknown;
+  try {
+    parsedDefinitions = JSON.parse(serializedDefinitions);
+  } catch {
+    return;
+  }
+
+  if (!parsedDefinitions || typeof parsedDefinitions !== "object" || Array.isArray(parsedDefinitions)) {
+    return;
+  }
+
+  for (const [contract, definition] of Object.entries(parsedDefinitions as Record<string, unknown>)) {
+    if (!isCompilerEnumDeprecationDefinitionShape(definition)) {
+      continue;
+    }
+
+    registerCompilerEnumDeprecationContract(contract, definition);
+  }
+}
+
+// Test fixtures register synthetic contracts through this seam so production source
+// only ships the real compiler-owned registry entries.
+export function registerCompilerEnumDeprecationContract(
+  contract: string,
+  definition: CompilerEnumDeprecationDefinition,
+): void {
+  COMPILER_ENUM_DEPRECATION_CONTRACTS.set(contract, {
+    values: [...definition.values],
+    deprecations: { ...definition.deprecations },
+  });
+}
+
+export function unregisterCompilerEnumDeprecationContract(contract: string): void {
+  if (contract === "compatibility_classes") {
+    return;
+  }
+
+  COMPILER_ENUM_DEPRECATION_CONTRACTS.delete(contract);
 }
 
 export function isSupportedAlsVersion(value: number): value is SupportedAlsVersion {
@@ -158,16 +235,16 @@ export function findCompilerEnumValueDeprecation(
   allowedValues: readonly string[],
   value: string,
 ): CompilerEnumValueDeprecation | null {
-  for (const [contract, definition] of Object.entries(COMPILER_ENUM_DEPRECATION_CONTRACTS) as Array<
-    [CompilerEnumDeprecationContract, (typeof COMPILER_ENUM_DEPRECATION_CONTRACTS)[CompilerEnumDeprecationContract]]
-  >) {
+  hydrateCompilerEnumDeprecationContractsFromEnv();
+
+  for (const [contract, definition] of COMPILER_ENUM_DEPRECATION_CONTRACTS.entries()) {
     if (!enumContractValuesMatch(definition.values, allowedValues)) {
       continue;
     }
 
-    const deprecation = definition.deprecations[value as keyof typeof definition.deprecations];
+    const deprecation = definition.deprecations[value];
     if (!deprecation) {
-      return null;
+      continue;
     }
 
     return {

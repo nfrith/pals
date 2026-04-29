@@ -1,12 +1,31 @@
-import { expect, test } from "bun:test";
+import { afterAll, beforeAll, expect, test } from "bun:test";
+import { randomUUID } from "node:crypto";
+import { existsSync, rmSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { runCli } from "../src/cli.ts";
+import {
+  acquireSyntheticDeprecationFixture,
+  releaseSyntheticDeprecationFixture,
+  SYNTHETIC_DEPRECATION_CONTRACT,
+  SYNTHETIC_DEPRECATION_VALUES,
+  syntheticDeprecationFixtureEnv,
+} from "./helpers/deprecation-fixture.ts";
 import { updateRecord, updateShapeYaml, withFixtureSandbox } from "./helpers/fixture.ts";
 
-const syntheticDeprecationValues = [
-  "synthetic-supported",
-  "synthetic-deprecated",
-] as const;
 const backlogRecordIds = ["ITEM-0001", "ITEM-0002", "ITEM-0003"] as const;
+const compilerRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const alsRepoRoot = resolve(compilerRoot, "../..");
+const postValidateHookPath = resolve(alsRepoRoot, "hooks/als-validate.sh");
+const stopHookPath = resolve(alsRepoRoot, "hooks/als-stop-gate.sh");
+
+beforeAll(() => {
+  acquireSyntheticDeprecationFixture();
+});
+
+afterAll(() => {
+  releaseSyntheticDeprecationFixture();
+});
 
 async function configureSyntheticDeprecationFixture(root: string): Promise<void> {
   await updateShapeYaml(root, "backlog", 1, (shape) => {
@@ -15,7 +34,7 @@ async function configureSyntheticDeprecationFixture(root: string): Promise<void>
     itemFields.warning_status = {
       type: "enum",
       allow_null: true,
-      allowed_values: [...syntheticDeprecationValues],
+      allowed_values: [...SYNTHETIC_DEPRECATION_VALUES],
     };
   });
 
@@ -42,6 +61,31 @@ function captureCli(args: string[]): { exitCode: number; stdout: string; stderr:
     exitCode,
     stdout,
     stderr,
+  };
+}
+
+function runHook(
+  scriptPath: string,
+  payload: unknown,
+  env: Record<string, string> = {},
+): { exitCode: number; stdout: string; stderr: string } {
+  const result = Bun.spawnSync({
+    cmd: ["bash", scriptPath],
+    cwd: alsRepoRoot,
+    env: {
+      ...process.env,
+      ...env,
+      CLAUDE_PLUGIN_ROOT: alsRepoRoot,
+    },
+    stdin: new TextEncoder().encode(JSON.stringify(payload)),
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+
+  return {
+    exitCode: result.exitCode,
+    stdout: new TextDecoder().decode(result.stdout),
+    stderr: new TextDecoder().decode(result.stderr),
   };
 }
 
@@ -112,12 +156,69 @@ test("alsc validate exits zero and reports warn when only deprecations are prese
     expect(warning).toBeDefined();
     expect(warning?.severity).toBe("warning");
     expect(warning?.deprecation).toEqual({
-      contract: "synthetic_deprecation_fixture",
+      contract: SYNTHETIC_DEPRECATION_CONTRACT,
       value: "synthetic-deprecated",
       since: "v1.4",
       removed_in: "v1.6",
       replacement: "synthetic-supported",
     });
+  });
+});
+
+test("als post-edit hook surfaces warn-only context without blocking", async () => {
+  await withFixtureSandbox("cli-hook-post-warn", async ({ root }) => {
+    await configureSyntheticDeprecationFixture(root);
+
+    const process = runHook(postValidateHookPath, {
+      tool_input: {
+        file_path: `${root}/workspace/backlog/items/ITEM-0001.md`,
+      },
+    }, syntheticDeprecationFixtureEnv());
+
+    expect(process.exitCode).toBe(0);
+    expect(process.stderr).toBe("");
+    const output = JSON.parse(process.stdout) as {
+      decision?: string;
+      hookSpecificOutput?: {
+        additionalContext?: string;
+      };
+    };
+    expect(output.decision).toBeUndefined();
+    expect(output.hookSpecificOutput?.additionalContext).toContain("synthetic-deprecated");
+    expect(output.hookSpecificOutput?.additionalContext).toContain("do not block");
+  });
+});
+
+test("als stop hook surfaces a final warn-only reminder without blocking", async () => {
+  await withFixtureSandbox("cli-hook-stop-warn", async ({ root }) => {
+    await configureSyntheticDeprecationFixture(root);
+
+    const sessionId = `als059-${randomUUID()}`;
+    const breadcrumbPath = `/tmp/als-touched-${sessionId}`;
+
+    try {
+      await Bun.write(breadcrumbPath, `${root}:backlog\n`);
+      const process = runHook(stopHookPath, {
+        session_id: sessionId,
+      }, syntheticDeprecationFixtureEnv());
+
+      expect(process.exitCode).toBe(0);
+      expect(process.stderr).toBe("");
+      const output = JSON.parse(process.stdout) as {
+        decision?: string;
+        hookSpecificOutput?: {
+          additionalContext?: string;
+        };
+      };
+      expect(output.decision).toBeUndefined();
+      expect(output.hookSpecificOutput?.additionalContext).toContain("non-blocking warnings");
+      expect(output.hookSpecificOutput?.additionalContext).toContain("synthetic-deprecated");
+      expect(existsSync(breadcrumbPath)).toBe(false);
+    } finally {
+      if (existsSync(breadcrumbPath)) {
+        rmSync(breadcrumbPath, { force: true });
+      }
+    }
   });
 });
 

@@ -1,14 +1,24 @@
-import { expect, test } from "bun:test";
+import { afterAll, beforeAll, expect, test } from "bun:test";
 import { codes } from "../src/diagnostics.ts";
 import { moduleShapeSchema, systemConfigSchema, type VariantEntityShape } from "../src/schema.ts";
 import { resolveEffectiveEntityContract } from "../src/validate.ts";
+import {
+  acquireSyntheticDeprecationFixture,
+  releaseSyntheticDeprecationFixture,
+  SYNTHETIC_DEPRECATION_CONTRACT,
+  SYNTHETIC_DEPRECATION_VALUES,
+} from "./helpers/deprecation-fixture.ts";
 import { updateRecord, updateShapeYaml, validateFixture, withFixtureSandbox } from "./helpers/fixture.ts";
 
-const syntheticDeprecationValues = [
-  "synthetic-supported",
-  "synthetic-deprecated",
-] as const;
 const backlogRecordIds = ["ITEM-0001", "ITEM-0002", "ITEM-0003"] as const;
+
+beforeAll(() => {
+  acquireSyntheticDeprecationFixture();
+});
+
+afterAll(() => {
+  releaseSyntheticDeprecationFixture();
+});
 
 async function configureSyntheticDeprecationFixture(root: string): Promise<void> {
   await updateShapeYaml(root, "backlog", 1, (shape) => {
@@ -17,7 +27,7 @@ async function configureSyntheticDeprecationFixture(root: string): Promise<void>
     itemFields.warning_status = {
       type: "enum",
       allow_null: true,
-      allowed_values: [...syntheticDeprecationValues],
+      allowed_values: [...SYNTHETIC_DEPRECATION_VALUES],
     };
   });
 
@@ -307,7 +317,7 @@ test("deprecated enum values downgrade otherwise-valid records to warn with a st
     expect(warning?.severity).toBe("warning");
     expect(warning?.field).toBe("warning_status");
     expect(warning?.deprecation).toEqual({
-      contract: "synthetic_deprecation_fixture",
+      contract: SYNTHETIC_DEPRECATION_CONTRACT,
       value: "synthetic-deprecated",
       since: "v1.4",
       removed_in: "v1.6",

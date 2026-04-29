@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { afterAll, beforeAll, expect, test } from "bun:test";
 import {
   COMPATIBILITY_CLASSES,
   COMPATIBILITY_CLASS_DEPRECATIONS,
@@ -8,6 +8,20 @@ import {
   highestCompatibilityClass,
   sortCompatibilityClassesByPrecedence,
 } from "../src/contracts.ts";
+import {
+  acquireSyntheticDeprecationFixture,
+  releaseSyntheticDeprecationFixture,
+  SYNTHETIC_DEPRECATION_CONTRACT,
+  SYNTHETIC_DEPRECATION_VALUES,
+} from "./helpers/deprecation-fixture.ts";
+
+beforeAll(() => {
+  acquireSyntheticDeprecationFixture();
+});
+
+afterAll(() => {
+  releaseSyntheticDeprecationFixture();
+});
 
 test("compatibility classes expose the canonical public contract", () => {
   expect(COMPATIBILITY_CLASSES).toEqual([
@@ -50,15 +64,9 @@ test("compatibility precedence collapses lists to the most disruptive class", ()
 test("compiler enum deprecations stay empty for live contracts and resolve for the synthetic fixture", () => {
   expect(COMPATIBILITY_CLASS_DEPRECATIONS).toEqual({});
   expect(findCompilerEnumValueDeprecation(COMPATIBILITY_CLASSES, "additive")).toBeNull();
-  expect(findCompilerEnumValueDeprecation([
-    "synthetic-supported",
-    "synthetic-deprecated",
-  ], "synthetic-supported")).toBeNull();
-  expect(findCompilerEnumValueDeprecation([
-    "synthetic-supported",
-    "synthetic-deprecated",
-  ], "synthetic-deprecated")).toEqual({
-    contract: "synthetic_deprecation_fixture",
+  expect(findCompilerEnumValueDeprecation(SYNTHETIC_DEPRECATION_VALUES, "synthetic-supported")).toBeNull();
+  expect(findCompilerEnumValueDeprecation(SYNTHETIC_DEPRECATION_VALUES, "synthetic-deprecated")).toEqual({
+    contract: SYNTHETIC_DEPRECATION_CONTRACT,
     value: "synthetic-deprecated",
     since: "v1.4",
     removed_in: "v1.6",
