@@ -38,7 +38,7 @@ display_name: null
 primary_email: nick@example.com
 role: Founder
 profiles:
-  - operator
+  - edgerunner
 owns_company: true
 company_name: Example Co
 company_type: llc
@@ -57,7 +57,7 @@ revenue_band: 100k-1M
 | `display_name` | string or null | yes | Optional override |
 | `primary_email` | email string | yes | Trimmed, single-line |
 | `role` | string | yes | Stable free-text role/title |
-| `profiles` | list enum | yes | Any of `operator`, `als_developer`, `als_architect` |
+| `profiles` | list enum | yes | Any of `edgerunner`, `als_developer`, `als_architect` |
 | `owns_company` | boolean | yes | Gates the company fields |
 | `company_name` | string or null | yes | Required when `owns_company: true` |
 | `company_type` | enum or null | yes | `llc`, `sole_prop`, `corp`, `ltd`, `partnership`, `nonprofit`, `other` |

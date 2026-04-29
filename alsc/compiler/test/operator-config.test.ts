@@ -20,7 +20,7 @@ const VALID_OPERATOR_CONFIG: OperatorConfig = {
   display_name: null,
   primary_email: "nick@example.com",
   role: "Founder",
-  profiles: ["operator"],
+  profiles: ["edgerunner"],
   owns_company: true,
   company_name: "Example Co",
   company_type: "llc",
@@ -51,6 +51,20 @@ test("operator config round-trips through markdown serialization and inspection"
   expect(inspection.warnings).toEqual([]);
   expect(inspection.config).toEqual(VALID_OPERATOR_CONFIG);
   expect(inspection.body).toContain("Stable operator context.");
+});
+
+test("operator config inspection rejects the legacy profile literal", () => {
+  const legacyProfile = ["op", "erator"].join("");
+  const inspection = inspectOperatorConfigSource(
+    serializeOperatorConfigDocument({
+      config: VALID_OPERATOR_CONFIG,
+      body: "",
+    }).replace("edgerunner", legacyProfile),
+    "/tmp/operator.md",
+  );
+
+  expect(inspection.status).toBe("fail");
+  expect(inspection.errors).toEqual(expect.arrayContaining([expect.objectContaining({ path: "profiles.0" })]));
 });
 
 test("operator config inspection blocks credential-like values", () => {
@@ -208,7 +222,7 @@ display_name: null
 primary_email: not-an-email
 role: Founder
 profiles:
-  - operator
+  - edgerunner
 owns_company: false
 company_name: null
 company_type: null

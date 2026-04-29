@@ -7,7 +7,7 @@ import { z } from "zod";
 export const OPERATOR_CONFIG_OUTPUT_SCHEMA = "als-operator-config-output@1";
 export const OPERATOR_CONFIG_VERSION = 1;
 
-export const OPERATOR_PROFILES = ["operator", "als_developer", "als_architect"] as const;
+export const OPERATOR_PROFILES = ["edgerunner", "als_developer", "als_architect"] as const;
 export const OPERATOR_COMPANY_TYPES = ["llc", "sole_prop", "corp", "ltd", "partnership", "nonprofit", "other"] as const;
 export const OPERATOR_REVENUE_BANDS = ["<100k", "100k-1M", "1M-10M", "10M+"] as const;
 

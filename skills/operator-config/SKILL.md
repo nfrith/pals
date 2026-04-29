@@ -35,14 +35,14 @@ Interpret the result:
 
 ### Step 2 — Interview for the approved v1 fields
 
-Use normal conversation for free-text fields and AskUserQuestion for bounded choices.
+Use `AskUserQuestion` for every field interaction. For free-text fields, ask one field at a time and rely on the tool's open-input slot. Do not switch to bare conversation or ask for multiple free-text fields in a bullet list.
 
 Always capture:
 - `first_name`
 - `last_name`
 - `display_name` (allow blank/null)
 - `primary_email`
-- `role`
+- `role` — title examples only, such as `founder`, `CEO`, `engineer`, `PM`; never use profile names such as `edgerunner` or `als_architect`
 - `owns_company`
 
 Only when `owns_company` is true, also capture:
@@ -52,9 +52,9 @@ Only when `owns_company` is true, also capture:
 - `revenue_band` — AskUserQuestion with: `100k-1M (Recommended)`, `<100k`, `1M-10M`, `10M+`
 
 `profiles` handling:
-- If the config is missing, do **not** ask. Set `profiles` to `["operator"]`.
+- If the config is missing, do **not** ask. Set `profiles` to `["edgerunner"]`.
 - If the config already exists, show the current profile list and ask whether to keep it or edit it.
-- If the operator wants to edit, allow only: `operator`, `als_developer`, `als_architect`.
+- If the operator wants to edit, allow only: `edgerunner`, `als_developer`, `als_architect`.
 
 Never store secrets here. If the operator offers a token, API key, password, private key, or any other credential, stop and redirect that value to `.env`, 1Password, or the OS keychain instead.
 
@@ -75,7 +75,7 @@ display_name: null
 primary_email: ...
 role: ...
 profiles:
-  - operator
+  - edgerunner
 owns_company: false
 company_name: null
 company_type: null

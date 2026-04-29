@@ -21,17 +21,12 @@ For the `.als/bootup.md` format specification, see [`../docs/references/bootup-c
 ### Step 1 — Check for existing config
 
 ```bash
-if [ -f .als/config.md ] && [ ! -f .als/bootup.md ]; then
-  mv .als/config.md .als/bootup.md
-  echo "CONFIG: migrated"
-elif [ -f .als/bootup.md ]; then
+if [ -f .als/bootup.md ]; then
   echo "CONFIG: exists"
 else
   echo "CONFIG: none"
 fi
 ```
-
-**If config migrated:** Tell the operator the legacy `.als/config.md` was renamed to `.als/bootup.md`, then continue as if the config exists.
 
 **If config exists:** Tell the operator and ask if they want to reconfigure or keep the existing config. If they want to keep it, exit — they should use `/bootup` instead.
 
