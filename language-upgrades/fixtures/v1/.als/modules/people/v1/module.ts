@@ -1,0 +1,95 @@
+import { defineModule } from "../../../authoring.ts";
+
+export const module = defineModule({
+  "dependencies": [],
+  "entities": {
+    "person": {
+      "source_format": "markdown",
+      "path": "persons/{id}.md",
+      "identity": {
+        "id_field": "id"
+      },
+      "fields": {
+        "id": {
+          "type": "id",
+          "allow_null": false
+        },
+        "display_name": {
+          "type": "string",
+          "allow_null": false
+        },
+        "status": {
+          "type": "enum",
+          "allow_null": false,
+          "allowed_values": [
+            "active",
+            "inactive"
+          ]
+        },
+        "tags": {
+          "type": "list",
+          "allow_null": true,
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "body": {
+        "title": {
+          "source": {
+            "kind": "field",
+            "field": "display_name"
+          }
+        },
+        "sections": [
+          {
+            "name": "PROFILE",
+            "allow_null": false,
+            "content": {
+              "mode": "freeform",
+              "blocks": {
+                "paragraph": {}
+              }
+            },
+            "guidance": {
+              "include": "who this person is and the role they play in this workspace",
+              "exclude": "transient task updates"
+            }
+          },
+          {
+            "name": "CONTACT",
+            "allow_null": true,
+            "content": {
+              "mode": "freeform",
+              "blocks": {
+                "paragraph": {},
+                "bullet_list": {},
+                "ordered_list": {}
+              }
+            },
+            "guidance": {
+              "include": "stable contact channels or handles",
+              "exclude": "private credentials or secrets"
+            }
+          },
+          {
+            "name": "NOTES",
+            "allow_null": true,
+            "content": {
+              "mode": "freeform",
+              "blocks": {
+                "paragraph": {}
+              }
+            },
+            "guidance": {
+              "include": "optional context and collaboration notes",
+              "exclude": "authoritative policy statements"
+            }
+          }
+        ]
+      }
+    }
+  }
+} as const);
+
+export default module;

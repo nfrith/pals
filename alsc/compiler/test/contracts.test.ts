@@ -6,6 +6,15 @@ import {
   COMPATIBILITY_CLASS_RELEASE_HEADLINE_ORDER,
   findCompilerEnumValueDeprecation,
   highestCompatibilityClass,
+  LANGUAGE_UPGRADE_CHECK_NAMES,
+  LANGUAGE_UPGRADE_OPERATOR_PROMPT_INTENTS,
+  LANGUAGE_UPGRADE_RECIPE_CATEGORIES,
+  LANGUAGE_UPGRADE_RECIPE_CATEGORY_METADATA,
+  LANGUAGE_UPGRADE_RECIPE_INSPECTION_SCHEMA_LITERAL,
+  LANGUAGE_UPGRADE_RECIPE_SCHEMA_LITERAL,
+  LANGUAGE_UPGRADE_RECIPE_STEP_TYPES,
+  LANGUAGE_UPGRADE_RECIPE_TRIGGERS,
+  LANGUAGE_UPGRADE_RECIPE_VERIFICATION_SCHEMA_LITERAL,
   sortCompatibilityClassesByPrecedence,
 } from "../src/contracts.ts";
 import {
@@ -72,4 +81,41 @@ test("compiler enum deprecations stay empty for live contracts and resolve for t
     removed_in: "v1.6",
     replacement: "synthetic-supported",
   });
+});
+
+test("language-upgrade-recipe literals expose the canonical public contract", () => {
+  expect(LANGUAGE_UPGRADE_RECIPE_SCHEMA_LITERAL).toBe("als-language-upgrade-recipe@1");
+  expect(LANGUAGE_UPGRADE_RECIPE_INSPECTION_SCHEMA_LITERAL).toBe("als-language-upgrade-recipe-inspection@1");
+  expect(LANGUAGE_UPGRADE_RECIPE_VERIFICATION_SCHEMA_LITERAL).toBe("als-language-upgrade-recipe-verification@1");
+  expect(LANGUAGE_UPGRADE_RECIPE_STEP_TYPES).toEqual([
+    "script",
+    "agent-task",
+    "gate",
+    "operator-prompt",
+  ]);
+  expect(LANGUAGE_UPGRADE_RECIPE_CATEGORIES).toEqual([
+    "must-run",
+    "recommended",
+    "optional",
+    "recovery",
+  ]);
+  expect(LANGUAGE_UPGRADE_RECIPE_TRIGGERS).toEqual([
+    "auto",
+    "manual",
+    "on-error",
+  ]);
+  expect(LANGUAGE_UPGRADE_OPERATOR_PROMPT_INTENTS).toEqual([
+    "confirm-live-apply",
+    "acknowledge-future-obligation",
+    "operator-owned-data-choice",
+  ]);
+  expect(LANGUAGE_UPGRADE_CHECK_NAMES).toEqual([
+    "als-version-matches-from",
+    "als-version-matches-to",
+    "validates-as-from-version",
+    "validates-as-to-version",
+  ]);
+  expect(LANGUAGE_UPGRADE_RECIPE_CATEGORY_METADATA["must-run"].default_trigger).toBe("auto");
+  expect(LANGUAGE_UPGRADE_RECIPE_CATEGORY_METADATA.optional.default_trigger).toBe("manual");
+  expect(LANGUAGE_UPGRADE_RECIPE_CATEGORY_METADATA.recovery.default_trigger).toBe("on-error");
 });

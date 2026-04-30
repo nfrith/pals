@@ -3,6 +3,7 @@
 import { resolve } from "node:path";
 import { inspectChangelogFile } from "./changelog.ts";
 import { deployClaudeSkills } from "./claude-skills.ts";
+import { inspectLanguageUpgradeRecipe } from "./language-upgrade-recipe.ts";
 import {
   buildOperatorConfigSessionStartOutput,
   inspectOperatorConfigFile,
@@ -13,6 +14,7 @@ import { validateSystem } from "./validate.ts";
 const MAIN_USAGE = `Usage:
   alsc validate <system-root> [module-id]
   alsc deploy claude [--dry-run] [--require-empty-targets] <system-root> [module-id]
+  alsc upgrade-recipe inspect <recipe-path>
   alsc changelog inspect [als-repo-or-changelog-path]
   alsc operator-config path [system-root-or-cwd]
   alsc operator-config inspect [system-root-or-cwd-or-operator-config-path]
@@ -21,12 +23,14 @@ const MAIN_USAGE = `Usage:
 Commands:
   validate        Validate an ALS system and emit JSON.
   deploy claude   Project active ALS Claude assets into .als/ and .claude/.
+  upgrade-recipe  Inspect language-upgrade-recipe bundles.
   changelog       Inspect ALS CHANGELOG.md structure and staged release entries.
   operator-config Inspect the operator config or render SessionStart output.
 `;
 
 const VALIDATE_USAGE = "Usage: alsc validate <system-root> [module-id]";
 const DEPLOY_USAGE = "Usage: alsc deploy claude [--dry-run] [--require-empty-targets] <system-root> [module-id]";
+const UPGRADE_RECIPE_USAGE = "Usage: alsc upgrade-recipe inspect <recipe-path>";
 const CHANGELOG_USAGE = "Usage: alsc changelog inspect [als-repo-or-changelog-path]";
 const OPERATOR_CONFIG_USAGE = `Usage:
   alsc operator-config path [system-root-or-cwd]
@@ -62,6 +66,10 @@ export function runCli(
     return runDeployCommand(rest, io);
   }
 
+  if (command === "upgrade-recipe") {
+    return runUpgradeRecipeCommand(rest, io);
+  }
+
   if (command === "changelog") {
     return runChangelogCommand(rest, io);
   }
@@ -90,6 +98,28 @@ function runValidateCommand(args: string[], io: CliIo): number {
   const result = validateSystem(systemRoot, moduleId);
   writeStdout(io, JSON.stringify(result, null, 2));
   return result.status === "fail" ? 1 : 0;
+}
+
+function runUpgradeRecipeCommand(args: string[], io: CliIo): number {
+  if (args.length === 0 || (args.length === 1 && isHelpFlag(args[0]))) {
+    writeStdout(io, `${UPGRADE_RECIPE_USAGE}\n`);
+    return args.length === 0 ? 2 : 0;
+  }
+
+  const [subcommand, ...rest] = args;
+  if (subcommand !== "inspect") {
+    writeStderr(io, `${UPGRADE_RECIPE_USAGE}\n`);
+    return 2;
+  }
+
+  if (rest.length !== 1) {
+    writeStderr(io, `${UPGRADE_RECIPE_USAGE}\n`);
+    return 2;
+  }
+
+  const inspection = inspectLanguageUpgradeRecipe(rest[0]);
+  writeStdout(io, JSON.stringify(inspection, null, 2));
+  return inspection.status === "fail" ? 1 : 0;
 }
 
 function runChangelogCommand(args: string[], io: CliIo): number {

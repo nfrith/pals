@@ -1,0 +1,14 @@
+{
+  "name": "@als/upgrade-language",
+  "version": "0.1.0-beta.1",
+  "private": true,
+  "description": "ALS language-upgrade-recipe engine.",
+  "license": "Elastic-2.0",
+  "type": "module",
+  "scripts": {
+    "test": "bun test"
+  },
+  "engines": {
+    "bun": ">=1.3.0"
+  }
+}

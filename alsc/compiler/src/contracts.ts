@@ -3,6 +3,47 @@ export const SUPPORTED_ALS_VERSIONS = [ALS_VERSION_V1] as const;
 
 export const VALIDATION_OUTPUT_SCHEMA_LITERAL = "als-validation-output@1" as const;
 export const DEPLOY_OUTPUT_SCHEMA_LITERAL = "als-claude-deploy-output@4" as const;
+export const LANGUAGE_UPGRADE_RECIPE_SCHEMA_LITERAL = "als-language-upgrade-recipe@1" as const;
+export const LANGUAGE_UPGRADE_RECIPE_INSPECTION_SCHEMA_LITERAL = "als-language-upgrade-recipe-inspection@1" as const;
+export const LANGUAGE_UPGRADE_RECIPE_VERIFICATION_SCHEMA_LITERAL = "als-language-upgrade-recipe-verification@1" as const;
+
+export const LANGUAGE_UPGRADE_RECIPE_STEP_TYPES = [
+  "script",
+  "agent-task",
+  "gate",
+  "operator-prompt",
+] as const;
+
+export const LANGUAGE_UPGRADE_RECIPE_CATEGORIES = [
+  "must-run",
+  "recommended",
+  "optional",
+  "recovery",
+] as const;
+
+export const LANGUAGE_UPGRADE_RECIPE_TRIGGERS = [
+  "auto",
+  "manual",
+  "on-error",
+] as const;
+
+export const LANGUAGE_UPGRADE_GATE_ACCEPT_STATUSES = [
+  "pass",
+  "warn",
+] as const;
+
+export const LANGUAGE_UPGRADE_OPERATOR_PROMPT_INTENTS = [
+  "confirm-live-apply",
+  "acknowledge-future-obligation",
+  "operator-owned-data-choice",
+] as const;
+
+export const LANGUAGE_UPGRADE_CHECK_NAMES = [
+  "als-version-matches-from",
+  "als-version-matches-to",
+  "validates-as-from-version",
+  "validates-as-to-version",
+] as const;
 
 export const COMPATIBILITY_CLASSES = [
   "docs_only",
@@ -36,11 +77,26 @@ export type SupportedAlsVersion = (typeof SUPPORTED_ALS_VERSIONS)[number];
 export type AlsUpgradeMode = typeof ALS_UPGRADE_MODE;
 export type AlsUpgradeAssistance = typeof ALS_UPGRADE_ASSISTANCE;
 export type CompatibilityClass = (typeof COMPATIBILITY_CLASSES)[number];
+export type LanguageUpgradeRecipeSchemaLiteral = typeof LANGUAGE_UPGRADE_RECIPE_SCHEMA_LITERAL;
+export type LanguageUpgradeRecipeInspectionSchemaLiteral = typeof LANGUAGE_UPGRADE_RECIPE_INSPECTION_SCHEMA_LITERAL;
+export type LanguageUpgradeRecipeVerificationSchemaLiteral = typeof LANGUAGE_UPGRADE_RECIPE_VERIFICATION_SCHEMA_LITERAL;
+export type LanguageUpgradeRecipeStepType = (typeof LANGUAGE_UPGRADE_RECIPE_STEP_TYPES)[number];
+export type LanguageUpgradeRecipeCategory = (typeof LANGUAGE_UPGRADE_RECIPE_CATEGORIES)[number];
+export type LanguageUpgradeRecipeTrigger = (typeof LANGUAGE_UPGRADE_RECIPE_TRIGGERS)[number];
+export type LanguageUpgradeGateAcceptStatus = (typeof LANGUAGE_UPGRADE_GATE_ACCEPT_STATUSES)[number];
+export type LanguageUpgradeOperatorPromptIntent = (typeof LANGUAGE_UPGRADE_OPERATOR_PROMPT_INTENTS)[number];
+export type LanguageUpgradeCheckName = (typeof LANGUAGE_UPGRADE_CHECK_NAMES)[number];
 
 interface CompatibilityClassMetadataShape {
   description: string;
   operator_action_required: boolean;
   release_headline_precedence: number;
+}
+
+interface LanguageUpgradeRecipeCategoryMetadataShape {
+  description: string;
+  default_trigger: LanguageUpgradeRecipeTrigger;
+  operator_decision: "required" | "default_opt_out" | "default_opt_in" | "failure_only";
 }
 
 type EnumContractValues = readonly string[];
@@ -88,6 +144,32 @@ export const COMPATIBILITY_CLASS_DEPRECATIONS = {} as const satisfies EnumValueD
 >;
 
 export type CompatibilityClassMetadata = (typeof COMPATIBILITY_CLASS_METADATA)[CompatibilityClass];
+
+export const LANGUAGE_UPGRADE_RECIPE_CATEGORY_METADATA = {
+  "must-run": {
+    description: "Always execute unless an earlier hard failure halts the journey.",
+    default_trigger: "auto",
+    operator_decision: "required",
+  },
+  recommended: {
+    description: "Execute by default, but allow an explicit operator opt-out.",
+    default_trigger: "auto",
+    operator_decision: "default_opt_out",
+  },
+  optional: {
+    description: "Skip by default and run only through an explicit operator opt-in.",
+    default_trigger: "manual",
+    operator_decision: "default_opt_in",
+  },
+  recovery: {
+    description: "Run only after a declared earlier step failure.",
+    default_trigger: "on-error",
+    operator_decision: "failure_only",
+  },
+} as const satisfies Record<LanguageUpgradeRecipeCategory, LanguageUpgradeRecipeCategoryMetadataShape>;
+
+export type LanguageUpgradeRecipeCategoryMetadata =
+  (typeof LANGUAGE_UPGRADE_RECIPE_CATEGORY_METADATA)[LanguageUpgradeRecipeCategory];
 
 const COMPILER_ENUM_DEPRECATION_CONTRACTS = new Map<string, CompilerEnumDeprecationDefinition>([
   [
@@ -208,6 +290,36 @@ export function isSupportedAlsVersion(value: number): value is SupportedAlsVersi
 
 export function isCompatibilityClass(value: string): value is CompatibilityClass {
   return COMPATIBILITY_CLASSES.includes(value as CompatibilityClass);
+}
+
+export function isLanguageUpgradeRecipeStepType(value: string): value is LanguageUpgradeRecipeStepType {
+  return LANGUAGE_UPGRADE_RECIPE_STEP_TYPES.includes(value as LanguageUpgradeRecipeStepType);
+}
+
+export function isLanguageUpgradeRecipeCategory(value: string): value is LanguageUpgradeRecipeCategory {
+  return LANGUAGE_UPGRADE_RECIPE_CATEGORIES.includes(value as LanguageUpgradeRecipeCategory);
+}
+
+export function isLanguageUpgradeRecipeTrigger(value: string): value is LanguageUpgradeRecipeTrigger {
+  return LANGUAGE_UPGRADE_RECIPE_TRIGGERS.includes(value as LanguageUpgradeRecipeTrigger);
+}
+
+export function isLanguageUpgradeGateAcceptStatus(value: string): value is LanguageUpgradeGateAcceptStatus {
+  return LANGUAGE_UPGRADE_GATE_ACCEPT_STATUSES.includes(value as LanguageUpgradeGateAcceptStatus);
+}
+
+export function isLanguageUpgradeOperatorPromptIntent(value: string): value is LanguageUpgradeOperatorPromptIntent {
+  return LANGUAGE_UPGRADE_OPERATOR_PROMPT_INTENTS.includes(value as LanguageUpgradeOperatorPromptIntent);
+}
+
+export function isLanguageUpgradeCheckName(value: string): value is LanguageUpgradeCheckName {
+  return LANGUAGE_UPGRADE_CHECK_NAMES.includes(value as LanguageUpgradeCheckName);
+}
+
+export function defaultLanguageUpgradeTriggerForCategory(
+  category: LanguageUpgradeRecipeCategory,
+): LanguageUpgradeRecipeTrigger {
+  return LANGUAGE_UPGRADE_RECIPE_CATEGORY_METADATA[category].default_trigger;
 }
 
 export function compareCompatibilityClassesByPrecedence(

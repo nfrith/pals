@@ -1,4 +1,16 @@
-import type { AlsUpgradeAssistance, AlsUpgradeMode } from "./contracts.ts";
+import type {
+  AlsUpgradeAssistance,
+  AlsUpgradeMode,
+  LanguageUpgradeCheckName,
+  LanguageUpgradeGateAcceptStatus,
+  LanguageUpgradeOperatorPromptIntent,
+  LanguageUpgradeRecipeCategory,
+  LanguageUpgradeRecipeInspectionSchemaLiteral,
+  LanguageUpgradeRecipeSchemaLiteral,
+  LanguageUpgradeRecipeStepType,
+  LanguageUpgradeRecipeTrigger,
+  LanguageUpgradeRecipeVerificationSchemaLiteral,
+} from "./contracts.ts";
 
 export type DiagnosticSeverity = "error" | "warning";
 
@@ -160,5 +172,120 @@ export interface ClaudeSkillDeployOutput {
   existing_delamain_targets: ClaudeDelamainProjectionCollision[];
   delamain_name_conflicts: ClaudeDelamainNameConflict[];
   warnings: ClaudeSkillDeployWarning[];
+  error: string | null;
+}
+
+export interface LanguageUpgradeRecipeVersionRef {
+  als_version: number;
+}
+
+export interface LanguageUpgradeRecipeRecoveryContract {
+  step_ids: string[];
+  error_codes: string[];
+}
+
+export interface LanguageUpgradeRecipeStepBase {
+  id: string;
+  title: string;
+  type: LanguageUpgradeRecipeStepType;
+  category: LanguageUpgradeRecipeCategory;
+  depends_on: string[];
+  preconditions: LanguageUpgradeCheckName[];
+  postconditions: LanguageUpgradeCheckName[];
+  trigger: LanguageUpgradeRecipeTrigger;
+  recovers?: LanguageUpgradeRecipeRecoveryContract;
+}
+
+export interface LanguageUpgradeRecipeScriptStep extends LanguageUpgradeRecipeStepBase {
+  type: "script";
+  path: string;
+  args: string[];
+}
+
+export interface LanguageUpgradeRecipeAgentTaskStep extends LanguageUpgradeRecipeStepBase {
+  type: "agent-task";
+  path: string;
+}
+
+export interface LanguageUpgradeRecipeGateStep extends LanguageUpgradeRecipeStepBase {
+  type: "gate";
+  path: string;
+  provides: LanguageUpgradeCheckName[];
+  accept_statuses: LanguageUpgradeGateAcceptStatus[];
+}
+
+export interface LanguageUpgradeRecipeOperatorPromptStep extends LanguageUpgradeRecipeStepBase {
+  type: "operator-prompt";
+  path: string;
+  intent: LanguageUpgradeOperatorPromptIntent;
+}
+
+export type LanguageUpgradeRecipeStep =
+  | LanguageUpgradeRecipeScriptStep
+  | LanguageUpgradeRecipeAgentTaskStep
+  | LanguageUpgradeRecipeGateStep
+  | LanguageUpgradeRecipeOperatorPromptStep;
+
+export interface LanguageUpgradeRecipe {
+  schema: LanguageUpgradeRecipeSchemaLiteral;
+  from: LanguageUpgradeRecipeVersionRef;
+  to: LanguageUpgradeRecipeVersionRef;
+  summary: string;
+  steps: LanguageUpgradeRecipeStep[];
+}
+
+export interface LanguageUpgradeRecipeInspectionIssue {
+  code: string;
+  path: string;
+  message: string;
+  expected: unknown;
+  actual: unknown;
+}
+
+export interface LanguageUpgradeRecipeInspectionOutput {
+  schema: LanguageUpgradeRecipeInspectionSchemaLiteral;
+  status: "pass" | "fail";
+  recipe_path: string;
+  bundle_root: string;
+  exists: boolean;
+  errors: LanguageUpgradeRecipeInspectionIssue[];
+  warnings: LanguageUpgradeRecipeInspectionIssue[];
+  recipe: LanguageUpgradeRecipe | null;
+  step_count: number;
+}
+
+export type LanguageUpgradeRecipeVerificationStepStatus =
+  | "completed"
+  | "failed"
+  | "skipped"
+  | "paused"
+  | "recovered";
+
+export interface LanguageUpgradeRecipeVerificationStepResult {
+  hop_id: string;
+  step_id: string;
+  status: LanguageUpgradeRecipeVerificationStepStatus;
+  attempt_count: number;
+  error_code: string | null;
+  diagnostic: string | null;
+}
+
+export interface LanguageUpgradeRecipeVerificationMismatch {
+  type: "missing" | "unexpected" | "content_mismatch";
+  path: string;
+  expected: string | null;
+  actual: string | null;
+}
+
+export interface LanguageUpgradeRecipeVerificationOutput {
+  schema: LanguageUpgradeRecipeVerificationSchemaLiteral;
+  status: "pass" | "fail";
+  generated_at: string;
+  recipe_path: string;
+  from_fixture_path: string;
+  expected_fixture_path: string;
+  actual_fixture_path: string;
+  mismatches: LanguageUpgradeRecipeVerificationMismatch[];
+  step_results: LanguageUpgradeRecipeVerificationStepResult[];
   error: string | null;
 }
