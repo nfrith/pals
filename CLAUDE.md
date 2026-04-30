@@ -2,35 +2,9 @@
 
 ALS is a strict specification language for defining personal agent systems. It is based on the creator's (Nicholas Frith) experience working with personal agent systems going back to mid-2025.
 
-## The Cyborg Stack
+## Vocabulary
 
-ALS is the **Language layer** of the cyborg stack — the spec for building personal agent systems. Above it sit:
-
-- **Forge** — where a maker builds and evolves their cyborg (their dev environment + reference instance)
-- **Product** — what end users adopt (each maker brands their own)
-- **Bond** — the personal lived relationship between an end user and their instance
-
-ALS is one Language. Many Forges, Products, and Bonds exist on top of it. This document covers the Language layer; Forge / Product / Bond layers are maker-specific.
-
-## Profiles
-
-All profiles are end users of ALS. The distinction is in what they do with the system, not in their status. Every profile — including Claude — is a user whose experience matters.
-
-### Edgerunner
-
-End user. Uses a Claude harness (Claude Code, Cowork) on a project that happens to be an ALS system. May not be technical. May never invoke ALS skills directly — they interact with the system through skills that were built for them. Their most common ALS touchpoint is `/run-delamains` to start their pipelines.
-
-### ALS Developer
-
-End user. Builds ALS systems for operators. Knows the spec. Uses `/install`, `/new`, `/change`, `/migrate` to create and evolve modules. May package and distribute modules for operators to install.
-
-### ALS Architect
-
-End user. Alters the language itself. Architects the spec, writes SDRs, evolves the compiler, defines new language constructs. Currently: Nicholas Frith.
-
-### Claude
-
-End user. Present with all of the above. Enables each profile to do whatever they aim to do — from answering edgerunner questions to authoring modules to implementing spec changes.
+Canonical glossary lives at [`skills/docs/references/vocabulary.md`](skills/docs/references/vocabulary.md). All term definitions — cyborg stack, profiles, core abstractions, constructs, versioning axes — live there. This file does not redefine them.
 
 ## Project Status
 
