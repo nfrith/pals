@@ -72,7 +72,7 @@ Before reading module contents in detail, resolve the real system and baseline.
 5. Run whole-system validation against the live system before doing any authoring.
 
 ```bash
-bun ${CLAUDE_PLUGIN_ROOT}/alsc/compiler/src/index.ts <system-root>
+bun ${CLAUDE_PLUGIN_ROOT}/alsc/compiler/src/index.ts validate <system-root>
 ```
 
 6. If the live system fails validation, stop. `change` does not author a new version on top of a broken baseline.

@@ -10,7 +10,7 @@ test.concurrent("merged reference fixture validates clean", async () => {
   await withFixtureSandbox("fixture-smoke", async ({ root }) => {
     const baseline = validateFixture(root);
     const process = Bun.spawnSync({
-      cmd: ["bun", "src/index.ts", root],
+      cmd: ["bun", "src/index.ts", "validate", root],
       cwd: compilerRoot,
       stdout: "pipe",
       stderr: "pipe",
@@ -87,7 +87,7 @@ test.concurrent("filtered experiments validation remains trustworthy across depe
 test.concurrent("filtered CLI output includes module filter metadata", async () => {
   await withFixtureSandbox("fixture-filtered-cli", async ({ root }) => {
     const process = Bun.spawnSync({
-      cmd: ["bun", "src/index.ts", root, "backlog"],
+      cmd: ["bun", "src/index.ts", "validate", root, "backlog"],
       cwd: compilerRoot,
       stdout: "pipe",
       stderr: "pipe",

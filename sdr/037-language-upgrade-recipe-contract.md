@@ -228,7 +228,7 @@ steps:
 
 ## Docs and Fixture Impact
 
-- Add `language-upgrades/README.md` to explain the bundle layout, retained fixture rules, runtime-only mutation enforcement, and the difference between recipe assets and runner-owned follow-up phases.
+- Add `language-upgrades/CLAUDE.md` to explain the bundle layout, retained fixture rules, runtime-only mutation enforcement, and the difference between recipe assets and runner-owned follow-up phases.
 - Add `skills/docs/references/language-upgrades.md` as the human-readable reference surface for the `language-upgrade-recipe` contract and upgrade flow. That reference should cite this SDR for semantics instead of restating them independently.
 - Seed `language-upgrades/fixtures/v1/` from the authored `reference-system` surface: `.als/` plus retained mounted module roots, excluding `.claude/`.
 - In the fixture-first planning pass, paint both allowed and rejected `operator-prompt` examples, named-check usage, runtime-only `.als/` enforcement, and AskUserQuestion-mediated prompt flow before implementation begins.

@@ -77,7 +77,7 @@ fi
 
 # --- Run compiler ---
 # Capture exit code explicitly — set -e must not kill us on validation failure
-output=$(bun "$COMPILER/src/index.ts" "$system_root" "$module_id" 2>&1) && exit_code=0 || exit_code=$?
+output=$(bun "$COMPILER/src/index.ts" validate "$system_root" "$module_id" 2>&1) && exit_code=0 || exit_code=$?
 
 render_warning_context() {
   jq -r --arg module_id "$module_id" '

@@ -7,7 +7,7 @@
   "type": "module",
   "scripts": {
     "cli": "bun src/cli.ts",
-    "validate": "bun src/index.ts",
+    "validate": "bun src/index.ts validate",
     "deploy:claude": "bun src/deploy.ts",
     "test": "bun test",
     "test:parallel": "bun test --concurrent --max-concurrency=20",

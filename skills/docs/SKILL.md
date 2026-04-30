@@ -21,6 +21,54 @@ Read this when:
 - Understanding field types, body regions, or naming rules
 - Validating record frontmatter or body structure
 
+### Vocabulary
+
+[`references/vocabulary.md`](references/vocabulary.md)
+
+Canonical glossary for ALS terminology: profiles, authored abstractions, constructs, versioning axes, and the `language-upgrade-recipe` contract surface. Other docs should point here instead of re-defining shared terms.
+
+Read this when:
+- Clarifying ALS terms before editing docs or prompts
+- Checking the authored-vs-plugin boundary
+- Reasoning about version axes or language upgrades
+- Linking to canonical definitions instead of inventing local wording
+
+### Compatibility Classes
+
+[`references/compatibility-classes.md`](references/compatibility-classes.md)
+
+The five release-compatibility classes ALS uses in jobs and changelog entries, plus the precedence rule for release headlines and the deprecation interaction policy.
+
+Read this when:
+- Classifying a job or changelog entry
+- Explaining what `refresh_required` or `migration_required` means
+- Choosing the release headline for multiple compatibility classes
+- Checking how deprecations map onto compatibility classes
+
+### Deprecation and Warnings
+
+[`references/deprecation-and-warnings.md`](references/deprecation-and-warnings.md)
+
+The compiler-owned deprecation lifecycle, warn-only validation behavior, and the machine-readable diagnostic payload surfaced when authored values are deprecated but still supported.
+
+Read this when:
+- Adding or reviewing deprecation metadata
+- Explaining why validation returned `status: "warn"`
+- Checking the warning payload contract for hooks or tooling
+- Confirming the non-blocking warning behavior in ALS validation flows
+
+### Platforms
+
+[`references/platforms.md`](references/platforms.md)
+
+The canonical mapping between ALS platform codes and Claude runtime entrypoints. This is the source of truth for platform-aware skill behavior.
+
+Read this when:
+- Branching on `$CLAUDE_CODE_ENTRYPOINT`
+- Referencing `ALS-PLAT-XXXX` codes in docs or skills
+- Checking current platform support status
+- Avoiding ad hoc platform detection logic
+
 ### Skill Decomposition Patterns
 
 `references/skill-patterns.md`
@@ -55,6 +103,18 @@ Read this when:
 - Implementing provider-specific dispatch behavior
 - Understanding how the dispatcher injects runtime context
 - Debugging agent behavior or dispatch failures
+
+### Delamain Console Patterns
+
+[`references/delamain-console-patterns.md`](references/delamain-console-patterns.md)
+
+Reference pattern for operator console skills that derive actions from a delamain's state graph instead of hard-coding per-state menus. Covers dependencies, review flows, the attention queue, and platform-aware presentation.
+
+Read this when:
+- Building or refactoring a delamain console skill
+- Designing operator-state review and response flows
+- Mapping transitions into universal console actions
+- Choosing a platform-aware review pattern
 
 ### Delamain Dispatcher
 
@@ -102,6 +162,18 @@ Read this when:
 - Understanding how `/bootup` determines dispatcher launch behavior
 - Creating or modifying `.als/bootup.md`
 - Designing custom boot configurations for different environments
+
+### Language Upgrades
+
+[`references/language-upgrades.md`](references/language-upgrades.md)
+
+Human-readable reference for whole-system `als_version` cutovers via `language-upgrade-recipe` bundles and the `/upgrade-language` flow. Summarizes the authored surface, runtime constraints, and what remains out of scope.
+
+Read this when:
+- Authoring or reviewing a `language-upgrade-recipe`
+- Understanding how `/upgrade-language` plans and executes hops
+- Checking the `.als/`-only mutation boundary for language upgrades
+- Looking for the reference doc that points back to SDR 037
 
 ### Operator Configuration
 

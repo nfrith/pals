@@ -20,7 +20,7 @@ bun src/cli.ts deploy claude <system-root>
 bun src/cli.ts deploy claude --dry-run --require-empty-targets <system-root> <module-id>
 ```
 
-When invoked through the plugin, skills call these via `bun ${CLAUDE_PLUGIN_ROOT}/alsc/compiler/src/index.ts`.
+When invoked through the plugin, skills call validation via `bun ${CLAUDE_PLUGIN_ROOT}/alsc/compiler/src/index.ts validate <system-root> [module-id]`.
 
 ## Current Contract
 

@@ -2,4 +2,4 @@
 
 import { runCli } from "./cli.ts";
 
-process.exitCode = runCli(["validate", ...process.argv.slice(2)]);
+process.exitCode = runCli(process.argv.slice(2));

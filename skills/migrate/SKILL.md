@@ -72,7 +72,7 @@ Use `report-template.md` as the contract for `vN+1/migrations/REPORT.md`.
 7. Run whole-system validation against the live system before doing any migration work.
 
 ```bash
-bun ${CLAUDE_PLUGIN_ROOT}/alsc/compiler/src/index.ts <system-root>
+bun ${CLAUDE_PLUGIN_ROOT}/alsc/compiler/src/index.ts validate <system-root>
 ```
 
 8. If the live system fails validation, stop. `migrate` does not cut over on top of a broken baseline.

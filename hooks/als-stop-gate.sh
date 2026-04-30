@@ -110,10 +110,10 @@ for pair in $entries; do
   system_root="${pair%%:*}"
   module_id="${pair#*:}"
   if [[ "$module_id" == "__system__" ]]; then
-    output=$(bun "$COMPILER/src/index.ts" "$system_root" 2>&1) && rc=0 || rc=$?
+    output=$(bun "$COMPILER/src/index.ts" validate "$system_root" 2>&1) && rc=0 || rc=$?
     target_label="system ${system_root}"
   else
-    output=$(bun "$COMPILER/src/index.ts" "$system_root" "$module_id" 2>&1) && rc=0 || rc=$?
+    output=$(bun "$COMPILER/src/index.ts" validate "$system_root" "$module_id" 2>&1) && rc=0 || rc=$?
     target_label="module ${module_id} in ${system_root}"
   fi
 

@@ -8,7 +8,7 @@ The canonical contract lives in [SDR 037](../sdr/037-language-upgrade-recipe-con
 
 ```text
 language-upgrades/
-  README.md
+  CLAUDE.md
   recipes/
     v1-to-v2/
       recipe.yaml
@@ -57,7 +57,7 @@ Rules:
 - `agent-tasks/` contains markdown prompts for agent work.
 - `operator-prompts/` contains markdown content surfaced by `/upgrade-language` through AskUserQuestion.
 
-Step semantics, allowed intents, recovery rules, and the exact validation contract are defined in [SDR 037](../sdr/037-language-upgrade-recipe-contract.md), not in this README.
+Step semantics, allowed intents, recovery rules, and the exact validation contract are defined in [SDR 037](../sdr/037-language-upgrade-recipe-contract.md), not in this CLAUDE.md.
 
 ## Boundaries
 
