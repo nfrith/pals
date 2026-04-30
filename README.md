@@ -45,20 +45,20 @@ ALS is distributed as a Claude Code plugin. Requires [Bun](https://bun.sh) >= 1.
 
 ALS uses a **two-channel release model**:
 
-- **Stable channel** (`als-marketplace-stable`) — recommended for everyone. Source: [`nfrith/als-marketplace-stable`](https://github.com/nfrith/als-marketplace-stable). Receives versions only after RC validation passes.
+- **Stable channel** (`als-marketplace-stable`) — recommended for everyone. Source: [`nfrith/als-stable`](https://github.com/nfrith/als-stable). Receives versions only after RC validation passes.
 - **RC channel** (`als-marketplace`) — for the maintainer's pre-release testing only. Source: this repo. Versions land here first to be validated before advancing to stable.
 
 ### Option A: From the terminal (stable channel — recommended)
 
 ```bash
-claude plugin marketplace add https://github.com/nfrith/als-marketplace-stable
+claude plugin marketplace add https://github.com/nfrith/als-stable
 claude plugin install als@als-marketplace-stable
 ```
 
 ### Option B: From inside Claude Code Desktop (stable channel — recommended)
 
 1. Open Customize → Plugins → Add plugin → Add marketplace
-2. Enter `nfrith/als-marketplace-stable` as the marketplace source
+2. Enter `https://github.com/nfrith/als-stable` as the marketplace source
 3. From the Plugins Directory, find **ALS** and click **Install**
 4. Type `/install` to bootstrap your first ALS system
 

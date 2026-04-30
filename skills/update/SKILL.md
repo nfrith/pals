@@ -9,7 +9,7 @@ allowed-tools: AskUserQuestion, Bash, Read
 Move the installed ALS plugin from whatever version the operator is currently on to whatever is published as the latest in the marketplace it was installed from. ALS supports two release channels:
 
 - **`als-marketplace`** (RC channel) — what architects install for pre-release testing. Source: `nfrith/als` repo at default ref (`main`).
-- **`als-marketplace-stable`** (stable channel) — what edgerunners install for production use. Source: `nfrith/als-marketplace-stable`, a thin catalog repo that points at `nfrith/als` at ref `stable`.
+- **`als-marketplace-stable`** (stable channel) — what edgerunners install for production use. Source: `https://github.com/nfrith/als-stable`, a thin catalog repo that points at `nfrith/als` at ref `stable`.
 
 This skill detects which channel the operator is on (via `${CLAUDE_PLUGIN_ROOT}`) and updates within that channel. It does not switch channels — channel switching is a separate operator-driven action (uninstall + reinstall from the other marketplace).
 
