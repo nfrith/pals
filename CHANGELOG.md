@@ -4,6 +4,8 @@ For pre-2026-04-29 release history, see git tags.
 
 ## [Unreleased]
 
+## 0.2.0 - 2026-04-30
+
 ### ALS-057
 - Compatibility: breaking_without_path, refresh_required
 - Summary: Tighten the operator-config interview to require `AskUserQuestion` for every field (free-text fields use the open-input slot), hard-reject the legacy `operator` profile in favor of the canonical `edgerunner` (the `OPERATOR_PROFILES` enum becomes `["edgerunner", "als_developer", "als_architect"]` with no alias-rewrite), separate role examples from profile names, and remove the dead `.als/config.md` → `.als/bootup.md` rename plumbing from `/init`, `/bootup`, and the bootup-config reference.
