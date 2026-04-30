@@ -49,10 +49,28 @@ echo "Marketplace: $MARKETPLACE"
 KEY="als@$MARKETPLACE"
 echo "Lookup key: $KEY"
 
-jq -r --arg k "$KEY" '.plugins[$k][0]' ~/.claude/plugins/installed_plugins.json
+MATCHES=$(jq -c --arg k "$KEY" --arg cwd "$PWD" '
+  (.plugins[$k] // [])
+  | map(select(.scope == "user" or .projectPath == $cwd))
+' ~/.claude/plugins/installed_plugins.json)
+MATCH_COUNT=$(jq 'length' <<<"$MATCHES")
+
+if [ "$MATCH_COUNT" -eq 0 ]; then
+  echo "The running ALS install has no installed_plugins.json record — likely a --plugin-dir development load — and /update doesn't apply."
+  exit 1
+fi
+
+if [ "$MATCH_COUNT" -gt 1 ]; then
+  echo "Multiple installed_plugins.json records matched key=$KEY cwd=$PWD. Refusing to guess."
+  jq '.' <<<"$MATCHES"
+  exit 1
+fi
+
+ACTIVE=$(jq '.[0]' <<<"$MATCHES")
+jq '.' <<<"$ACTIVE"
 ```
 
-The full jq read returns the entire entry (version, scope, installPath, gitCommitSha, installedAt, lastUpdated, projectPath if project-scope).
+The jq read must select the active record for this session: user-scope records match unconditionally; project-scope records only match when `projectPath == $PWD`. The final `ACTIVE` object is the full installed entry (version, scope, installPath, gitCommitSha, installedAt, lastUpdated, `projectPath` if project-scope).
 
 **Surface:**
 - `CLAUDE_PLUGIN_ROOT: <full path>` — proves which cache the running skill came from
@@ -62,7 +80,7 @@ The full jq read returns the entire entry (version, scope, installPath, gitCommi
 - The full installed-plugin entry as JSON (operator can verify gitCommitSha, install timestamps, etc.)
 - One-line summary: `Installed: <version> (<scope> scope, <channel> channel)`
 
-If the key isn't present in `installed_plugins.json`: explain that the running ALS install has no `installed_plugins.json` record — likely a `--plugin-dir` development load — and `/update` doesn't apply. Stop.
+If the filtered read returns zero matches: explain that the running ALS install has no `installed_plugins.json` record — likely a `--plugin-dir` development load — and `/update` doesn't apply. Stop. If it returns more than one match: surface the full candidate array and stop.
 
 ## Phase 3: Refresh the marketplace clone, read latest
 
@@ -96,7 +114,24 @@ curl -sL "https://raw.githubusercontent.com/$REPO/$SOURCE_REF/.claude-plugin/plu
 ## Phase 4: Apply the update
 
 ```bash
-SCOPE=$(jq -r --arg k "$KEY" '.plugins[$k][0].scope' ~/.claude/plugins/installed_plugins.json)
+MATCHES=$(jq -c --arg k "$KEY" --arg cwd "$PWD" '
+  (.plugins[$k] // [])
+  | map(select(.scope == "user" or .projectPath == $cwd))
+' ~/.claude/plugins/installed_plugins.json)
+MATCH_COUNT=$(jq 'length' <<<"$MATCHES")
+
+if [ "$MATCH_COUNT" -eq 0 ]; then
+  echo "The running ALS install has no installed_plugins.json record — likely a --plugin-dir development load — and /update doesn't apply."
+  exit 1
+fi
+
+if [ "$MATCH_COUNT" -gt 1 ]; then
+  echo "Multiple installed_plugins.json records matched key=$KEY cwd=$PWD. Refusing to guess."
+  jq '.' <<<"$MATCHES"
+  exit 1
+fi
+
+SCOPE=$(jq -r '.[0].scope' <<<"$MATCHES")
 claude plugin update "$KEY" --scope "$SCOPE" 2>&1
 ```
 
@@ -112,7 +147,25 @@ If the command fails: stop and report. Suggest manual fallback — opening a sep
 ## Phase 5: Verify the new version landed
 
 ```bash
-jq -r --arg k "$KEY" '.plugins[$k][0]' ~/.claude/plugins/installed_plugins.json
+MATCHES=$(jq -c --arg k "$KEY" --arg cwd "$PWD" '
+  (.plugins[$k] // [])
+  | map(select(.scope == "user" or .projectPath == $cwd))
+' ~/.claude/plugins/installed_plugins.json)
+MATCH_COUNT=$(jq 'length' <<<"$MATCHES")
+
+if [ "$MATCH_COUNT" -eq 0 ]; then
+  echo "The running ALS install has no installed_plugins.json record — likely a --plugin-dir development load — and /update doesn't apply."
+  exit 1
+fi
+
+if [ "$MATCH_COUNT" -gt 1 ]; then
+  echo "Multiple installed_plugins.json records matched key=$KEY cwd=$PWD. Refusing to guess."
+  jq '.' <<<"$MATCHES"
+  exit 1
+fi
+
+ACTIVE=$(jq '.[0]' <<<"$MATCHES")
+jq '.' <<<"$ACTIVE"
 ```
 
 Read the full entry again — version, gitCommitSha, lastUpdated should all reflect the new state.
