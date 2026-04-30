@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed
+Accepted
 
 ## Context
 
@@ -11,7 +11,7 @@ Proposed
 - The operator selected Shape 2 as the first landing, but also required Shape 2's primitives to remain a deliberate subset of a future Delamain fold-in so the eventual "upgrade ALS using ALS" step is notation-only work instead of a rewrite.
 - Plan-input for ALS-066 settled the remaining architectural guardrails that the first draft SDR left open: full artifact naming, fail-closed authored-schema versioning, independent machine-readable output versioning, `.als/`-only mutation, registry-backed deterministic pre/postconditions, narrow operator-prompt intent rules, and explicit exclusion of construct/module upgrades from this job.
 - Pass-2 fixture review approved the bundle layout, the operator-prompt intent enum, and the negative counterexamples, but rejected authored `writes:` declarations as the way to enforce `.als/`-only mutation. The operator also asked this SDR to make three points explicit: operator-prompt `intent` is engine-owned while prompt markdown content is recipe-authored, operator-prompt steps are surfaced through `/upgrade-language` via AskUserQuestion, and enforcement must be split clearly between authored validation, runtime validation, and policy review.
-- This pass updates the Proposed SDR so the next fixture review can focus on the revised authored surface instead of reopening already-settled semantics.
+- This pass finalizes the contract after fixture review, records the accepted authored surface, and locks the remaining semantics for implementation.
 
 ## Decision
 
