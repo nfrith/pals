@@ -4,6 +4,12 @@ For pre-2026-04-29 release history, see git tags.
 
 ## [Unreleased]
 
+### ALS-060
+- Compatibility: refresh_required
+- Summary: Rewrite `/install` Phase 2 platform detection to read `$CLAUDE_CODE_ENTRYPOINT` deterministically and map through the canonical `skills/docs/references/platforms.md` table, dropping the natural-language inference branches that previously fell through to an `AskUserQuestion` popup with technical platform codes (`ALS-PLAT-CDSK` / `ALS-PLAT-CCLI`) on normal Claude Code Desktop and CLI sessions. The new procedure short-circuits to a one-line `ALS-PLAT-XXXX` acknowledgement when the env var matches any row of `platforms.md`; only when the value is unset or unrecognized does the skill surface a single plain-language `AskUserQuestion` ("Where are you running this install?") with a neutral free-text option, then maps the operator's answer forgivingly across platform-name, entrypoint-string, bare-code, and full-code forms; unmappable answers halt with a structured diagnostic instead of inventing a code or silently defaulting. The companion `skills/install/SKILL.md` Phase 2 bullet is tightened to reference the matching `ALS-PLAT-XXXX` row generically and to forbid technical-code choices in the fallback. Canonical `platforms.md`, every other skill's platform-detection surface, and the existing `ALS-PLAT-XXXX` code set are unchanged.
+- Operator action: rerun `alsc deploy claude` (or the equivalent install/refresh) to pick up the rewritten `/install` Phase 2 platform-detection reference and the tightened `skills/install/SKILL.md` Phase 2 wording. No data migration required; no compiler or schema changes.
+- Affected surfaces: `nfrith-repos/als/skills/install/references/platform-detection.md`, `nfrith-repos/als/skills/install/SKILL.md`
+
 ## 0.2.0 - 2026-04-30
 
 ### ALS-057
