@@ -1,10 +1,8 @@
 import { spawnSync } from "node:child_process";
-import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import {
   LANGUAGE_UPGRADE_RECIPE_SCHEMA_LITERAL,
   type LanguageUpgradeCheckName,
-  type LanguageUpgradeOperatorPromptIntent,
 } from "../../compiler/src/contracts.ts";
 import type {
   LanguageUpgradeRecipeAgentTaskStep,
@@ -15,11 +13,11 @@ import type {
 } from "../../compiler/src/types.ts";
 import { runLanguageUpgradeCheck, type LanguageUpgradeSystemInspection } from "./checks/index.ts";
 import type { PlannedLanguageUpgradeHop } from "./plan-chain.ts";
+import type { LanguageUpgradeSelectionOptions } from "./preflight.ts";
 import {
   createLanguageUpgradeRuntimeState,
   readLanguageUpgradeRuntimeState,
   resolveLanguageUpgradeRuntimeStatePath,
-  type LanguageUpgradePendingOperatorPrompt,
   type LanguageUpgradeRuntimeHopRecord,
   type LanguageUpgradeRuntimeState,
   type LanguageUpgradeRuntimeStepRecord,
@@ -48,21 +46,17 @@ export interface LanguageUpgradeRunnerServices {
   execute_agent_task?(
     input: LanguageUpgradeStepExecutionInput<LanguageUpgradeRecipeAgentTaskStep>,
   ): Promise<LanguageUpgradeExecutionResult> | LanguageUpgradeExecutionResult;
-  read_text_file?(filePath: string): Promise<string> | string;
   list_mutated_paths?(systemRoot: string): Promise<string[]> | string[];
 }
 
-export interface LanguageUpgradeRunOptions {
+export interface LanguageUpgradeExecuteOptions extends LanguageUpgradeSelectionOptions {
   state_path?: string;
-  enabled_optional_step_ids?: string[];
-  skipped_recommended_step_ids?: string[];
   operator_responses?: Record<string, string>;
 }
 
-export interface LanguageUpgradeRunResult {
-  status: "completed" | "failed" | "paused";
+export interface LanguageUpgradeExecuteResult {
+  status: "completed" | "failed";
   state: LanguageUpgradeRuntimeState;
-  pending_operator_prompt: LanguageUpgradePendingOperatorPrompt | null;
   error_code: string | null;
   diagnostic: string | null;
 }
@@ -77,19 +71,20 @@ export interface LanguageUpgradeStepExecutionInput<TStep extends LanguageUpgrade
 interface RunnerContext {
   hops: PlannedLanguageUpgradeHop[];
   services: Required<LanguageUpgradeRunnerServices>;
-  options: Required<LanguageUpgradeRunOptions>;
+  options: Required<Omit<LanguageUpgradeExecuteOptions, "state_path">>;
   state_path: string;
   inspection_cache: LanguageUpgradeSystemInspection | null;
 }
 
-export async function runLanguageUpgradeChain(input: {
+export async function executeLanguageUpgradeChain(input: {
   system_root: string;
   hops: PlannedLanguageUpgradeHop[];
   target_als_version: number;
   services: LanguageUpgradeRunnerServices;
-  options?: LanguageUpgradeRunOptions;
-}): Promise<LanguageUpgradeRunResult> {
+  options?: LanguageUpgradeExecuteOptions;
+}): Promise<LanguageUpgradeExecuteResult> {
   validateSupportedRecipeSchemas(input.hops);
+  validateExecutablePromptContract(input.hops);
 
   const statePath = input.options?.state_path ?? resolveLanguageUpgradeRuntimeStatePath(input.system_root);
   const existingState = await readLanguageUpgradeRuntimeState(statePath);
@@ -103,7 +98,6 @@ export async function runLanguageUpgradeChain(input: {
     hops: input.hops,
     services: withDefaultServices(input.services),
     options: {
-      state_path: statePath,
       enabled_optional_step_ids: [...(input.options?.enabled_optional_step_ids ?? [])],
       skipped_recommended_step_ids: [...(input.options?.skipped_recommended_step_ids ?? [])],
       operator_responses: { ...(input.options?.operator_responses ?? {}) },
@@ -111,11 +105,6 @@ export async function runLanguageUpgradeChain(input: {
     state_path: statePath,
     inspection_cache: null,
   };
-
-  const resumed = await resumePendingOperatorPrompt(state, context);
-  if (resumed.status !== "continue") {
-    return resumed.result;
-  }
 
   for (let hopIndex = state.current_hop_index; hopIndex < context.hops.length; hopIndex += 1) {
     const hopPlan = context.hops[hopIndex]!;
@@ -169,7 +158,7 @@ export async function runLanguageUpgradeChain(input: {
         }
 
         const execution = await executeStep(step, hopPlan, hopState, state, context);
-        if (execution.status === "paused" || execution.status === "failed") {
+        if (execution.status === "failed") {
           return execution.result;
         }
         if (execution.status === "progress") {
@@ -180,13 +169,12 @@ export async function runLanguageUpgradeChain(input: {
       if (!progress) {
         hopState.status = "failed";
         await checkpoint(state, context.state_path);
-        return {
-          status: "failed",
-          state,
-          pending_operator_prompt: state.pending_operator_prompt,
-          error_code: "execution_blocked",
-          diagnostic: `No executable step remained in ${hopState.hop_id}. Check dependency wiring and optional-step policy.`,
-        };
+      return {
+        status: "failed",
+        state,
+        error_code: "execution_blocked",
+        diagnostic: `No executable step remained in ${hopState.hop_id}. Check dependency wiring and optional-step policy.`,
+      };
       }
     }
   }
@@ -195,7 +183,6 @@ export async function runLanguageUpgradeChain(input: {
   return {
     status: "completed",
     state,
-    pending_operator_prompt: null,
     error_code: null,
     diagnostic: null,
   };
@@ -211,59 +198,6 @@ function validateSupportedRecipeSchemas(hops: PlannedLanguageUpgradeHop[]): void
   }
 }
 
-async function resumePendingOperatorPrompt(
-  state: LanguageUpgradeRuntimeState,
-  context: RunnerContext,
-): Promise<
-  | { status: "continue" }
-  | { status: "paused" | "failed"; result: LanguageUpgradeRunResult }
-> {
-  if (!state.pending_operator_prompt) {
-    return { status: "continue" };
-  }
-
-  const response = context.options.operator_responses[state.pending_operator_prompt.step_id];
-  if (!response) {
-    return {
-      status: "paused",
-      result: {
-        status: "paused",
-        state,
-        pending_operator_prompt: state.pending_operator_prompt,
-        error_code: null,
-        diagnostic: null,
-      },
-    };
-  }
-
-  const hopState = state.hops.find((entry) => entry.hop_id === state.pending_operator_prompt?.hop_id);
-  if (!hopState) {
-    return {
-      status: "failed",
-      result: {
-        status: "failed",
-        state,
-        pending_operator_prompt: state.pending_operator_prompt,
-        error_code: "prompt_resume_failed",
-        diagnostic: `Pending operator prompt hop '${state.pending_operator_prompt.hop_id}' was not found in checkpoint state.`,
-      },
-    };
-  }
-
-  const stepRecord = findStepRecord(hopState, state.pending_operator_prompt.step_id);
-  stepRecord.status = "completed";
-  stepRecord.completed_at = new Date().toISOString();
-  stepRecord.operator_response = response;
-  state.pending_operator_prompt = null;
-  appendTelemetry(state, createTelemetryEvent("operator_prompt_resumed", {
-    hop_id: hopState.hop_id,
-    step_id: stepRecord.step_id,
-    message: "Operator prompt resumed with an explicit answer.",
-  }));
-  await checkpoint(state, context.state_path);
-  return { status: "continue" };
-}
-
 async function executeStep(
   step: LanguageUpgradeRecipeStep,
   hopPlan: PlannedLanguageUpgradeHop,
@@ -272,8 +206,7 @@ async function executeStep(
   context: RunnerContext,
 ): Promise<
   | { status: "progress" }
-  | { status: "paused"; result: LanguageUpgradeRunResult }
-  | { status: "failed"; result: LanguageUpgradeRunResult }
+  | { status: "failed"; result: LanguageUpgradeExecuteResult }
 > {
   const stepRecord = findStepRecord(hopState, step.id);
   const now = new Date().toISOString();
@@ -303,32 +236,11 @@ async function executeStep(
   if (step.type === "operator-prompt") {
     const response = context.options.operator_responses[step.id];
     if (!response) {
-      const markdown = await context.services.read_text_file(resolve(hopPlan.bundle_root, step.path));
-      state.pending_operator_prompt = {
-        hop_id: hopState.hop_id,
-        step_id: step.id,
-        intent: step.intent,
-        prompt_path: step.path,
-        markdown,
-      };
-      hopState.status = "paused";
-      stepRecord.status = "paused";
-      appendTelemetry(state, createTelemetryEvent("operator_prompt_paused", {
-        hop_id: hopState.hop_id,
-        step_id: step.id,
-        message: `Waiting for operator response (${step.intent}).`,
-      }));
-      await checkpoint(state, context.state_path);
-      return {
-        status: "paused",
-        result: {
-          status: "paused",
-          state,
-          pending_operator_prompt: state.pending_operator_prompt,
-          error_code: null,
-          diagnostic: null,
-        },
-      };
+      return handleFailedStep(step, hopPlan, hopState, state, context, {
+        success: false,
+        error_code: "operator_response_missing",
+        diagnostic: `Missing operator response for '${step.id}' in ${hopPlan.hop_id}.`,
+      });
     }
 
     stepRecord.status = "completed";
@@ -409,8 +321,7 @@ async function handleFailedStep(
   execution: LanguageUpgradeExecutionResult,
 ): Promise<
   | { status: "progress" }
-  | { status: "failed"; result: LanguageUpgradeRunResult }
-  | { status: "paused"; result: LanguageUpgradeRunResult }
+  | { status: "failed"; result: LanguageUpgradeExecuteResult }
 > {
   const stepRecord = findStepRecord(hopState, step.id);
   stepRecord.status = "failed";
@@ -443,7 +354,6 @@ async function handleFailedStep(
       result: {
         status: "failed",
         state,
-        pending_operator_prompt: state.pending_operator_prompt,
         error_code: stepRecord.error_code,
         diagnostic: stepRecord.diagnostic,
       },
@@ -466,7 +376,6 @@ async function handleFailedStep(
         result: {
           status: "failed",
           state,
-          pending_operator_prompt: state.pending_operator_prompt,
           error_code: "recovery_blocked",
           diagnostic: `Recovery step '${recoveryStep.id}' is not dependency-ready.`,
         },
@@ -474,7 +383,7 @@ async function handleFailedStep(
     }
 
     const recoveryExecution = await executeStep(recoveryStep, hopPlan, hopState, state, context);
-    if (recoveryExecution.status === "paused" || recoveryExecution.status === "failed") {
+    if (recoveryExecution.status === "failed") {
       return recoveryExecution;
     }
   }
@@ -555,7 +464,7 @@ function dependenciesSatisfied(
 
 function shouldSkipStep(
   step: LanguageUpgradeRecipeStep,
-  options: Required<LanguageUpgradeRunOptions>,
+  options: Required<Omit<LanguageUpgradeExecuteOptions, "state_path">>,
 ): boolean {
   if (step.category === "optional") {
     return !options.enabled_optional_step_ids.includes(step.id);
@@ -676,13 +585,8 @@ function withDefaultServices(
     execute_script: services.execute_script ?? defaultExecuteScript,
     execute_gate: services.execute_gate ?? defaultExecuteGate,
     execute_agent_task: services.execute_agent_task ?? defaultExecuteAgentTask,
-    read_text_file: services.read_text_file ?? defaultReadTextFile,
     list_mutated_paths: services.list_mutated_paths ?? defaultListMutatedPaths,
   };
-}
-
-function defaultReadTextFile(filePath: string): Promise<string> {
-  return readFile(filePath, "utf-8");
 }
 
 function defaultExecuteScript(
@@ -765,4 +669,16 @@ function defaultListMutatedPaths(systemRoot: string): string[] {
     .map((entry) => entry.trimEnd())
     .filter((entry) => entry.length > 0)
     .map((entry) => entry.slice(3));
+}
+
+function validateExecutablePromptContract(hops: PlannedLanguageUpgradeHop[]): void {
+  for (const hop of hops) {
+    for (const step of hop.recipe.steps) {
+      if (step.type === "operator-prompt" && step.category === "recovery") {
+        throw new Error(
+          `Language upgrade hop '${hop.hop_id}' step '${step.id}' may not use operator-prompt with category 'recovery'.`,
+        );
+      }
+    }
+  }
 }

@@ -6,7 +6,8 @@ import { tmpdir } from "node:os";
 import { LANGUAGE_UPGRADE_RECIPE_SCHEMA_LITERAL } from "../../compiler/src/contracts.ts";
 import type { LanguageUpgradeRecipe } from "../../compiler/src/types.ts";
 import { buildHopId, planLanguageUpgradeChain, type PlannedLanguageUpgradeHop } from "../src/plan-chain.ts";
-import { runLanguageUpgradeChain } from "../src/runner.ts";
+import { preflightLanguageUpgradeChain } from "../src/preflight.ts";
+import { executeLanguageUpgradeChain } from "../src/runner.ts";
 import { readLanguageUpgradeRuntimeState } from "../src/runtime-state.ts";
 import { verifyLanguageUpgradeRecipe } from "../src/verify.ts";
 
@@ -133,8 +134,8 @@ test("planLanguageUpgradeChain builds a transparent multi-hop journey", () => {
   expect(plan.hops.map((hop) => hop.hop_id)).toEqual(["v1-to-v2", "v2-to-v3"]);
 });
 
-test("runner checkpoints a paused operator-prompt and resumes from state", async () => {
-  await withUpgradeHarness("pause-resume", {
+test("preflight surfaces operator prompts and execute consumes answers silently", async () => {
+  await withUpgradeHarness("preflight-execute", {
     bundle_files: {
       "scripts/rewrite.sh": "#!/usr/bin/env bash\nprintf '2\\n' > .als/version.txt\n",
       "operator-prompts/confirm.md": "# Confirm\n\nApply the v2 changes to `.als/` now?\n",
@@ -168,7 +169,15 @@ test("runner checkpoints a paused operator-prompt and resumes from state", async
     ]);
     const hop = createHop(bundle_root, recipe);
 
-    const firstRun = await runLanguageUpgradeChain({
+    const preflight = await preflightLanguageUpgradeChain({
+      current_als_version: 1,
+      target_als_version: 2,
+      hops: [hop],
+    });
+    expect(preflight.prompts.map((prompt) => prompt.step_id)).toEqual(["confirm-live-apply"]);
+    expect((await readFile(join(system_root, ".als", "version.txt"), "utf-8")).trim()).toBe("1");
+
+    const missingAnswer = await executeLanguageUpgradeChain({
       system_root,
       hops: [hop],
       target_als_version: 2,
@@ -177,14 +186,14 @@ test("runner checkpoints a paused operator-prompt and resumes from state", async
         state_path,
       },
     });
-    expect(firstRun.status).toBe("paused");
-    expect(firstRun.pending_operator_prompt?.step_id).toBe("confirm-live-apply");
+    expect(missingAnswer.status).toBe("failed");
+    expect(missingAnswer.error_code).toBe("operator_response_missing");
     expect((await readFile(join(system_root, ".als", "version.txt"), "utf-8")).trim()).toBe("2");
 
     const persisted = await readLanguageUpgradeRuntimeState(state_path);
-    expect(persisted?.pending_operator_prompt?.step_id).toBe("confirm-live-apply");
+    expect(persisted?.hops[0]?.steps.map((step) => step.status)).toEqual(["completed", "failed"]);
 
-    const resumedRun = await runLanguageUpgradeChain({
+    const resumedRun = await executeLanguageUpgradeChain({
       system_root,
       hops: [hop],
       target_als_version: 2,
@@ -253,7 +262,7 @@ test("runner dispatches declared recovery steps and continues the hop", async ()
     ]);
     const hop = createHop(bundle_root, recipe);
 
-    const result = await runLanguageUpgradeChain({
+    const result = await executeLanguageUpgradeChain({
       system_root,
       hops: [hop],
       target_als_version: 2,
@@ -291,7 +300,7 @@ test("runner fails closed when a mutating step writes outside .als/", async () =
     ]);
     const hop = createHop(bundle_root, recipe);
 
-    const result = await runLanguageUpgradeChain({
+    const result = await executeLanguageUpgradeChain({
       system_root,
       hops: [hop],
       target_als_version: 2,
@@ -340,7 +349,7 @@ test("runner applies recommended defaults and skips optional steps by default", 
     ]);
     const hop = createHop(bundle_root, recipe);
 
-    const result = await runLanguageUpgradeChain({
+    const result = await executeLanguageUpgradeChain({
       system_root,
       hops: [hop],
       target_als_version: 2,
@@ -364,7 +373,7 @@ test("runner fails closed on unsupported recipe schemas", async () => {
     } as LanguageUpgradeRecipe;
     const hop = createHop(bundle_root, recipe);
 
-    await expect(runLanguageUpgradeChain({
+    await expect(executeLanguageUpgradeChain({
       system_root,
       hops: [hop],
       target_als_version: 2,

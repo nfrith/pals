@@ -2,7 +2,6 @@ import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import type {
   LanguageUpgradeCheckName,
-  LanguageUpgradeOperatorPromptIntent,
   LanguageUpgradeRecipeCategory,
   LanguageUpgradeRecipeStepType,
 } from "../../compiler/src/contracts.ts";
@@ -15,8 +14,7 @@ export type LanguageUpgradeRuntimeHopStatus =
   | "pending"
   | "running"
   | "completed"
-  | "failed"
-  | "paused";
+  | "failed";
 
 export type LanguageUpgradeRuntimeStepStatus =
   | "pending"
@@ -24,7 +22,6 @@ export type LanguageUpgradeRuntimeStepStatus =
   | "completed"
   | "failed"
   | "skipped"
-  | "paused"
   | "recovered";
 
 export interface LanguageUpgradeRuntimeStepRecord {
@@ -53,14 +50,6 @@ export interface LanguageUpgradeRuntimeHopRecord {
   steps: LanguageUpgradeRuntimeStepRecord[];
 }
 
-export interface LanguageUpgradePendingOperatorPrompt {
-  hop_id: string;
-  step_id: string;
-  intent: LanguageUpgradeOperatorPromptIntent;
-  prompt_path: string;
-  markdown: string;
-}
-
 export interface LanguageUpgradeRuntimeState {
   schema: typeof LANGUAGE_UPGRADE_RUNTIME_STATE_SCHEMA;
   system_root: string;
@@ -68,7 +57,6 @@ export interface LanguageUpgradeRuntimeState {
   current_hop_index: number;
   hops: LanguageUpgradeRuntimeHopRecord[];
   satisfied_checks: LanguageUpgradeCheckName[];
-  pending_operator_prompt: LanguageUpgradePendingOperatorPrompt | null;
   telemetry: LanguageUpgradeTelemetryEvent[];
   updated_at: string;
 }
@@ -111,7 +99,6 @@ export function createLanguageUpgradeRuntimeState(input: {
       })),
     })),
     satisfied_checks: [],
-    pending_operator_prompt: null,
     telemetry: [],
     updated_at: new Date().toISOString(),
   };
@@ -168,7 +155,6 @@ function normalizeLanguageUpgradeRuntimeState(
     satisfied_checks: Array.isArray(input.satisfied_checks)
       ? input.satisfied_checks.filter((entry): entry is LanguageUpgradeCheckName => typeof entry === "string")
       : [],
-    pending_operator_prompt: normalizePendingPrompt(input.pending_operator_prompt),
     telemetry: Array.isArray(input.telemetry)
       ? input.telemetry.filter((entry): entry is LanguageUpgradeTelemetryEvent => !!entry && typeof entry === "object")
       : [],
@@ -210,37 +196,11 @@ function normalizeStepRecord(input: unknown): LanguageUpgradeRuntimeStepRecord {
   };
 }
 
-function normalizePendingPrompt(input: unknown): LanguageUpgradePendingOperatorPrompt | null {
-  if (!input || typeof input !== "object") {
-    return null;
-  }
-
-  const value = input as Partial<LanguageUpgradePendingOperatorPrompt>;
-  if (
-    typeof value.hop_id !== "string"
-    || typeof value.step_id !== "string"
-    || typeof value.intent !== "string"
-    || typeof value.prompt_path !== "string"
-    || typeof value.markdown !== "string"
-  ) {
-    return null;
-  }
-
-  return {
-    hop_id: value.hop_id,
-    step_id: value.step_id,
-    intent: value.intent as LanguageUpgradeOperatorPromptIntent,
-    prompt_path: value.prompt_path,
-    markdown: value.markdown,
-  };
-}
-
 function normalizeHopStatus(value: unknown): LanguageUpgradeRuntimeHopStatus {
   switch (value) {
     case "running":
     case "completed":
     case "failed":
-    case "paused":
       return value;
     default:
       return "pending";
@@ -253,7 +213,6 @@ function normalizeStepStatus(value: unknown): LanguageUpgradeRuntimeStepStatus {
     case "completed":
     case "failed":
     case "skipped":
-    case "paused":
     case "recovered":
       return value;
     default:
