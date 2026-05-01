@@ -177,39 +177,21 @@ Read the full entry again — version, gitCommitSha, lastUpdated should all refl
 
 ## Phase 6: Upgrade runtime surfaces
 
-After the plugin update is verified, run the post-install upgrade phases in this order:
+After the plugin update is verified, hand off runtime follow-through to the transaction wrapper defined in [SDR 039](../../sdr/039-update-transaction-wrapper-contract.md).
 
-1. **Language-upgrade check**
-   Run `/upgrade-language` if the new plugin version exposes a required language-upgrade hop. Use its current single-phase ALS-066 flow as-is; do not try to fold it into the construct boundary in this skill text.
+The wrapper owns:
 
-2. **Construct preflight pass**
-   Run these skills in preflight mode, even if you suspect nothing changed:
-   - `/upgrade-delamain`
-   - `/upgrade-statusline`
-   - `/upgrade-dashboard`
+- language-upgrade preflight plus execute
+- construct preflight plus execute for `/upgrade-delamain`, `/upgrade-statusline`, and `/upgrade-dashboard`
+- the single batched operator gate
+- the shared staging worktree
+- `alsc validate` plus real `alsc deploy claude` inside staging
+- the one-commit writeback
+- sequential post-commit action-manifest execution
 
-3. **Operator gate**
-   Batch every construct prompt gathered in preflight into one AskUserQuestion round. If any dispatcher answers `Cancel` or any customization prompt answers `Abort`, stop the whole post-install upgrade flow before execute.
+See [SDR 039](../../sdr/039-update-transaction-wrapper-contract.md) for the full `/update` transaction contract and [SDR 038](../../sdr/038-construct-upgrade-engine-contract.md) for construct-upgrade semantics. Do not restate or special-case that orchestration here.
 
-4. **Shared staging worktree**
-   Create one staging worktree for the transaction and pass that same path into every construct execute call.
-
-5. **Construct execute pass**
-   Run the same three construct skills in execute mode. Each must:
-   - write only into the provided staging worktree
-   - return its own `als-construct-action-manifest@1`
-   - return validation metadata for the whole-worktree phase
-
-6. **Whole-worktree validation**
-   Validate the staged authored system, refresh projected `.claude/` outputs inside the same staged tree, and fail closed if any construct result, validation check, or projection step is invalid.
-
-7. **Commit and lifecycle**
-   Commit or copy back the staged worktree in one shot. Only after that succeeds may `/update` concatenate the construct action manifests in this order and run them sequentially:
-   - `/upgrade-delamain`
-   - `/upgrade-statusline`
-   - `/upgrade-dashboard`
-
-See [SDR 038](../../sdr/038-construct-upgrade-engine-contract.md) for the construct-upgrade contract. Do not restate those semantics here.
+Known v1 gap: if statusline data goes stale after a successful run, the operator may still need `/bootup` or `/reboot` until pulse becomes a construct participant.
 
 ## Phase 7: Final report
 

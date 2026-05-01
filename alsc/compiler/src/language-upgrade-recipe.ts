@@ -334,6 +334,16 @@ function parseSteps(
       ));
     }
 
+    if (rawStep.type === "operator-prompt" && rawStep.category === "recovery") {
+      errors.push(issue(
+        "step.operator_prompt.recovery_forbidden",
+        `${stepPath}.category`,
+        "Operator-prompt steps may not use category 'recovery'. All operator prompts must be discoverable during preflight.",
+        "must-run | recommended | optional",
+        rawStep.category,
+      ));
+    }
+
     const pathInspection = inspectAssetPath(rawStep.path, bundleRoot, expectedAssetDirectory(rawStep.type), `${stepPath}.path`, errors);
     if (!pathInspection.relative_path) {
       continue;

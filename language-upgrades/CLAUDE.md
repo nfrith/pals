@@ -2,7 +2,7 @@
 
 Language upgrades are hop-specific `language-upgrade-recipe` bundles that move a system from one `als_version` to the next.
 
-The canonical contract lives in [SDR 037](../sdr/037-language-upgrade-recipe-contract.md). This doc is the directory-level guide: where the assets live, how they are organized, and which boundaries are load-bearing.
+The canonical recipe contract lives in [SDR 037](../sdr/037-language-upgrade-recipe-contract.md). The two-phase runtime contract that `/update` consumes lives in [SDR 039](../sdr/039-update-transaction-wrapper-contract.md). This doc is the directory-level guide: where the assets live, how they are organized, and which boundaries are load-bearing.
 
 ## Layout
 
@@ -32,16 +32,17 @@ Rules:
 - One bundle per hop. A `v1-to-v2` bundle describes exactly one `als_version` cutover.
 - `recipe.yaml` uses the authored schema literal `als-language-upgrade-recipe@N`.
 - Asset `path` fields resolve relative to the hop bundle and must stay inside that bundle.
-- `operator-prompts/*.md` files hold the operator-facing content for AskUserQuestion prompts fired by `/upgrade-language`.
+- `operator-prompts/*.md` files hold the operator-facing content surfaced during preflight before execute begins.
 
 ## Execution Model
 
 - `alsc upgrade-recipe inspect <recipe-path>` validates authored bundle shape.
-- `/upgrade-language` computes multi-hop chains and executes one hop bundle at a time.
+- `/upgrade-language` computes multi-hop chains, discovers all operator prompts during preflight, and executes one hop bundle at a time with a pre-collected answer map.
 - Mutating `script` and `agent-task` steps run inside a disposable clone or worktree.
 - Post-step `git diff` is the authoritative mutation set.
 - Any changed path outside `<system_root>/.als/` fails closed in dry-run and live execution.
-- `.claude/` refresh is runner-owned follow-up machinery, not recipe-authored state.
+- `operator-prompt` steps in `category: "recovery"` are rejected; all operator prompts must be discoverable before execute starts.
+- Bundled-surface refresh belongs to the SDR 039 transaction wrapper when `/update` is the caller. It is not recipe-authored state.
 
 ## Fixtures
 
@@ -55,9 +56,9 @@ Rules:
 - `scripts/` contains deterministic transforms.
 - `gates/` contains deterministic validation executables.
 - `agent-tasks/` contains markdown prompts for agent work.
-- `operator-prompts/` contains markdown content surfaced by `/upgrade-language` through AskUserQuestion.
+- `operator-prompts/` contains markdown content surfaced before execute through AskUserQuestion.
 
-Step semantics, allowed intents, recovery rules, and the exact validation contract are defined in [SDR 037](../sdr/037-language-upgrade-recipe-contract.md), not in this CLAUDE.md.
+Step semantics, allowed intents, recovery rules, and the exact validation contract are defined in [SDR 037](../sdr/037-language-upgrade-recipe-contract.md) and [SDR 039](../sdr/039-update-transaction-wrapper-contract.md), not in this CLAUDE.md.
 
 ## Boundaries
 

@@ -258,7 +258,6 @@ export type LanguageUpgradeRecipeVerificationStepStatus =
   | "completed"
   | "failed"
   | "skipped"
-  | "paused"
   | "recovered";
 
 export interface LanguageUpgradeRecipeVerificationStepResult {

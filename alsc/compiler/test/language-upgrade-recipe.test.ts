@@ -148,3 +148,29 @@ test("inspection rejects forbidden operator-prompt content and invalid trigger d
     expect(inspection.errors.some((entry) => entry.code === "operator_prompt.forbidden_architecture_choice")).toBe(true);
   });
 });
+
+test("inspection rejects recovery-category operator-prompt steps", async () => {
+  const fixtureInput = createValidLanguageUpgradeRecipeFixtureInput();
+  const recipe = structuredClone(fixtureInput.recipe) as {
+    steps: Array<Record<string, unknown>>;
+  };
+  recipe.steps[2] = {
+    ...recipe.steps[2],
+    category: "recovery",
+    trigger: "on-error",
+    recovers: {
+      step_ids: ["rewrite-als"],
+      error_codes: ["script_failed"],
+    },
+  };
+
+  await withLanguageUpgradeRecipeFixture("upgrade-recipe-recovery-prompt-fail", {
+    ...fixtureInput,
+    recipe,
+  }, ({ root }) => {
+    const inspection = inspectLanguageUpgradeRecipe(root);
+
+    expect(inspection.status).toBe("fail");
+    expect(inspection.errors.some((entry) => entry.code === "step.operator_prompt.recovery_forbidden")).toBe(true);
+  });
+});

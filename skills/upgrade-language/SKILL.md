@@ -16,8 +16,9 @@ Before mutating anything, read:
 - `../docs/references/language-upgrades.md`
 - `../validate/SKILL.md`
 - `../../sdr/037-language-upgrade-recipe-contract.md`
+- `../../sdr/039-update-transaction-wrapper-contract.md`
 
-Use SDR 037 as the normative contract. The reference doc is the human-readable guide.
+Use SDR 037 for the recipe contract and SDR 039 for the two-phase runtime contract. The reference doc is the human-readable guide.
 
 ## Prerequisites
 
@@ -66,6 +67,7 @@ bun ${CLAUDE_PLUGIN_ROOT}/alsc/compiler/src/cli.ts upgrade-recipe inspect <recip
    - recommended and optional steps
    - that recipe mutation is confined to `.als/`
    - that rollback is not supported
+7. Gather every `operator-prompt` answer before execute begins. Execute must not stop for a mid-run AskUserQuestion.
 
 If any hop fails inspection, stop. Do not run a partial or uninspected chain.
 
@@ -79,23 +81,22 @@ Honor these rules exactly:
 - `recommended` steps run unless the operator explicitly opts out.
 - `optional` steps run only on explicit opt-in.
 - `recovery` steps run only after their declared failure trigger.
-- `operator-prompt` steps pause the run and surface the referenced markdown through AskUserQuestion.
+- `operator-prompt` steps are discovered during preflight and consume pre-collected answers during execute.
+- `operator-prompt` steps in `category: "recovery"` are invalid and must fail closed.
 - Mutating `script` and `agent-task` steps may change only `<system_root>/.als/`.
 - The post-step mutation set is enforced through git diff / status inspection in the disposable execution workspace.
 
-## Live Run
+## Execute
 
 1. Require explicit live approval before the first mutating hop.
-2. Execute the chain hop by hop.
+2. Surface every `operator-prompt` markdown asset through AskUserQuestion before execute starts.
+3. Execute the chain hop by hop with the pre-collected answer map.
 3. At each hop boundary, report:
    - hop id
    - step results
    - any skipped recommended or optional steps
    - any recovery steps triggered
-4. If an `operator-prompt` step fires:
-   - surface its markdown content with AskUserQuestion
-   - wait for an explicit answer
-   - resume from the checkpoint state
+4. If execute reaches an `operator-prompt` step without a pre-collected answer, fail closed.
 5. If a step fails with no declared recovery path, halt and report the failure. Do not invent one.
 
 ## After A Successful Chain
@@ -106,13 +107,8 @@ Honor these rules exactly:
 bun ${CLAUDE_PLUGIN_ROOT}/alsc/compiler/src/cli.ts validate <system-root>
 ```
 
-2. If the projection contract changed, refresh generated Claude assets as runner-owned follow-up work.
-
-```bash
-bun ${CLAUDE_PLUGIN_ROOT}/alsc/compiler/src/cli.ts deploy claude <system-root>
-```
-
-3. Report the final per-hop outcome, the final `als_version`, and any future obligations acknowledged during `operator-prompt` steps.
+2. Report the final per-hop outcome, the final `als_version`, and any future obligations acknowledged during `operator-prompt` steps.
+3. If `/upgrade-language` is being run through `/update`, let the SDR 039 transaction wrapper own the staged `alsc deploy claude` refresh. Do not restate a competing projection contract here.
 
 ## Boundaries
 

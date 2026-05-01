@@ -9,14 +9,14 @@ import type {
   LanguageUpgradeRecipeVerificationStepResult,
 } from "../../compiler/src/types.ts";
 import type { PlannedLanguageUpgradeHop } from "./plan-chain.ts";
-import { runLanguageUpgradeChain, type LanguageUpgradeRunOptions, type LanguageUpgradeRunnerServices } from "./runner.ts";
+import { executeLanguageUpgradeChain, type LanguageUpgradeExecuteOptions, type LanguageUpgradeRunnerServices } from "./runner.ts";
 
 export async function verifyLanguageUpgradeRecipe(input: {
   from_fixture_path: string;
   expected_fixture_path: string;
   hop: PlannedLanguageUpgradeHop;
   services: LanguageUpgradeRunnerServices;
-  options?: LanguageUpgradeRunOptions;
+  options?: LanguageUpgradeExecuteOptions;
 }): Promise<LanguageUpgradeRecipeVerificationOutput> {
   const workingRoot = await mkdtemp(join(tmpdir(), "als-language-upgrade-verification-"));
   const actualRoot = join(workingRoot, "actual");
@@ -30,7 +30,7 @@ export async function verifyLanguageUpgradeRecipe(input: {
     await rm(join(actualRoot, ".git"), { recursive: true, force: true });
     initializeGitRepository(actualRoot);
 
-    const runResult = await runLanguageUpgradeChain({
+    const runResult = await executeLanguageUpgradeChain({
       system_root: actualRoot,
       hops: [input.hop],
       target_als_version: input.hop.recipe.to.als_version,
@@ -76,7 +76,7 @@ export async function verifyLanguageUpgradeRecipe(input: {
 }
 
 function flattenStepResults(
-  state: Awaited<ReturnType<typeof runLanguageUpgradeChain>>["state"],
+  state: Awaited<ReturnType<typeof executeLanguageUpgradeChain>>["state"],
 ): LanguageUpgradeRecipeVerificationStepResult[] {
   return state.hops.flatMap((hop) => hop.steps.map((step) => ({
     hop_id: hop.hop_id,

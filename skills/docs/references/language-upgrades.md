@@ -2,7 +2,7 @@
 
 Language upgrades are explicit whole-system cutovers from one `als_version` to the next.
 
-The normative contract lives in [SDR 037](../../../sdr/037-language-upgrade-recipe-contract.md). This doc is the human-readable reference for authors and operators; it points back to the SDR for required, allowed, and rejected behavior.
+The recipe contract lives in [SDR 037](../../../sdr/037-language-upgrade-recipe-contract.md). The two-phase runtime contract lives in [SDR 039](../../../sdr/039-update-transaction-wrapper-contract.md). This doc is the human-readable reference for authors and operators; it points back to those SDRs for required, allowed, and rejected behavior.
 
 ## Core Model
 
@@ -68,7 +68,10 @@ Notes:
 - The runner executes mutating `script` and `agent-task` steps in a disposable clone or worktree.
 - Post-step `git diff` is the source of truth for the actual mutation set.
 - Any non-`.als/` path change fails the step closed.
-- When an `operator-prompt` step fires, the runner yields to `/upgrade-language`, which surfaces the referenced markdown through AskUserQuestion and waits for the operator's answer.
+- Preflight discovers every `operator-prompt` step that can fire for the selected hop chain and option set.
+- Execute consumes a pre-collected operator-answer map and fails closed if a required answer is missing.
+- `operator-prompt` steps in `category: "recovery"` are rejected so prompt discovery stays static.
+- When `/upgrade-language` runs under `/update`, SDR 039's transaction wrapper owns the staged `alsc deploy claude` refresh.
 
 ## Fixtures And Verification
 
@@ -83,4 +86,4 @@ Notes:
 - Construct upgrades are a sibling primitive, not part of the core `language-upgrade-recipe` contract.
 - Rollback, partial-system upgrades, and live patching are excluded.
 
-See [SDR 037](../../../sdr/037-language-upgrade-recipe-contract.md) for the exact contract.
+See [SDR 037](../../../sdr/037-language-upgrade-recipe-contract.md) and [SDR 039](../../../sdr/039-update-transaction-wrapper-contract.md) for the exact contract.
