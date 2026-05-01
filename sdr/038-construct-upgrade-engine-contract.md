@@ -198,6 +198,7 @@ Accepted
   - strategy-name membership
   - path validation for `migrations_dir`
   - `source_paths` validation
+  - compile-time sequential migration-file validation per SDR 040
 - Add compiler validation for `als-construct-action-manifest@1`, including:
   - schema literal validation
   - action-kind membership
