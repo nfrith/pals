@@ -59,7 +59,6 @@ Proposed
 - `als-construct-action-manifest@1` is a deterministic structured artifact. v1 action kinds are:
   - `drain-then-restart`
   - `kill-then-restart`
-  - `restart-only`
   - `start-only`
 - Every manifest action declares:
   - `kind`
@@ -74,15 +73,16 @@ Proposed
   - `cwd: string`
 - Any path-bearing string in `start.command`, `start.cwd`, `process_locator.path`, or `drain_signal.path` may use only two runtime tokens:
   - `$ALS_SYSTEM_ROOT`
-  - `$ALS_PLUGIN_ROOT`
-- `/update` resolves those tokens against the live system after commit. v1 manifests do not carry a free-form env map; `/update` injects `CLAUDE_PLUGIN_ROOT` itself when executing `start`.
+  - `$CLAUDE_PLUGIN_ROOT`
+- Those tokens are manifest placeholders substituted by `/update` against the live system after commit before process spawn. They are not shell-variable expansion.
+- v1 manifests do not carry a free-form env map; `/update` separately injects `CLAUDE_PLUGIN_ROOT` itself when executing `start`.
 - v1 `process_locator` kinds are:
   - `json-file-pid`
   - `argv-substring`
 - v1 `drain_signal` kind is:
   - `json-file-write`
 - `drain-then-restart` requires both `process_locator` and `drain_signal`.
-- `kill-then-restart` and `restart-only` require `process_locator`.
+- `kill-then-restart` requires `process_locator`.
 - `start-only` requires no `process_locator`.
 - `/update` concatenates construct-emitted manifests in construct skill order:
   - `/upgrade-delamain`
@@ -91,7 +91,6 @@ Proposed
 - Each construct skill emits a stable per-instance order before concatenation.
 - v1 `/update` executes manifest actions sequentially in final manifest order. This keeps post-commit behavior deterministic, keeps failure states legible, and matches the v1 structured-manifest philosophy.
 - `process-lifecycle` emits `kill-then-restart` when a live process is found and `start-only` when it is absent at lifecycle time.
-- `restart-only` remains schema-valid in v1 but has no live v1 emitter yet.
 - v1 does not allow prose-only, free-form, or agent-authored lifecycle manifests.
 - Customization detection applies only to operator-side source copies. In v1 that means dispatcher source under `.als/modules/**/delamains/**/dispatcher/`.
 - Customization detection compares the vendor-owned files in the operator-side copy against the engine's shipped known-version vendor content hashes. If the copy matches any known vendor version exactly, it is not customized. Otherwise it is customized.
@@ -104,12 +103,13 @@ Proposed
 - Any `.claude/` refresh belongs to `/update` transaction machinery, not to construct-upgrade as a mutation step.
 - Dispatcher drain uses a deterministic JSON control file under the deployed dispatcher bundle. After `/update` writes that request, the dispatcher acknowledges it by surfacing `lifecycle_mode: "draining"` in `status.json`, then stops accepting new dispatches and waits out in-flight work before exit.
 - Once `/update` has seen `lifecycle_mode: "draining"`, it waits without a budget for `active_dispatches` to reach zero and the old dispatcher process to exit.
+- Dispatcher heartbeat staleness is governed by a configurable engine constant (for example `DISPATCHER_HEARTBEAT_STALE_THRESHOLD`) whose initial default is intentionally calibration-pending and not part of the public contract.
 - If post-commit lifecycle fails after the staged filesystem has been committed, v1 reports one of these failure states for support handoff:
   - `lifecycle-drain-stalled`
   - `lifecycle-stop-failed`
   - `lifecycle-start-failed`
   - `lifecycle-partial`
-- `lifecycle-drain-stalled` means the drain request was written but `/update` never observed a fresh drain acknowledgement, or the drain heartbeat went stale before quiescence was reached.
+- `lifecycle-drain-stalled` means the drain request was written but `/update` never observed a fresh drain acknowledgement, or the drain heartbeat aged past that configurable threshold before quiescence was reached.
 - `lifecycle-stop-failed` means a stop-capable action still resolves to a live process after the engine's stop attempt.
 - `lifecycle-start-failed` means the start command exits non-zero or the expected fresh locator/heartbeat never appears.
 - `lifecycle-partial` means one or more earlier actions in the same sequential manifest already succeeded before a later action landed in one of the other named failure states.
@@ -148,15 +148,15 @@ Proposed
 - Required: construct execute passes emit post-commit lifecycle manifests instead of touching live processes immediately.
 - Required: construct execute passes emit `als-construct-action-manifest@1`, not prose-only or agent-authored lifecycle instructions.
 - Required: the action manifest remains shape-compatible with a future staged language-upgrade participant in the same `/update` transaction.
-- Required: v1 action kinds are `drain-then-restart`, `kill-then-restart`, `restart-only`, and `start-only`.
+- Required: v1 action kinds are `drain-then-restart`, `kill-then-restart`, and `start-only`.
 - Required: every action provides the structured fields its kind needs to execute deterministically.
-- Required: path-bearing strings in the action manifest use only `$ALS_SYSTEM_ROOT` and `$ALS_PLUGIN_ROOT`; staging-worktree absolute paths are rejected.
+- Required: path-bearing strings in the action manifest use only `$ALS_SYSTEM_ROOT` and `$CLAUDE_PLUGIN_ROOT`; staging-worktree absolute paths are rejected.
+- Required: those `$...` strings are placeholders substituted by `/update` before process spawn, not shell-variable expansion.
 - Required: v1 `process_locator` kinds are `json-file-pid` and `argv-substring`.
 - Required: v1 `drain_signal` kind is `json-file-write`.
 - Required: `/update` concatenates construct-emitted manifests in construct skill order, and each construct skill emits a stable per-instance order before concatenation.
 - Required: v1 manifest execution is sequential in final manifest order.
 - Required: `process-lifecycle` emits `kill-then-restart` when a live process exists and `start-only` when it does not.
-- Required: `restart-only` remains schema-valid even though no live v1 construct emits it yet.
 - Required: no live lifecycle side-effect runs before `/update` validates and commits the whole staged filesystem.
 - Required: customization detection treats an exact vendor match against any shipped known version as non-customized.
 - Required: non-matching vendor-owned dispatcher source is treated as customized and requires explicit overwrite approval before execute.
@@ -167,7 +167,8 @@ Proposed
 - Required: post-commit failure handoff uses named lifecycle states rather than raw prose only.
 - Required: v1 failure vocabulary is `lifecycle-drain-stalled`, `lifecycle-stop-failed`, `lifecycle-start-failed`, and `lifecycle-partial`.
 - Required: dispatcher drain acknowledgement is surfaced in `status.json` as `lifecycle_mode: "draining"` before the unbounded drain wait begins.
-- Required: `lifecycle-drain-stalled` covers missing drain acknowledgement or stale drain telemetry before quiescence.
+- Required: dispatcher heartbeat staleness is governed by a configurable engine constant whose initial default is calibration-pending and not part of the public contract.
+- Required: `lifecycle-drain-stalled` covers missing drain acknowledgement or heartbeat older than that configurable threshold before quiescence.
 - Required: `lifecycle-partial` is surfaced when earlier sequential actions already succeeded before a later action failed.
 - Required: the compiler stays diagnostics-only in v1 even though it gains a `VERSION` file.
 - Allowed: `Drain` and `Kill` to be mixed across dispatcher instances in one `/update`.
@@ -227,7 +228,7 @@ Proposed
   - dispatcher, statusline, and dashboard `construct.json` examples
   - dispatcher preflight prompt examples with one lifecycle choice per dispatcher instance
   - staged post-commit lifecycle manifest examples
-  - runtime-token examples using `$ALS_SYSTEM_ROOT` and `$ALS_PLUGIN_ROOT`
+  - runtime-token examples using `$ALS_SYSTEM_ROOT` and `$CLAUDE_PLUGIN_ROOT`
   - `process_locator` / `drain_signal` examples for dispatcher, statusline, and dashboard
   - manifest-ordering examples and counterexamples
   - customization-detection examples showing exact-version match vs overwrite prompt
