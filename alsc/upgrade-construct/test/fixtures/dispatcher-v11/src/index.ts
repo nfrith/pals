@@ -73,17 +73,6 @@ const STATUS_FILE = join(
   config.delamainName,
   "status.json",
 );
-const DRAIN_REQUEST_FILE = join(
-  SYSTEM_ROOT,
-  ".claude",
-  "delamains",
-  config.delamainName,
-  "dispatcher",
-  "control",
-  "drain-request.json",
-);
-
-type DispatcherLifecycleMode = "running" | "draining";
 
 let lastItemsScanned = 0;
 let lastRuntimeHeartbeat: DispatcherRuntimeHeartbeat = {
@@ -96,8 +85,6 @@ let lastRuntimeHeartbeat: DispatcherRuntimeHeartbeat = {
   orphaned_dispatches: 0,
   guarded_dispatches: 0,
 };
-let lifecycleMode: DispatcherLifecycleMode = "running";
-let drainRequestedAt: string | null = null;
 
 async function writeHeartbeat(itemsScanned: number) {
   lastRuntimeHeartbeat = await runtime.heartbeat();
@@ -115,8 +102,6 @@ async function writeHeartbeat(itemsScanned: number) {
         orphaned_dispatches: lastRuntimeHeartbeat.orphaned_dispatches,
         guarded_dispatches: lastRuntimeHeartbeat.guarded_dispatches,
         items_scanned: itemsScanned,
-        lifecycle_mode: lifecycleMode,
-        drain_requested_at: drainRequestedAt,
       }) + "\n",
     );
   } catch {
@@ -127,14 +112,6 @@ async function writeHeartbeat(itemsScanned: number) {
 function clearHeartbeat() {
   try {
     unlinkSync(STATUS_FILE);
-  } catch {
-    // Already gone
-  }
-}
-
-function clearDrainRequest() {
-  try {
-    unlinkSync(DRAIN_REQUEST_FILE);
   } catch {
     // Already gone
   }
@@ -152,31 +129,6 @@ function logCounts(prefix: string) {
 
 async function updateHeartbeat() {
   await writeHeartbeat(lastItemsScanned);
-}
-
-async function enterDrainingMode(): Promise<void> {
-  if (lifecycleMode === "draining") {
-    return;
-  }
-
-  lifecycleMode = "draining";
-  drainRequestedAt = new Date().toISOString();
-  console.log(
-    `[dispatcher] drain requested — stopping new dispatches and waiting for ${lastRuntimeHeartbeat.active_dispatches} active dispatch(es) to finish`,
-  );
-  await updateHeartbeat();
-}
-
-async function maybeHandleDrainRequest(): Promise<void> {
-  if (lifecycleMode === "draining") {
-    return;
-  }
-
-  if (!existsSync(DRAIN_REQUEST_FILE)) {
-    return;
-  }
-
-  await enterDrainingMode();
 }
 
 async function writeRetryTelemetry(result: BlockedDirtyRetryResult): Promise<void> {
@@ -280,17 +232,6 @@ async function tick() {
 
   const sweep = await runtime.sweepOrphans();
   logSweep("[dispatcher] orphan sweep", sweep);
-  await maybeHandleDrainRequest();
-
-  if (lifecycleMode === "draining") {
-    await updateHeartbeat();
-    if (lastRuntimeHeartbeat.active_dispatches === 0) {
-      console.log("[dispatcher] drain complete — exiting cleanly");
-      clearDrainRequest();
-      clearRuntimeAndExit(0);
-    }
-    return;
-  }
 
   const items = await scan(
     config.moduleRoot,
@@ -363,7 +304,6 @@ let forceShutdownRequested = false;
 function clearRuntimeAndExit(code: number) {
   clearInterval(interval);
   keepalive.stop();
-  clearDrainRequest();
   clearHeartbeat();
   process.exit(code);
 }

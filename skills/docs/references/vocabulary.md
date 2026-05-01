@@ -95,7 +95,7 @@ A **construct** is anything Section 9 ships as runtime/tooling code that the ope
 
 Today's constructs:
 
-- **Delamain dispatcher source** — the runtime engine that reads delamain definitions, dispatches agents, manages worktrees. Template lives at `nfrith-repos/als/skills/new/references/dispatcher/` (the canonical source). Tracked by its own `VERSION` file. Currently at VERSION 11.
+- **Delamain dispatcher source** — the runtime engine that reads delamain definitions, dispatches agents, manages worktrees. Template lives at `nfrith-repos/als/skills/new/references/dispatcher/` (the canonical source). Tracked by its own `VERSION` file. Currently at VERSION 12.
 - **Hooks** — `als-validate.sh`, `als-stop-gate.sh`, `als-session-start-operator.sh`, etc. Plugin-shipped shell scripts wired into Claude Code's hook lifecycle.
 - **Statusline scripts** — runtime scripts that produce the live status line (delamain health, OBS state, context usage, clock).
 - **Dashboard launchers** — the localhost dashboard service that visualizes dispatcher state.

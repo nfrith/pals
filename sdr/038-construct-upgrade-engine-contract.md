@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed
+Accepted
 
 ## Context
 
@@ -120,7 +120,7 @@ Proposed
 {
   "schema": "als-construct-manifest@1",
   "name": "dispatcher",
-  "version": 11,
+  "version": 12,
   "migration_strategy": "sequential",
   "lifecycle_strategy": "dispatcher-lifecycle",
   "migrations_dir": "migrations",

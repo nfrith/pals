@@ -3,6 +3,10 @@
 import { resolve } from "node:path";
 import { inspectChangelogFile } from "./changelog.ts";
 import { deployClaudeSkills } from "./claude-skills.ts";
+import {
+  inspectConstructActionManifest,
+  inspectConstructManifest,
+} from "./construct-upgrade.ts";
 import { inspectLanguageUpgradeRecipe } from "./language-upgrade-recipe.ts";
 import {
   buildOperatorConfigSessionStartOutput,
@@ -15,6 +19,8 @@ const MAIN_USAGE = `Usage:
   alsc validate <system-root> [module-id]
   alsc deploy claude [--dry-run] [--require-empty-targets] <system-root> [module-id]
   alsc upgrade-recipe inspect <recipe-path>
+  alsc construct inspect <construct-path>
+  alsc construct inspect-action <action-manifest-path>
   alsc changelog inspect [als-repo-or-changelog-path]
   alsc operator-config path [system-root-or-cwd]
   alsc operator-config inspect [system-root-or-cwd-or-operator-config-path]
@@ -24,6 +30,7 @@ Commands:
   validate        Validate an ALS system and emit JSON.
   deploy claude   Project active ALS Claude assets into .als/ and .claude/.
   upgrade-recipe  Inspect language-upgrade-recipe bundles.
+  construct       Inspect construct manifests and staged action manifests.
   changelog       Inspect ALS CHANGELOG.md structure and staged release entries.
   operator-config Inspect the operator config or render SessionStart output.
 `;
@@ -31,6 +38,9 @@ Commands:
 const VALIDATE_USAGE = "Usage: alsc validate <system-root> [module-id]";
 const DEPLOY_USAGE = "Usage: alsc deploy claude [--dry-run] [--require-empty-targets] <system-root> [module-id]";
 const UPGRADE_RECIPE_USAGE = "Usage: alsc upgrade-recipe inspect <recipe-path>";
+const CONSTRUCT_USAGE = `Usage:
+  alsc construct inspect <construct-path>
+  alsc construct inspect-action <action-manifest-path>`;
 const CHANGELOG_USAGE = "Usage: alsc changelog inspect [als-repo-or-changelog-path]";
 const OPERATOR_CONFIG_USAGE = `Usage:
   alsc operator-config path [system-root-or-cwd]
@@ -68,6 +78,10 @@ export function runCli(
 
   if (command === "upgrade-recipe") {
     return runUpgradeRecipeCommand(rest, io);
+  }
+
+  if (command === "construct") {
+    return runConstructCommand(rest, io);
   }
 
   if (command === "changelog") {
@@ -120,6 +134,34 @@ function runUpgradeRecipeCommand(args: string[], io: CliIo): number {
   const inspection = inspectLanguageUpgradeRecipe(rest[0]);
   writeStdout(io, JSON.stringify(inspection, null, 2));
   return inspection.status === "fail" ? 1 : 0;
+}
+
+function runConstructCommand(args: string[], io: CliIo): number {
+  if (args.length === 0 || (args.length === 1 && isHelpFlag(args[0]))) {
+    writeStdout(io, `${CONSTRUCT_USAGE}\n`);
+    return args.length === 0 ? 2 : 0;
+  }
+
+  const [subcommand, ...rest] = args;
+  if (rest.length !== 1) {
+    writeStderr(io, `${CONSTRUCT_USAGE}\n`);
+    return 2;
+  }
+
+  if (subcommand === "inspect") {
+    const inspection = inspectConstructManifest(rest[0]);
+    writeStdout(io, JSON.stringify(inspection, null, 2));
+    return inspection.status === "fail" ? 1 : 0;
+  }
+
+  if (subcommand === "inspect-action") {
+    const inspection = inspectConstructActionManifest(rest[0]);
+    writeStdout(io, JSON.stringify(inspection, null, 2));
+    return inspection.status === "fail" ? 1 : 0;
+  }
+
+  writeStderr(io, `${CONSTRUCT_USAGE}\n`);
+  return 2;
 }
 
 function runChangelogCommand(args: string[], io: CliIo): number {

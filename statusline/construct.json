@@ -1,0 +1,46 @@
+{
+  "schema": "als-construct-manifest@1",
+  "name": "statusline",
+  "version": 1,
+  "migration_strategy": "sequential",
+  "lifecycle_strategy": "process-lifecycle",
+  "migrations_dir": "migrations",
+  "source_paths": [
+    {
+      "path": "VERSION",
+      "owner": "vendor"
+    },
+    {
+      "path": "construct.json",
+      "owner": "vendor"
+    },
+    {
+      "path": "pulse.ts",
+      "owner": "vendor"
+    },
+    {
+      "path": "statusline-daemon.sh",
+      "owner": "vendor"
+    },
+    {
+      "path": "statusline.sh",
+      "owner": "vendor"
+    },
+    {
+      "path": "deploy.sh",
+      "owner": "vendor"
+    },
+    {
+      "path": "test.sh",
+      "owner": "vendor"
+    },
+    {
+      "path": "test-animate.sh",
+      "owner": "vendor"
+    },
+    {
+      "path": "obs-status.py",
+      "owner": "vendor"
+    }
+  ]
+}

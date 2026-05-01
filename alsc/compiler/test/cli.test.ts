@@ -1,7 +1,9 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { existsSync, rmSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
+import { dirname, join, resolve } from "node:path";
+import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { runCli } from "../src/cli.ts";
 import {
@@ -121,6 +123,37 @@ test("alsc validate supports module-filtered runs", async () => {
     expect(output.module_filter).toBe("backlog");
     expect(output.modules.map((report) => report.module_id)).toEqual(["backlog"]);
   });
+});
+
+test("alsc construct inspect emits the public construct inspection output contract", async () => {
+  const root = await mkdtemp(join(tmpdir(), "als-cli-construct-"));
+  try {
+    await mkdir(join(root, "migrations"), { recursive: true });
+    await mkdir(join(root, "src"), { recursive: true });
+    await writeFile(join(root, "VERSION"), "12\n", "utf-8");
+    await writeFile(join(root, "construct.json"), JSON.stringify({
+      schema: "als-construct-manifest@1",
+      name: "dispatcher",
+      version: 12,
+      migration_strategy: "sequential",
+      lifecycle_strategy: "dispatcher-lifecycle",
+      migrations_dir: "migrations",
+      source_paths: [
+        { path: "src", owner: "vendor" },
+      ],
+    }, null, 2) + "\n", "utf-8");
+
+    const result = captureCli(["construct", "inspect", root]);
+    expect(result.exitCode).toBe(0);
+    const output = JSON.parse(result.stdout) as {
+      status: string;
+      manifest: { schema: string } | null;
+    };
+    expect(output.status).toBe("pass");
+    expect(output.manifest?.schema).toBe("als-construct-manifest@1");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test("alsc validate exits zero and reports warn when only deprecations are present", async () => {

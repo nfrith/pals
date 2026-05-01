@@ -1,6 +1,6 @@
 ---
 name: update
-description: Update the installed ALS plugin to the latest version published in whichever marketplace it was installed from. Self-detects channel (RC `als-marketplace` for architects, stable `als-marketplace-stable` for edgerunners) via `${CLAUDE_PLUGIN_ROOT}`, refreshes the right marketplace clone, then shells out to `claude plugin update als@<marketplace> --scope <scope>` — the universal CLI primitive. Works across CLI and Desktop, project and user scope, both channels. Output is verbose by design — useful for architect UAT (`/copy` paste into a release report) and edgerunner support (full diagnostic context).
+description: Update the installed ALS plugin to the latest version published in whichever marketplace it was installed from, then run the post-install language-upgrade and construct-upgrade phases that ALS-066 and ALS-067 require. Self-detects channel (RC `als-marketplace` for architects, stable `als-marketplace-stable` for edgerunners) via `${CLAUDE_PLUGIN_ROOT}`, refreshes the right marketplace clone, shells out to `claude plugin update als@<marketplace> --scope <scope>`, and orchestrates the staged upgrade follow-through. Output is verbose by design — useful for architect UAT (`/copy` paste into a release report) and edgerunner support (full diagnostic context).
 allowed-tools: AskUserQuestion, Bash, Read
 ---
 
@@ -175,7 +175,43 @@ Read the full entry again — version, gitCommitSha, lastUpdated should all refl
 - One-line confirmation: `Verified: <new version> installed.`
 - If the installed version doesn't match the "Latest available" reported in Phase 3: surface the mismatch and ask the operator to investigate (could be a partial update, cache state issue, etc.)
 
-## Phase 6: Final report
+## Phase 6: Upgrade runtime surfaces
+
+After the plugin update is verified, run the post-install upgrade phases in this order:
+
+1. **Language-upgrade check**
+   Run `/upgrade-language` if the new plugin version exposes a required language-upgrade hop. Use its current single-phase ALS-066 flow as-is; do not try to fold it into the construct boundary in this skill text.
+
+2. **Construct preflight pass**
+   Run these skills in preflight mode, even if you suspect nothing changed:
+   - `/upgrade-delamain`
+   - `/upgrade-statusline`
+   - `/upgrade-dashboard`
+
+3. **Operator gate**
+   Batch every construct prompt gathered in preflight into one AskUserQuestion round. If any dispatcher answers `Cancel` or any customization prompt answers `Abort`, stop the whole post-install upgrade flow before execute.
+
+4. **Shared staging worktree**
+   Create one staging worktree for the transaction and pass that same path into every construct execute call.
+
+5. **Construct execute pass**
+   Run the same three construct skills in execute mode. Each must:
+   - write only into the provided staging worktree
+   - return its own `als-construct-action-manifest@1`
+   - return validation metadata for the whole-worktree phase
+
+6. **Whole-worktree validation**
+   Validate the staged authored system, refresh projected `.claude/` outputs inside the same staged tree, and fail closed if any construct result, validation check, or projection step is invalid.
+
+7. **Commit and lifecycle**
+   Commit or copy back the staged worktree in one shot. Only after that succeeds may `/update` concatenate the construct action manifests in this order and run them sequentially:
+   - `/upgrade-delamain`
+   - `/upgrade-statusline`
+   - `/upgrade-dashboard`
+
+See [SDR 038](../../sdr/038-construct-upgrade-engine-contract.md) for the construct-upgrade contract. Do not restate those semantics here.
+
+## Phase 7: Final report
 
 Surface a single, formatted summary block that captures the whole run. This is what the architect copies into a release report or the edgerunner pastes to support:
 
@@ -190,6 +226,7 @@ Surface a single, formatted summary block that captures the whole run. This is w
 - **Version:** <old> → <new>  (or: <version> — no change)
 - **Git commit SHA:** <new gitCommitSha>
 - **Action taken:** <"Update applied" | "Already on latest, no action" | "Failed">
+- **Runtime follow-through:** <"Language-upgrade run" | "Construct-upgrade run" | "No follow-up needed" | "Failed during follow-through">
 - **Restart required:** yes — <one-line reason for this platform>
 
 <If applicable: any non-fatal warnings or notes from Phase 3 or Phase 4 outputs>
