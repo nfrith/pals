@@ -1,11 +1,14 @@
 import { expect, test } from "bun:test";
 import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { tmpdir } from "node:os";
+import { fileURLToPath } from "node:url";
 import {
   inspectConstructActionManifest,
   inspectConstructManifest,
 } from "../src/construct-upgrade.ts";
+
+const alsRepoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
 
 async function withTempDir(
   label: string,
@@ -34,22 +37,16 @@ async function withTempDir(
 
 test("construct manifest inspection accepts the canonical authored surface", async () => {
   await withTempDir("manifest-pass", async (root) => {
-    await mkdir(join(root, "migrations"), { recursive: true });
-    await mkdir(join(root, "src"), { recursive: true });
-    await writeFile(join(root, "VERSION"), "12\n", "utf-8");
-    await writeFile(join(root, "src", "index.ts"), "export const marker = 12;\n", "utf-8");
-    await writeFile(join(root, "construct.json"), JSON.stringify({
-      schema: "als-construct-manifest@1",
-      name: "dispatcher",
+    await writeConstructFixture(root, {
       version: 12,
-      migration_strategy: "sequential",
-      lifecycle_strategy: "dispatcher-lifecycle",
-      migrations_dir: "migrations",
+      migrations: {
+        "v11-to-v12.ts": "export async function migrate() {}\n",
+      },
       source_paths: [
         { path: "src", owner: "vendor" },
         { path: "package.json", owner: "vendor" },
       ],
-    }, null, 2) + "\n", "utf-8");
+    });
 
     const inspection = inspectConstructManifest(root);
     expect(inspection.status).toBe("pass");
@@ -58,6 +55,18 @@ test("construct manifest inspection accepts the canonical authored surface", asy
     expect(inspection.manifest?.migration_strategy).toBe("sequential");
     expect(inspection.manifest?.lifecycle_strategy).toBe("dispatcher-lifecycle");
   });
+});
+
+test("construct manifest inspection accepts shipped construct bundles", () => {
+  for (const constructRoot of [
+    resolve(alsRepoRoot, "skills/new/references/dispatcher"),
+    resolve(alsRepoRoot, "statusline"),
+    resolve(alsRepoRoot, "delamain-dashboard"),
+  ]) {
+    const inspection = inspectConstructManifest(constructRoot);
+    expect(inspection.status).toBe("pass");
+    expect(inspection.errors).toEqual([]);
+  }
 });
 
 test("construct manifest inspection rejects version mismatches and bundle-escape paths", async () => {
@@ -80,6 +89,99 @@ test("construct manifest inspection rejects version mismatches and bundle-escape
     expect(inspection.status).toBe("fail");
     expect(inspection.errors.some((entry) => entry.code === "construct_manifest.version.mismatch")).toBe(true);
     expect(inspection.errors.some((entry) => entry.code === "construct_manifest.path.escapes_bundle")).toBe(true);
+  });
+});
+
+test("construct manifest inspection rejects malformed migration directory entries", async () => {
+  await withTempDir("manifest-malformed-migration", async (root) => {
+    await writeConstructFixture(root, {
+      version: 2,
+      migrations: {
+        "_helpers.ts": "export const helper = true;\n",
+        "v1-to-v2.ts": "export async function migrate() {}\n",
+      },
+    });
+
+    const inspection = inspectConstructManifest(root);
+    expect(inspection.status).toBe("fail");
+    expect(inspection.errors.some((entry) => entry.code === "construct_manifest.migrations.malformed_name")).toBe(true);
+  });
+});
+
+test("construct manifest inspection rejects multi-hop migrations", async () => {
+  await withTempDir("manifest-multi-hop", async (root) => {
+    await writeConstructFixture(root, {
+      version: 3,
+      migrations: {
+        "v1-to-v3.ts": "export async function migrate() {}\n",
+      },
+    });
+
+    const inspection = inspectConstructManifest(root);
+    expect(inspection.status).toBe("fail");
+    expect(inspection.errors.some((entry) => entry.code === "construct_manifest.migrations.multi_hop_forbidden")).toBe(true);
+  });
+});
+
+test("construct manifest inspection rejects duplicate migration hops", async () => {
+  await withTempDir("manifest-duplicate-hop", async (root) => {
+    await writeConstructFixture(root, {
+      version: 2,
+      migrations: {
+        "v1-to-v2.js": "export async function migrate() {}\n",
+        "v1-to-v2.ts": "export async function migrate() {}\n",
+      },
+    });
+
+    const inspection = inspectConstructManifest(root);
+    expect(inspection.status).toBe("fail");
+    expect(inspection.errors.some((entry) => entry.code === "construct_manifest.migrations.duplicate")).toBe(true);
+  });
+});
+
+test("construct manifest inspection rejects migration gaps", async () => {
+  await withTempDir("manifest-gap", async (root) => {
+    await writeConstructFixture(root, {
+      version: 4,
+      migrations: {
+        "v1-to-v2.ts": "export async function migrate() {}\n",
+        "v3-to-v4.ts": "export async function migrate() {}\n",
+      },
+    });
+
+    const inspection = inspectConstructManifest(root);
+    expect(inspection.status).toBe("fail");
+    expect(inspection.errors.some((entry) => entry.code === "construct_manifest.migrations.gap")).toBe(true);
+  });
+});
+
+test("construct manifest inspection rejects chains that do not end at VERSION", async () => {
+  await withTempDir("manifest-chain-end", async (root) => {
+    await writeConstructFixture(root, {
+      version: 5,
+      migrations: {
+        "v3-to-v4.ts": "export async function migrate() {}\n",
+      },
+    });
+
+    const inspection = inspectConstructManifest(root);
+    expect(inspection.status).toBe("fail");
+    expect(inspection.errors.some((entry) => entry.code === "construct_manifest.migrations.chain_end_mismatch")).toBe(true);
+  });
+});
+
+test("construct manifest inspection rejects empty migrations when version is greater than one", async () => {
+  await withTempDir("manifest-empty", async (root) => {
+    await writeConstructFixture(root, {
+      version: 2,
+      migrations: {
+        ".gitkeep": "",
+      },
+    });
+
+    const inspection = inspectConstructManifest(root);
+    expect(inspection.status).toBe("fail");
+    expect(inspection.errors.some((entry) => entry.code === "construct_manifest.migrations.empty_with_nontrivial_version")).toBe(true);
   });
 });
 
@@ -161,3 +263,33 @@ test("construct action manifest inspection rejects absolute paths and invalid pe
     expect(inspection.errors.some((entry) => entry.code === "construct_action.drain_signal.forbidden")).toBe(true);
   });
 });
+
+async function writeConstructFixture(
+  root: string,
+  input: {
+    version: number;
+    migrations: Record<string, string>;
+    source_paths?: Array<{ path: string; owner: "vendor" | "operator" }>;
+  },
+): Promise<void> {
+  await mkdir(join(root, "migrations"), { recursive: true });
+  await mkdir(join(root, "src"), { recursive: true });
+  await writeFile(join(root, "VERSION"), `${input.version}\n`, "utf-8");
+  await writeFile(join(root, "src", "index.ts"), `export const marker = ${input.version};\n`, "utf-8");
+
+  for (const [name, contents] of Object.entries(input.migrations)) {
+    await writeFile(join(root, "migrations", name), contents, "utf-8");
+  }
+
+  await writeFile(join(root, "construct.json"), JSON.stringify({
+    schema: "als-construct-manifest@1",
+    name: "dispatcher",
+    version: input.version,
+    migration_strategy: "sequential",
+    lifecycle_strategy: "dispatcher-lifecycle",
+    migrations_dir: "migrations",
+    source_paths: input.source_paths ?? [
+      { path: "src", owner: "vendor" },
+    ],
+  }, null, 2) + "\n", "utf-8");
+}

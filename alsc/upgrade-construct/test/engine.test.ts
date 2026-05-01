@@ -83,6 +83,17 @@ test("sequential migration planning and execution walk each version hop in order
   });
 });
 
+test("sequential migration discovery rejects malformed directory entries", async () => {
+  await withTempDir("sequential-malformed", async (root) => {
+    const migrationsRoot = join(root, "migrations");
+    await mkdir(migrationsRoot, { recursive: true });
+    await writeFile(join(migrationsRoot, "v1-to-v2.ts"), "export async function migrate() {}\n", "utf-8");
+    await writeFile(join(migrationsRoot, "_helpers.ts"), "export const helper = true;\n", "utf-8");
+
+    await expect(discoverSequentialMigrationSteps(migrationsRoot)).rejects.toThrow("construct_manifest.migrations.malformed_name");
+  });
+});
+
 test("delamain construct preflight and execute stage the fleet upgrade without mutating the live system", async () => {
   await withTempDir("dispatcher-stage", async (root) => {
     const liveSystemRoot = join(root, "live");
