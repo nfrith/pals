@@ -3,12 +3,15 @@ import { cp, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/pr
 import { dirname, join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
+import { deployClaudeSkills } from "../../compiler/src/claude-skills.ts";
 import type { LanguageUpgradeRecipe } from "../../compiler/src/types.ts";
 import type { PlannedLanguageUpgradeHop } from "../../upgrade-language/src/plan-chain.ts";
+import { runCli } from "../src/cli.ts";
 import {
   pathExists,
   prepareUpdateTransaction,
   runPreparedUpdateTransaction,
+  type PreparedUpdateTransaction,
   type UpdateTransactionLanguagePlan,
 } from "../src/index.ts";
 
@@ -52,6 +55,25 @@ async function withSystemRepo(
   if (runError) {
     throw runError;
   }
+}
+
+async function captureCli(args: string[]): Promise<{ exitCode: number; stdout: string; stderr: string }> {
+  let stdout = "";
+  let stderr = "";
+  const exitCode = await runCli(args, {
+    stdout(value) {
+      stdout += value.endsWith("\n") ? value : `${value}\n`;
+    },
+    stderr(value) {
+      stderr += value.endsWith("\n") ? value : `${value}\n`;
+    },
+  });
+
+  return {
+    exitCode,
+    stdout,
+    stderr,
+  };
 }
 
 test("prepareUpdateTransaction rejects tracked .als changes before any prompt batching", async () => {
@@ -160,6 +182,43 @@ test("runPreparedUpdateTransaction preserves the staging worktree on validation 
   });
 });
 
+test("runPreparedUpdateTransaction preserves the staging worktree on deploy failure", async () => {
+  await withSystemRepo("deploy-failure", async ({ repo_root }) => {
+    const prepared = await prepareUpdateTransaction({
+      repo_root,
+      plugin_root: alsRepoRoot,
+    });
+    expect(prepared.status).toBe("ready");
+    if (prepared.status !== "ready") {
+      return;
+    }
+
+    const initialHead = git(repo_root, ["rev-parse", "HEAD"]);
+    const result = await runPreparedUpdateTransaction({
+      prepared,
+      services: {
+        deploy_claude(systemRoot) {
+          const output = deployClaudeSkills(systemRoot);
+          return {
+            ...output,
+            status: "fail",
+            error: "Injected deploy failure.",
+          };
+        },
+      },
+    });
+
+    expect(result.status).toBe("failed");
+    if (result.status === "failed") {
+      expect(result.failure_surface).toBe("validation-deploy-failed");
+      expect(result.diagnostic).toContain("Injected deploy failure");
+      expect(result.staging_worktree_path).not.toBeNull();
+      expect(await pathExists(result.staging_worktree_path!)).toBe(true);
+    }
+    expect(git(repo_root, ["rev-parse", "HEAD"])).toBe(initialHead);
+  });
+});
+
 test("runPreparedUpdateTransaction reports commit-failed when live HEAD diverges before writeback", async () => {
   await withSystemRepo("commit-failure", async ({ repo_root }) => {
     const prepared = await prepareUpdateTransaction({
@@ -245,6 +304,90 @@ test("runPreparedUpdateTransaction commits once, runs lifecycle after writeback,
     expect(sawCommittedRuntimeState).toBe(true);
     expect(git(repo_root, ["rev-list", "--count", "HEAD"])).toBe("2");
     expect(await listStagingWorktrees(dirname(repo_root))).toEqual([]);
+  });
+});
+
+test("update-transaction CLI prepare emits a ready transaction payload", async () => {
+  await withSystemRepo("cli-prepare", async ({ repo_root, root }) => {
+    const bundleRoot = join(root, "bundle");
+    await writeFixtureFile(
+      bundleRoot,
+      "operator-prompts/confirm.md",
+      "# Confirm\n\nApply the staged ALS changes now?\n",
+    );
+    const languagePlan = createLanguagePlan(bundleRoot, [
+      {
+        id: "confirm-live-apply",
+        title: "Confirm live apply",
+        type: "operator-prompt",
+        category: "must-run",
+        depends_on: [],
+        preconditions: [],
+        postconditions: [],
+        trigger: "auto",
+        path: "operator-prompts/confirm.md",
+        intent: "confirm-live-apply",
+      },
+    ]);
+    const languagePlanPath = join(root, "language-plan.json");
+    await writeFile(languagePlanPath, JSON.stringify(languagePlan, null, 2) + "\n", "utf-8");
+
+    const result = await captureCli([
+      "prepare",
+      "--repo-root",
+      repo_root,
+      "--plugin-root",
+      alsRepoRoot,
+      "--language-plan-file",
+      languagePlanPath,
+    ]);
+
+    expect(result.exitCode).toBe(0);
+    const output = JSON.parse(result.stdout) as PreparedUpdateTransaction;
+    expect(output.status).toBe("ready");
+    expect(output.language?.plan.hops.map((hop) => hop.hop_id)).toEqual(["v1-to-v1"]);
+    expect(output.prompts.some((prompt) => prompt.key === "v1-to-v1:confirm-live-apply")).toBe(true);
+  });
+});
+
+test("update-transaction CLI execute consumes prepared and answer JSON files", async () => {
+  await withSystemRepo("cli-execute", async ({ repo_root, root }) => {
+    const prepared = await prepareUpdateTransaction({
+      repo_root,
+      plugin_root: alsRepoRoot,
+    });
+    expect(prepared.status).toBe("ready");
+    if (prepared.status !== "ready") {
+      return;
+    }
+
+    const preparedFile = join(root, "prepared.json");
+    const answersFile = join(root, "answers.json");
+    const noOpPrepared: PreparedUpdateTransaction = {
+      ...prepared,
+      requires_changes: false,
+      prompts: [],
+    };
+    await writeFile(preparedFile, JSON.stringify(noOpPrepared, null, 2) + "\n", "utf-8");
+    await writeFile(answersFile, "{}\n", "utf-8");
+
+    const result = await captureCli([
+      "execute",
+      "--prepared-file",
+      preparedFile,
+      "--answers-file",
+      answersFile,
+    ]);
+
+    expect(result.exitCode).toBe(0);
+    const output = JSON.parse(result.stdout) as {
+      status: string;
+      commit_oid: string | null;
+      action_count: number;
+    };
+    expect(output.status).toBe("completed");
+    expect(output.commit_oid).toBeNull();
+    expect(output.action_count).toBe(0);
   });
 });
 

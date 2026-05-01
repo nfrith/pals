@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { realpathSync } from "node:fs";
 import { readdir, rm, stat } from "node:fs/promises";
 import { basename, dirname, join, relative, resolve } from "node:path";
 import { deployClaudeSkills } from "../../compiler/src/claude-skills.ts";
@@ -135,8 +136,8 @@ export async function prepareUpdateTransaction(input: {
   plugin_root: string;
   language_plan?: UpdateTransactionLanguagePlan | null;
 }): Promise<UpdateTransactionPrepareResult> {
-  const repoRoot = resolveGitRepoRoot(input.repo_root);
-  const systemRoot = resolve(input.system_root ?? repoRoot);
+  const repoRoot = canonicalizeExistingPath(resolveGitRepoRoot(input.repo_root));
+  const systemRoot = canonicalizeExistingPath(resolve(input.system_root ?? repoRoot));
   const pluginRoot = resolve(input.plugin_root);
   assertSystemRootWithinRepo(repoRoot, systemRoot);
 
@@ -511,6 +512,14 @@ function combineActionManifests(
 
 function resolveGitRepoRoot(repoRoot: string): string {
   return runGit(repoRoot, ["rev-parse", "--show-toplevel"]).stdout.trim();
+}
+
+function canonicalizeExistingPath(filePath: string): string {
+  try {
+    return realpathSync(filePath);
+  } catch {
+    return resolve(filePath);
+  }
 }
 
 function assertSystemRootWithinRepo(repoRoot: string, systemRoot: string): void {

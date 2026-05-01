@@ -177,17 +177,73 @@ Read the full entry again — version, gitCommitSha, lastUpdated should all refl
 
 ## Phase 6: Upgrade runtime surfaces
 
-After the plugin update is verified, hand off runtime follow-through to the transaction wrapper defined in [SDR 039](../../sdr/039-update-transaction-wrapper-contract.md).
+After the plugin update is verified, drive runtime follow-through through the transaction-wrapper CLI at `${CLAUDE_PLUGIN_ROOT}/alsc/update-transaction/src/cli.ts`. The CLI is the operator-reachable adapter for [SDR 039](../../sdr/039-update-transaction-wrapper-contract.md); the SDR still owns the semantics.
 
-The wrapper owns:
+1. Create temp files for the prepared payload, answer map, and final result.
 
-- language-upgrade preflight plus execute
-- construct preflight plus execute for `/upgrade-delamain`, `/upgrade-statusline`, and `/upgrade-dashboard`
-- the single batched operator gate
-- the shared staging worktree
-- `alsc validate` plus real `alsc deploy claude` inside staging
-- the one-commit writeback
-- sequential post-commit action-manifest execution
+```bash
+REPO_ROOT=$(git rev-parse --show-toplevel)
+SYSTEM_ROOT="$REPO_ROOT"
+PREPARED_JSON=$(mktemp -t als-update-prepared.XXXXXX.json)
+ANSWERS_JSON=$(mktemp -t als-update-answers.XXXXXX.json)
+RESULT_JSON=$(mktemp -t als-update-result.XXXXXX.json)
+printf '{}\n' > "$ANSWERS_JSON"
+```
+
+2. Prepare the transaction. Add `--target-als-version <N>` only if the operator asked to pin a specific ALS target. Without it, the CLI auto-discovers the latest reachable recipe chain under `${CLAUDE_PLUGIN_ROOT}/language-upgrades/recipes/`.
+
+```bash
+set +e
+bun ${CLAUDE_PLUGIN_ROOT}/alsc/update-transaction/src/cli.ts prepare \
+  --repo-root "$REPO_ROOT" \
+  --system-root "$SYSTEM_ROOT" \
+  --plugin-root "${CLAUDE_PLUGIN_ROOT}" \
+  > "$PREPARED_JSON"
+PREPARE_EXIT=$?
+set -e
+cat "$PREPARED_JSON"
+```
+
+If `PREPARE_EXIT` is non-zero, stop and surface the JSON plus stderr. Typical blocked outcomes are dirty live `.als/` or `.claude/`, live validation failure, or an unreachable language target.
+
+3. If the prepared payload contains prompts, batch them into one AskUserQuestion round before execute. Use `$PREPARED_JSON` as the source of truth:
+   - Prompt key: `.prompts[].key`
+   - Prompt body: `.prompts[].markdown`
+   - Options: `.prompts[].options[]`
+
+Use this helper to inspect the pending prompt batch:
+
+```bash
+jq '.prompts' "$PREPARED_JSON"
+```
+
+Write the AskUserQuestion answers back to `$ANSWERS_JSON` as one JSON object keyed exactly by prompt key. Example:
+
+```json
+{
+  "v1-to-v2:confirm-live-apply": "confirm",
+  "dispatcher-lifecycle:orders": "drain"
+}
+```
+
+If any answer is a cancel or abort choice, stop before execute.
+
+4. Execute the prepared transaction with the answer map.
+
+```bash
+set +e
+bun ${CLAUDE_PLUGIN_ROOT}/alsc/update-transaction/src/cli.ts execute \
+  --prepared-file "$PREPARED_JSON" \
+  --answers-file "$ANSWERS_JSON" \
+  > "$RESULT_JSON"
+EXECUTE_EXIT=$?
+set -e
+cat "$RESULT_JSON"
+```
+
+If `EXECUTE_EXIT` is non-zero, stop and surface the `failure_surface`, `diagnostic`, `staging_worktree_path`, and any `manual_follow_up_note` from `$RESULT_JSON`.
+
+5. On success, surface the `commit_oid`, `action_count`, and any `manual_follow_up_note` from `$RESULT_JSON`.
 
 See [SDR 039](../../sdr/039-update-transaction-wrapper-contract.md) for the full `/update` transaction contract and [SDR 038](../../sdr/038-construct-upgrade-engine-contract.md) for construct-upgrade semantics. Do not restate or special-case that orchestration here.
 

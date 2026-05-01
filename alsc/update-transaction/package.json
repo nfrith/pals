@@ -5,6 +5,9 @@
   "description": "ALS /update transaction wrapper runtime.",
   "license": "Elastic-2.0",
   "type": "module",
+  "bin": {
+    "als-update-transaction": "./src/cli.ts"
+  },
   "scripts": {
     "test": "bun test"
   },
