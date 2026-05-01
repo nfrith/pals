@@ -1,43 +1,39 @@
 import { readdir } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
+import {
+  parseSequentialMigrationDirectoryEntries,
+  validateSequentialMigrationContract,
+} from "../../../compiler/src/sequential-migration-validation.ts";
 import type { SequentialMigrationContext, SequentialMigrationStep } from "../types.ts";
-
-const STEP_PATTERN = /^v([1-9][0-9]*)-to-v([1-9][0-9]*)\.(?:c|m)?(?:j|t)s$/;
 
 export async function discoverSequentialMigrationSteps(
   migrationsDir: string,
 ): Promise<SequentialMigrationStep[]> {
   const entries = (await readdir(migrationsDir)).sort();
-  return entries.flatMap((entry) => {
-    const match = entry.match(STEP_PATTERN);
-    if (!match) {
-      return [];
-    }
-
-    return [{
-      from_version: Number(match[1]),
-      to_version: Number(match[2]),
-      script_path: `${migrationsDir}/${entry}`,
-    }];
+  const parsed = parseSequentialMigrationDirectoryEntries({
+    entries,
+    migrations_dir: migrationsDir,
+    path_root: migrationsDir,
   });
+  throwOnSequentialMigrationIssues(parsed.issues);
+  return parsed.steps;
 }
 
 export function validateSequentialMigrationSteps(
   steps: SequentialMigrationStep[],
+  targetVersion?: number,
 ): void {
-  const seen = new Set<string>();
-  for (const step of steps) {
-    if (step.to_version !== step.from_version + 1) {
-      throw new Error(
-        `Sequential migration '${step.script_path}' must move exactly one version at a time.`,
-      );
-    }
-    const key = `${step.from_version}->${step.to_version}`;
-    if (seen.has(key)) {
-      throw new Error(`Duplicate sequential migration step '${key}'.`);
-    }
-    seen.add(key);
-  }
+  const contractTargetVersion = typeof targetVersion === "number"
+    ? targetVersion
+    : steps.length === 0
+    ? 1
+    : Math.max(...steps.map((step) => step.to_version));
+
+  throwOnSequentialMigrationIssues(validateSequentialMigrationContract({
+    steps,
+    target_version: contractTargetVersion,
+    path_root: "migrations_dir",
+  }));
 }
 
 export function planSequentialMigrationChain(
@@ -55,7 +51,7 @@ export function planSequentialMigrationChain(
     return [];
   }
 
-  validateSequentialMigrationSteps(steps);
+  validateSequentialMigrationSteps(steps, targetVersion);
   const stepByFromVersion = new Map(steps.map((step) => [step.from_version, step]));
   const chain: SequentialMigrationStep[] = [];
   for (let version = currentVersion; version < targetVersion; version += 1) {
@@ -87,4 +83,16 @@ export async function executeSequentialMigrationChain(
     }
     await migrate(contextFactory(step));
   }
+}
+
+function throwOnSequentialMigrationIssues(
+  issues: Array<{ code?: string; path: string; message: string }>,
+): void {
+  if (issues.length === 0) {
+    return;
+  }
+
+  throw new Error(issues.map((entry) => entry.code
+    ? `${entry.code}: ${entry.path}: ${entry.message}`
+    : `${entry.path}: ${entry.message}`).join("; "));
 }

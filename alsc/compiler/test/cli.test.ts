@@ -131,6 +131,7 @@ test("alsc construct inspect emits the public construct inspection output contra
     await mkdir(join(root, "migrations"), { recursive: true });
     await mkdir(join(root, "src"), { recursive: true });
     await writeFile(join(root, "VERSION"), "12\n", "utf-8");
+    await writeFile(join(root, "migrations", "v11-to-v12.ts"), "export async function migrate() {}\n", "utf-8");
     await writeFile(join(root, "construct.json"), JSON.stringify({
       schema: "als-construct-manifest@1",
       name: "dispatcher",

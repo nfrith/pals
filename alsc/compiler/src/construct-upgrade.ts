@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { basename, relative, resolve, sep } from "node:path";
 import { z } from "zod";
 import {
@@ -17,6 +17,7 @@ import {
   type ConstructMigrationStrategyName,
   type ConstructOperatorPromptIntent,
 } from "./construct-contracts.ts";
+import { inspectSequentialMigrationDirectoryEntries } from "./sequential-migration-validation.ts";
 
 const nonEmptyString = z.string().trim().min(1, "must be a non-empty string");
 const positiveInt = z.number().int().positive("must be a positive integer");
@@ -247,7 +248,13 @@ export function inspectConstructManifest(inputPath = process.cwd()): ConstructMa
   validateSupportedConstructSchema(parsed.data.schema, errors);
   validateConstructVersionParity(bundleRoot, parsed.data.version, errors);
   validateRelativeBundlePath(bundleRoot, parsed.data.migrations_dir, "migrations_dir", errors);
-  validateMigrationsDirectory(bundleRoot, parsed.data.migrations_dir, errors);
+  validateMigrationsDirectory(
+    bundleRoot,
+    parsed.data.migration_strategy,
+    parsed.data.migrations_dir,
+    parsed.data.version,
+    errors,
+  );
   validateSourcePaths(bundleRoot, parsed.data.source_paths, errors);
 
   return finalizeManifestInspection(manifestPath, bundleRoot, errors, warnings, {
@@ -480,7 +487,9 @@ function validateConstructVersionParity(
 
 function validateMigrationsDirectory(
   bundleRoot: string,
+  migrationStrategy: ConstructMigrationStrategyName,
   migrationsDir: string,
+  manifestVersion: number,
   errors: ConstructUpgradeInspectionIssue[],
 ): void {
   const target = resolve(bundleRoot, migrationsDir);
@@ -504,12 +513,36 @@ function validateMigrationsDirectory(
         "directory",
         "file",
       ));
+      return;
     }
   } catch (error) {
     errors.push(issue(
       "construct_manifest.migrations_dir.unreadable",
       "migrations_dir",
       `Could not stat migrations_dir: ${formatError(error)}`,
+      "readable directory",
+      null,
+    ));
+    return;
+  }
+
+  if (migrationStrategy !== "sequential") {
+    return;
+  }
+
+  try {
+    const inspection = inspectSequentialMigrationDirectoryEntries({
+      entries: readdirSync(target),
+      migrations_dir: target,
+      target_version: manifestVersion,
+      path_root: "migrations_dir",
+    });
+    errors.push(...inspection.issues);
+  } catch (error) {
+    errors.push(issue(
+      "construct_manifest.migrations_dir.unreadable",
+      "migrations_dir",
+      `Could not read migrations_dir: ${formatError(error)}`,
       "readable directory",
       null,
     ));
