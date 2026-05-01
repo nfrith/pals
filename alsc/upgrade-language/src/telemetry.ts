@@ -5,9 +5,7 @@ export type LanguageUpgradeTelemetryEventType =
   | "step_completed"
   | "step_failed"
   | "step_skipped"
-  | "recovery_triggered"
-  | "operator_prompt_paused"
-  | "operator_prompt_resumed";
+  | "recovery_triggered";
 
 export interface LanguageUpgradeTelemetryEvent {
   type: LanguageUpgradeTelemetryEventType;

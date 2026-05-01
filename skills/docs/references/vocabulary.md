@@ -113,6 +113,18 @@ A construct upgrade typically involves: (1) detecting that the operator's `.als/
 
 A specific case of construct upgrade. When the dispatcher's `VERSION` bumps in the plugin, every delamain in the operator's system needs its dispatcher source refreshed. Often involves runtime-state migration (e.g. `worktree-state.json` shape changes) and a kill-and-bootup cycle.
 
+### Transaction wrapper
+
+The runtime owner of `/update`'s all-or-nothing boundary. It batches language and construct prompts, creates one staging worktree, runs validation plus bundled-surface refresh, fast-forwards the live repo with one commit, and then executes post-commit lifecycle actions.
+
+### Staging worktree
+
+The disposable git worktree that `/update` creates beside the operator repo. Language and construct execute phases mutate only this tree until validation and commit succeed. Validation or commit failure preserves it for inspection; successful runs delete it.
+
+### Bundled-surface refresh
+
+The projection pass that runs `alsc deploy claude` against the staged system. It refreshes `.claude/` from staged `.als/` inside the same pre-commit boundary, so live bundled assets change only through the successful `/update` commit.
+
 ---
 
 ## Authored vs Plugin-Shipped — the Boundary
