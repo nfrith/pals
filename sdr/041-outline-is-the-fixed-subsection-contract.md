@@ -2,7 +2,11 @@
 
 ## Status
 
-Proposed
+Withdrawn (2026-05-02)
+
+## Withdrawal Note
+
+This SDR was drafted to formally bless `content.mode: "outline"` as the v1 contract for fixed named H3 subsection enforcement, motivated by the future als-factory `CHANGE_IMPACT` consumer. ALS-073 (the parent job) was cancelled the same day after the operator clarified the underlying ask: the language already supports compiler-enforced exact required H3 subsections via `outline`, and the als-factory `CHANGE_IMPACT` consumer can be hot-patched directly from `freeform` to `outline` without any language change. With ALS-073 cancelled and the consumer wired up against existing language surface, this SDR has nothing left to formalize. Future work that genuinely needs a new primitive (e.g. node-level `allow_null`, node-level `guidance`, semi-strict required-plus-extras subsection contracts, or nested non-freeform `ContentShape` inside nodes) should land as its own decision record with concrete consumer pressure behind it, not as a forward-looking blessing of existing behavior.
 
 ## Context
 
