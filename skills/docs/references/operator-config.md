@@ -66,8 +66,8 @@ revenue_band: 100k-1M
 
 ## Lifecycle
 
-- Created on first-run onboarding when `/install` invokes `/operator-config`
-- Updated later by re-running `/operator-config`
+- Created on first-run onboarding when `/install` invokes `/configure-operator`
+- Updated later by re-running `/configure-operator`
 - Read at SessionStart by the ALS operator-config hook
 - Suppressed per-system when `.als/skip-operator-config` exists in the current ALS system
 - Outside any ALS system, SessionStart does nothing and injects no reminder
@@ -76,7 +76,7 @@ revenue_band: 100k-1M
 
 - The canonical validator lives in `alsc/compiler/src/operator-config.ts`
 - SessionStart injects the profile only when validation passes
-- If the file is invalid or contains credential-like values, SessionStart emits a remediation reminder telling the operator to run `/operator-config`
+- If the file is invalid or contains credential-like values, SessionStart emits a remediation reminder telling the operator to run `/configure-operator`
 
 ## Sensitive-data boundary
 
@@ -97,7 +97,7 @@ Use existing secret channels instead:
 
 ## Editing after install
 
-Use `/operator-config` to edit the file after onboarding. That skill:
+Use `/configure-operator` to edit the file after onboarding. That skill:
 - reads the current values
 - lets the operator change only the fields they want
 - rewrites the file in the canonical shape
@@ -107,4 +107,4 @@ Use `/operator-config` to edit the file after onboarding. That skill:
 
 `.als/CLAUDE.md` is compiler-managed and should not be edited by hand. That warning does not prohibit `.als/operator.md`.
 
-`/operator-config` is the approved managed writer for `.als/operator.md`, and the SessionStart hook is the approved reader.
+`/configure-operator` is the approved managed writer for `.als/operator.md`, and the SessionStart hook is the approved reader.

@@ -167,7 +167,7 @@ CONFIG_PATH="$(bun ${CLAUDE_PLUGIN_ROOT}/alsc/compiler/src/cli.ts operator-confi
 Interpret the result:
 
 - If the config exists, do not ask profile questions again. Record `existing operator config — no change` and continue.
-- If the config is missing, invoke `als:operator-config` via the Skill tool. No args. Wait for it to finish, then record `created operator config`.
+- If the config is missing, invoke `als:configure-operator` via the Skill tool. No args. Wait for it to finish, then record `created operator config`.
 
 This phase happens only on first-time bootstrap. Re-running `/install` still refuses in Phase 3.
 
@@ -212,6 +212,6 @@ Report:
 - Operator-config outcome (Phase 8) — `created operator config` or `existing operator config — no change`
 - Phase 9 outcome — which skill was invoked, or "stopped at skeleton"
 
-Next commands the operator can reach for any time: `/new`, `/foundry`, `/change`, `/validate`, `/operator-config`.
+Next commands the operator can reach for any time: `/new`, `/foundry`, `/change`, `/validate`, `/configure-operator`.
 
-If the operator re-runs `/install` after a successful bootstrap, Phase 3 refuses and redirects to `/new`, `/foundry`, or `/operator-config` for profile changes.
+If the operator re-runs `/install` after a successful bootstrap, Phase 3 refuses and redirects to `/new`, `/foundry`, or `/configure-operator` for profile changes.

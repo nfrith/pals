@@ -234,7 +234,7 @@ revenue_band: null
 
     const result = captureCli(["operator-config", "session-start", projectDir]);
     expect(result.exitCode).toBe(0);
-    expect(result.stdout).toContain("Run /operator-config to repair it");
+    expect(result.stdout).toContain("Run /configure-operator to repair it");
     expect(result.stdout).toContain("primary_email");
   });
 });

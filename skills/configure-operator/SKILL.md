@@ -1,10 +1,10 @@
 ---
-name: operator-config
+name: configure-operator
 description: Create or update the operator profile stored at <system_root>/.als/operator.md, validate it, and keep it ready for SessionStart injection.
 allowed-tools: AskUserQuestion, Bash(bash *)
 ---
 
-# operator-config
+# configure-operator
 
 Create or update the ALS operator profile at `<system_root>/.als/operator.md`.
 
@@ -112,5 +112,5 @@ Report:
 
 - This file is system-scoped. Each ALS system keeps its own `.als/operator.md`.
 - `/install` invokes this skill only when the config is missing.
-- Re-running `/install` does not reopen this flow; `/operator-config` is the ongoing edit surface.
-- The usual `.als/CLAUDE.md` "do not edit" warning does not block this file. `/operator-config` is the approved managed writer for `.als/operator.md`.
+- Re-running `/install` does not reopen this flow; `/configure-operator` is the ongoing edit surface.
+- The usual `.als/CLAUDE.md` "do not edit" warning does not block this file. `/configure-operator` is the approved managed writer for `.als/operator.md`.

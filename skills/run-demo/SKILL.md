@@ -99,7 +99,7 @@ The key: you are reading the operator's environment and making an intelligent su
 
 #### If "Use /bootup for dispatchers"
 
-Run `/als:bootup` to start dispatchers using the operator's boot configuration (`.als/bootup.md`). If no config exists, bootup will walk them through creating one.
+Run `/als:bootup` to start dispatchers. `/bootup` scans the current runtime environment directly and no longer depends on `.als/bootup.md`.
 
 ### 2. Register delamain roots (statusline only)
 

@@ -386,7 +386,7 @@ export function renderOperatorConfigRemediation(
     "<system-reminder>",
     `Operator config at ${filePath} is present but not usable.`,
     "Do not rely on partial operator-profile data from this file.",
-    "Run /operator-config to repair it before using operator identity or business context from ALS.",
+    "Run /configure-operator to repair it before using operator identity or business context from ALS.",
   ];
 
   if (errors.length > 0) {
