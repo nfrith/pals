@@ -40,6 +40,7 @@ const delamainStateSchema = z.object({
   provider: z.enum(["anthropic", "openai"]).optional(),
   path: nonEmptyString.optional(),
   resumable: z.boolean().optional(),
+  concurrency: z.number().int().positive().optional(),
   "session-field": fieldNameSchema.optional(),
   "sub-agent": nonEmptyString.optional(),
 }).strict().superRefine((value, ctx) => {
@@ -54,7 +55,7 @@ const delamainStateSchema = z.object({
   }
 
   if (isTerminal) {
-    for (const fieldName of ["actor", "provider", "path", "resumable", "session-field", "sub-agent"] as const) {
+    for (const fieldName of ["actor", "provider", "path", "resumable", "concurrency", "session-field", "sub-agent"] as const) {
       if (value[fieldName] !== undefined) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
@@ -76,7 +77,7 @@ const delamainStateSchema = z.object({
   }
 
   if (value.actor === "operator") {
-    for (const fieldName of ["provider", "path", "resumable", "session-field", "sub-agent"] as const) {
+    for (const fieldName of ["provider", "path", "resumable", "concurrency", "session-field", "sub-agent"] as const) {
       if (value[fieldName] !== undefined) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,

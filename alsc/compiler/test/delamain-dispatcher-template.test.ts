@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { deployClaudeSkillsFromConfig } from "../src/claude-skills.ts";
@@ -320,6 +320,29 @@ test("dispatcher resolve uses deployed runtime manifest metadata", async () => {
         openai: 50,
       },
     });
+    expect(await readFile(join(bundleRoot, "delamain.yaml"), "utf-8")).not.toContain("concurrency:");
+
+    const delamainSourcePath = join(
+      root,
+      ".als/modules/factory/v1/delamains/development-pipeline/delamain.ts",
+    );
+    const authoredDelamain = await readFile(delamainSourcePath, "utf-8");
+    await writeFile(
+      delamainSourcePath,
+      authoredDelamain.replace(
+        '"path": "agents/planning.md"',
+        '"path": "agents/planning.md",\n        "concurrency": 1',
+      ),
+      "utf-8",
+    );
+
+    const updatedContext = loadSystemValidationContext(root);
+    expect(updatedContext.system_config).not.toBeNull();
+    const updatedOutput = deployClaudeSkillsFromConfig(root, updatedContext.system_config!, "pass", {
+      module_filter: "factory",
+    });
+    expect(updatedOutput.status).toBe("pass");
+    expect(await readFile(join(bundleRoot, "delamain.yaml"), "utf-8")).toContain("concurrency: 1");
   });
 });
 

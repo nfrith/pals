@@ -96,11 +96,11 @@ test("deploy CLI projects active skills into .claude/skills and is idempotent", 
     expect(firstDelamainSnapshot["development-pipeline/runtime-manifest.json"]).not.toContain("\"limits\"");
     expect(firstDelamainSnapshot["development-pipeline/agents/planning.md"]).toContain("description:");
     expect(firstDelamainSnapshot["development-pipeline/sub-agents/developer.md"]).toContain("description:");
-    expect(firstDelamainSnapshot["development-pipeline/dispatcher/VERSION"]).toBe("12\n");
-    expect(firstDelamainSnapshot["run-lifecycle/dispatcher/VERSION"]).toBe("12\n");
-    expect(firstDelamainSnapshot["incident-lifecycle/dispatcher/VERSION"]).toBe("12\n");
-    expect(firstDelamainSnapshot["release-lifecycle/dispatcher/VERSION"]).toBe("12\n");
-    expect(firstDelamainSnapshot["postmortem-lifecycle/dispatcher/VERSION"]).toBe("12\n");
+    expect(firstDelamainSnapshot["development-pipeline/dispatcher/VERSION"]).toBe("14\n");
+    expect(firstDelamainSnapshot["run-lifecycle/dispatcher/VERSION"]).toBe("14\n");
+    expect(firstDelamainSnapshot["incident-lifecycle/dispatcher/VERSION"]).toBe("14\n");
+    expect(firstDelamainSnapshot["release-lifecycle/dispatcher/VERSION"]).toBe("14\n");
+    expect(firstDelamainSnapshot["postmortem-lifecycle/dispatcher/VERSION"]).toBe("14\n");
     expect(firstDelamainSnapshot["run-lifecycle/runtime-manifest.json"]).toContain("\"delamain_name\": \"run-lifecycle\"");
     expect(firstDelamainSnapshot["incident-lifecycle/runtime-manifest.json"]).toContain("\"module_id\": \"incident-response\"");
     expect(firstDelamainSnapshot["release-lifecycle/runtime-manifest.json"]).toContain("\"module_id\": \"infra\"");
@@ -406,7 +406,7 @@ test("deploy CLI projects bound Delamain bundles into .claude/delamains and is i
     expect(firstSnapshot["development-pipeline/runtime-manifest.json"]).toContain("\"state_providers\"");
     expect(firstSnapshot["development-pipeline/agents/planning.md"]).toContain("description:");
     expect(firstSnapshot["development-pipeline/sub-agents/developer.md"]).toContain("description:");
-    expect(firstSnapshot["development-pipeline/dispatcher/VERSION"]).toBe("12\n");
+    expect(firstSnapshot["development-pipeline/dispatcher/VERSION"]).toBe("14\n");
     expect(firstSnapshot["development-pipeline/dispatcher/src/index.ts"].startsWith('import "./preflight.js";\n')).toBe(true);
     expect(firstSnapshot["development-pipeline/dispatcher/src/preflight.ts"]).toContain(
       "delete process.env.ANTHROPIC_API_KEY;",

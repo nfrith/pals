@@ -11,6 +11,7 @@ export type DispatchTelemetryEventType =
   | "dispatch_prepare"
   | "dispatch_finish"
   | "dispatch_failure"
+  | "dispatch_suppressed_concurrency"
   | "dispatch_merge_success"
   | "dispatch_merge_blocked"
   | "dispatch_cleanup"
@@ -44,6 +45,8 @@ export interface DispatchTelemetryEvent {
   integrated_commit: string | null;
   merge_outcome: string | null;
   incident_kind: string | null;
+  current_count?: number | null;
+  concurrency_limit?: number | null;
   transition_targets: string[];
   duration_ms: number | null;
   num_turns: number | null;
@@ -183,6 +186,8 @@ function normalizeTelemetryEvent(
       : null,
     merge_outcome: typeof event.merge_outcome === "string" ? event.merge_outcome : null,
     incident_kind: typeof event.incident_kind === "string" ? event.incident_kind : null,
+    current_count: typeof event.current_count === "number" ? event.current_count : null,
+    concurrency_limit: typeof event.concurrency_limit === "number" ? event.concurrency_limit : null,
     transition_targets: Array.isArray(event.transition_targets)
       ? event.transition_targets.filter((value): value is string => typeof value === "string")
       : [],

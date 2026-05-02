@@ -8,6 +8,10 @@ import {
   type BlockedDirtyRetryResult,
   type DispatcherRuntimeHeartbeat,
 } from "./dispatcher-runtime.js";
+import {
+  countStateConcurrencyOccupancy,
+  type RuntimeDispatchSummary,
+} from "./runtime-state.js";
 import { formatDispatcherVersionLine, loadDispatcherVersionInfo } from "./dispatcher-version.js";
 import { appendTelemetryEvent, DISPATCH_TELEMETRY_SCHEMA } from "./telemetry.js";
 import { scan } from "./watcher.js";
@@ -252,6 +256,63 @@ function logSweep(prefix: string, summary: Awaited<ReturnType<typeof runtime.swe
   );
 }
 
+function buildOpenRecordItemIdSet(summary: RuntimeDispatchSummary): Set<string> {
+  return new Set([
+    ...summary.active,
+    ...summary.blocked,
+    ...summary.guarded,
+    ...summary.orphaned,
+  ].map((record) => record.item_id));
+}
+
+async function writeConcurrencySuppressionTelemetry(
+  item: { id: string; filePath: string },
+  rule: DispatchEntry,
+  currentCount: number,
+): Promise<void> {
+  try {
+    await appendTelemetryEvent(BUNDLE_ROOT, {
+      schema: DISPATCH_TELEMETRY_SCHEMA,
+      event_id: crypto.randomUUID(),
+      event_type: "dispatch_suppressed_concurrency",
+      timestamp: new Date().toISOString(),
+      dispatcher_name: config.delamainName,
+      module_id: config.moduleId,
+      dispatch_id: null,
+      item_id: item.id,
+      item_file: item.filePath,
+      isolated_item_file: null,
+      state: rule.state,
+      agent_name: rule.agentName,
+      sub_agent_name: rule.subAgentName ?? null,
+      provider: rule.provider,
+      resumable: rule.resumable,
+      resume_requested: false,
+      session_field: rule.sessionField ?? null,
+      runtime_session_id: null,
+      resume_session_id: null,
+      worker_session_id: null,
+      worktree_path: null,
+      branch_name: null,
+      worktree_commit: null,
+      integrated_commit: null,
+      merge_outcome: null,
+      incident_kind: null,
+      current_count: currentCount,
+      concurrency_limit: rule.concurrency ?? null,
+      transition_targets: rule.transitions.map((transition) => transition.to),
+      duration_ms: null,
+      num_turns: null,
+      cost_usd: null,
+      error: null,
+    });
+  } catch (error) {
+    console.warn(
+      `[dispatcher] ${item.id} concurrency telemetry write failed: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+}
+
 process.on("beforeExit", (code) => {
   console.log(
     `[dispatcher] beforeExit fired (code=${code}, active=${lastRuntimeHeartbeat.active_dispatches}, blocked=${lastRuntimeHeartbeat.blocked_dispatches})`,
@@ -314,10 +375,29 @@ async function tick() {
     await writeRetryTelemetry(retry);
   }
 
+  const openSummary = await runtime.openDispatchSummary();
+  const openItemIds = buildOpenRecordItemIdSet(openSummary);
+  const concurrencyCounts = new Map<string, number>(
+    config.dispatchTable
+      .filter((entry) => entry.concurrency !== undefined)
+      .map((entry) => [entry.state, countStateConcurrencyOccupancy(openSummary, entry.state)]),
+  );
+
   for (const item of items) {
     const rule = findRule(item.status);
     if (!rule) continue;
-    if (await runtime.hasOpenRecord(item.id)) continue;
+    if (openItemIds.has(item.id)) continue;
+
+    const currentCount = concurrencyCounts.get(rule.state) ?? 0;
+    if (rule.concurrency !== undefined && currentCount >= rule.concurrency) {
+      await writeConcurrencySuppressionTelemetry(item, rule, currentCount);
+      continue;
+    }
+
+    openItemIds.add(item.id);
+    if (rule.concurrency !== undefined) {
+      concurrencyCounts.set(rule.state, currentCount + 1);
+    }
 
     console.log(`[dispatcher] dispatch ${item.id} -> ${item.status}`);
     void dispatch(

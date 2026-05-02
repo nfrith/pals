@@ -91,6 +91,11 @@ export interface RuntimeDispatchSummary {
   activeByProvider: ProviderDispatchCounts;
 }
 
+export interface StateConcurrencyEvaluation {
+  currentCount: number;
+  suppressed: boolean;
+}
+
 interface RuntimeStatePaths {
   directory: string;
   stateFile: string;
@@ -185,6 +190,26 @@ export function summarizeRuntimeState(state: RuntimeDispatchState): RuntimeDispa
     guardedCount: guarded.length,
     orphanedCount: orphaned.length,
     activeByProvider,
+  };
+}
+
+export function countStateConcurrencyOccupancy(
+  summary: RuntimeDispatchSummary,
+  state: string,
+): number {
+  return summary.active.filter((record) => record.state === state).length
+    + summary.blocked.filter((record) => record.state === state).length;
+}
+
+export function evaluateStateConcurrency(
+  summary: RuntimeDispatchSummary,
+  state: string,
+  concurrency: number | undefined,
+): StateConcurrencyEvaluation {
+  const currentCount = countStateConcurrencyOccupancy(summary, state);
+  return {
+    currentCount,
+    suppressed: concurrency !== undefined && currentCount >= concurrency,
   };
 }
 

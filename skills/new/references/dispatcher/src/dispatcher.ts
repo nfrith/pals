@@ -33,6 +33,7 @@ interface StateDef {
   provider?: AgentProvider;
   path?: string;
   resumable?: boolean;
+  concurrency?: number;
   "session-field"?: string;
   "sub-agent"?: string;
 }
@@ -49,6 +50,7 @@ export interface DispatchEntry {
   subAgentName?: string;
   provider: AgentProvider;
   resumable: boolean;
+  concurrency?: number;
   sessionField?: string;
   transitions: Array<Pick<Transition, "class" | "to">>;
 }
@@ -174,6 +176,7 @@ export async function resolve(
       subAgentName: subAgentPath ? basename(subAgentPath, ".md") : undefined,
       provider,
       resumable: state.resumable === true,
+      concurrency: state.concurrency,
       sessionField: state.resumable ? state["session-field"] : undefined,
       transitions,
     });

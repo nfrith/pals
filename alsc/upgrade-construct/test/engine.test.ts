@@ -103,7 +103,7 @@ test("canonical dispatcher bundle matches the current known vendor fingerprint",
   );
 
   expect(fingerprint).toEqual({
-    matched_version: 13,
+    matched_version: 14,
     customized: false,
   });
 });
@@ -145,7 +145,7 @@ test("delamain construct preflight and execute stage the fleet upgrade without m
     });
     expect(preflight.needs_upgrade).toBe(true);
     expect(preflight.current_version).toBe(11);
-    expect(preflight.target_version).toBe(13);
+    expect(preflight.target_version).toBe(14);
     expect(preflight.prompts.filter((prompt) => prompt.intent === "pick-construct-lifecycle")).toHaveLength(2);
     expect(preflight.prompts.filter((prompt) => prompt.intent === "confirm-construct-overwrite")).toHaveLength(0);
 
@@ -176,7 +176,7 @@ test("delamain construct preflight and execute stage the fleet upgrade without m
       "factory-jobs",
       "dispatcher",
       "VERSION",
-    ), "utf-8")).toBe("13\n");
+    ), "utf-8")).toBe("14\n");
     expect(execute.validation?.requires_claude_deploy).toBe(true);
   });
 });

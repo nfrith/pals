@@ -123,6 +123,108 @@ test.concurrent("missing provider on agent-owned states fails bundle validation"
   });
 });
 
+test.concurrent("agent-owned states accept positive concurrency declarations", async () => {
+  await withFixtureSandbox("delamain-concurrency-valid", async ({ root }) => {
+    await updateYamlTextFile(
+      root,
+      ".als/modules/factory/v1/delamains/development-pipeline/delamain.ts",
+      (current) => {
+        const states = current.states as Record<string, Record<string, unknown>>;
+        states.planning!.concurrency = 1;
+      },
+    );
+
+    const result = validateFixture(root);
+    expect(result.status).toBe("pass");
+    expect(result.summary.error_count).toBe(0);
+  });
+});
+
+test.concurrent("agent-owned states reject zero concurrency", async () => {
+  await withFixtureSandbox("delamain-concurrency-zero", async ({ root }) => {
+    await updateYamlTextFile(
+      root,
+      ".als/modules/factory/v1/delamains/development-pipeline/delamain.ts",
+      (current) => {
+        const states = current.states as Record<string, Record<string, unknown>>;
+        states.planning!.concurrency = 0;
+      },
+    );
+
+    const result = validateFixture(root);
+    expect(result.status).toBe("fail");
+    expectModuleDiagnostic(result, "factory", codes.DELAMAIN_INVALID, "development-pipeline/delamain.ts");
+  });
+});
+
+test.concurrent("agent-owned states reject negative concurrency", async () => {
+  await withFixtureSandbox("delamain-concurrency-negative", async ({ root }) => {
+    await updateYamlTextFile(
+      root,
+      ".als/modules/factory/v1/delamains/development-pipeline/delamain.ts",
+      (current) => {
+        const states = current.states as Record<string, Record<string, unknown>>;
+        states.planning!.concurrency = -1;
+      },
+    );
+
+    const result = validateFixture(root);
+    expect(result.status).toBe("fail");
+    expectModuleDiagnostic(result, "factory", codes.DELAMAIN_INVALID, "development-pipeline/delamain.ts");
+  });
+});
+
+test.concurrent("agent-owned states reject string concurrency", async () => {
+  await withFixtureSandbox("delamain-concurrency-string", async ({ root }) => {
+    await updateYamlTextFile(
+      root,
+      ".als/modules/factory/v1/delamains/development-pipeline/delamain.ts",
+      (current) => {
+        const states = current.states as Record<string, Record<string, unknown>>;
+        states.planning!.concurrency = "1";
+      },
+    );
+
+    const result = validateFixture(root);
+    expect(result.status).toBe("fail");
+    expectModuleDiagnostic(result, "factory", codes.DELAMAIN_INVALID, "development-pipeline/delamain.ts");
+  });
+});
+
+test.concurrent("operator-owned states reject concurrency", async () => {
+  await withFixtureSandbox("delamain-concurrency-operator", async ({ root }) => {
+    await updateYamlTextFile(
+      root,
+      ".als/modules/factory/v1/delamains/development-pipeline/delamain.ts",
+      (current) => {
+        const states = current.states as Record<string, Record<string, unknown>>;
+        states["plan-input"]!.concurrency = 1;
+      },
+    );
+
+    const result = validateFixture(root);
+    expect(result.status).toBe("fail");
+    expectModuleDiagnostic(result, "factory", codes.DELAMAIN_INVALID, "development-pipeline/delamain.ts");
+  });
+});
+
+test.concurrent("terminal states reject concurrency", async () => {
+  await withFixtureSandbox("delamain-concurrency-terminal", async ({ root }) => {
+    await updateYamlTextFile(
+      root,
+      ".als/modules/factory/v1/delamains/development-pipeline/delamain.ts",
+      (current) => {
+        const states = current.states as Record<string, Record<string, unknown>>;
+        states.completed!.concurrency = 1;
+      },
+    );
+
+    const result = validateFixture(root);
+    expect(result.status).toBe("fail");
+    expectModuleDiagnostic(result, "factory", codes.DELAMAIN_INVALID, "development-pipeline/delamain.ts");
+  });
+});
+
 test.concurrent("openai prompt assets reject Claude /skill syntax", async () => {
   await withFixtureSandbox("delamain-openai-claude-skill-syntax", async ({ root }) => {
     await updateYamlTextFile(
