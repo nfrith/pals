@@ -93,19 +93,29 @@ An item flowing through a delamain (e.g. a `job` in als-factory, a `client` in c
 
 A **construct** is anything Section 9 ships as runtime/tooling code that the operator's system uses but does not author. Constructs are vendor-managed: they update with the plugin, the operator does not customize them.
 
-Today's constructs:
+Today's runtime surface splits into two tiers.
 
-- **Delamain dispatcher source** — the runtime engine that reads delamain definitions, dispatches agents, manages worktrees. Template lives at `nfrith-repos/als/skills/new/references/dispatcher/` (the canonical source). Tracked by its own `VERSION` file. Currently at VERSION 12.
-- **Hooks** — `als-validate.sh`, `als-stop-gate.sh`, `als-session-start-operator.sh`, etc. Plugin-shipped shell scripts wired into Claude Code's hook lifecycle.
-- **Statusline scripts** — runtime scripts that produce the live status line (delamain health, OBS state, context usage, clock).
-- **Dashboard launchers** — the localhost dashboard service that visualizes dispatcher state.
-- **Compiler (`alsc`)** — the language compiler. Validates authored content, projects to `.claude/`, owns the contract surface.
+### Engine-managed constructs
+
+These surfaces participate in the ALS-067 construct-upgrade engine. Each carries its own `VERSION` file, and any state-shape move requires a sequential migration script alongside the VERSION bump.
+
+- **Delamain dispatcher source** — the runtime engine that reads delamain definitions, dispatches agents, manages worktrees. Template lives at `nfrith-repos/als/skills/new/references/dispatcher/` and is tracked by `nfrith-repos/als/skills/new/references/dispatcher/VERSION`.
+- **Statusline service** — the runtime scripts that produce the live status line (delamain health, OBS state, context usage, clock). Tracked by `nfrith-repos/als/statusline/VERSION`.
+- **Dashboard service** — the localhost dashboard that visualizes dispatcher state. Tracked by `nfrith-repos/als/delamain-dashboard/VERSION`.
+
+### Bundled plugin assets
+
+These surfaces ship with the plugin and auto-refresh on deploy; they do not participate in the ALS-067 construct-upgrade engine.
+
+- **Hooks** — plugin-shipped shell scripts wired into Claude Code's hook lifecycle. The canonical hook inventory lives in `nfrith-repos/als/.claude-plugin/plugin.json` under `hooks`.
+- **Skills** — bundled skill assets shipped from `nfrith-repos/als/skills/`. Any directory under that tree is part of the bundled skill surface that `alsc deploy claude` projects into `.claude/skills/`.
+- **Compiler (`alsc`)** — the vendor-managed compiler and projection surface. `nfrith-repos/als/alsc/VERSION` exists for diagnostics only; it is not a construct-upgrade contract and does not imply migration scripts.
 
 Constructs are NOT operator-authored. The operator's `.als/modules/.../delamains/.../agents/*.md` and `.als/modules/.../entities/...` are authored content, not constructs. The dispatcher template specifically ships ONLY dispatcher TypeScript source — it does NOT ship agent prompts. Agent prompts always come from the operator's authored delamain.
 
 ### Construct upgrade
 
-The act of bumping a construct's version inside the operator's system to match a newer version shipped by the plugin. Distinct from authored-content evolution (which goes through `/change`/`/migrate`) and from language-version cutover (which goes through `/upgrade-language`).
+The act of bumping an engine-managed construct's version inside the operator's system to match a newer version shipped by the plugin. Bundled plugin assets refresh via deploy instead of running construct-upgrade migrations. Distinct from authored-content evolution (which goes through `/change`/`/migrate`) and from language-version cutover (which goes through `/upgrade-language`).
 
 A construct upgrade typically involves: (1) detecting that the operator's `.als/`-side copy of the construct is older than the plugin's reference, (2) replacing the source files in the operator's system, (3) running any state-shape migrations the new version requires, (4) re-deploying to `.claude/` via `alsc deploy`, (5) restarting any background processes the construct owns.
 
@@ -124,6 +134,21 @@ The disposable git worktree that `/update` creates beside the operator repo. Lan
 ### Bundled-surface refresh
 
 The projection pass that runs `alsc deploy claude` against the staged system. It refreshes `.claude/` from staged `.als/` inside the same pre-commit boundary, so live bundled assets change only through the successful `/update` commit.
+
+---
+
+## Job Surface Targets
+
+The ALS Factory `targets` field uses the six slugs below. This section is the canonical documentation home for that taxonomy.
+
+| Slug | What it is | Primary location | Tier |
+|------|------------|------------------|------|
+| `language` | The ALS language contract — compiler rules, SDR-backed semantics, and canonical reference docs | `nfrith-repos/als/alsc/compiler/`, `nfrith-repos/als/sdr/`, `nfrith-repos/als/skills/docs/references/` | Language contract |
+| `construct:dispatcher` | Delamain dispatcher constructs | `nfrith-repos/als/skills/new/references/dispatcher/` | [Engine-managed constructs](#engine-managed-constructs) |
+| `construct:statusline` | Statusline service | `nfrith-repos/als/statusline/` | [Engine-managed constructs](#engine-managed-constructs) |
+| `construct:dashboard` | Delamain-dashboard service | `nfrith-repos/als/delamain-dashboard/` | [Engine-managed constructs](#engine-managed-constructs) |
+| `skill` | Plugin-shipped skills | `nfrith-repos/als/skills/` | [Bundled plugin assets](#bundled-plugin-assets) |
+| `hook` | Plugin-shipped hooks | `nfrith-repos/als/hooks/` | [Bundled plugin assets](#bundled-plugin-assets) |
 
 ---
 
