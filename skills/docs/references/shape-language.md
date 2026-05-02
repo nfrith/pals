@@ -873,6 +873,9 @@ Use `outline` when the heading tree itself is part of the schema contract. Use `
 - `provider` is required on `actor: "agent"` states and must be `anthropic` or `openai`.
 - If `resumable: true`, the state declares exactly one `session-field`.
 - If `resumable: false`, the state does not declare `session-field`.
+- `concurrency`, when present, is a positive integer on `actor: "agent"` states only.
+- `actor: "operator"` and terminal states do not declare `concurrency`.
+- `concurrency` caps parallel dispatches for that state; see `sdr/036-delamain-state-concurrency-contract.md` for the runtime semantics.
 - Delamain-declared session-field names become implicit nullable string frontmatter fields on bound entities.
 - A Delamain session-field must not collide with any explicit entity field name or any other implicit session field materialized on the same effective entity schema.
 - Delamain-local prompt asset paths such as `path` and `sub-agent` resolve relative to the Delamain bundle root and must stay inside the same active module version bundle.

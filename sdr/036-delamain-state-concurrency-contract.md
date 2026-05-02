@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed
+Accepted
 
 ## Context
 
@@ -61,16 +61,15 @@ Proposed
 
 ## Docs and Fixture Impact
 
-- The next planning pass should paint `concurrency` into fixture and shape examples before compiler work starts.
-- The fixture set must show:
+- Compiler fixtures and shape examples must show:
   - no `concurrency` field on a normal agent state
   - valid `concurrency: 1`
   - rejected `concurrency: 0`
   - rejected `concurrency: -1`
   - rejected `concurrency: "1"`
   - rejected `concurrency` on terminal and operator-actor states
-- The first live delamain use is `concurrency: 1` on `.als/modules/als-factory/v1/delamains/als-factory-jobs/delamain.ts` state `changelog`.
-- The canonical shape-language documentation at `skills/docs/references/shape-language.md` must describe the field after the fixture-first pass and point back to this SDR for semantics.
+- The first live delamain use is `concurrency: 1` on `.als/modules/als-factory/v2/delamains/als-factory-jobs/delamain.ts` state `changelog`.
+- The canonical shape-language documentation at `skills/docs/references/shape-language.md` describes the field briefly and points back to this SDR for semantics.
 - Any later authoring docs should mention the field briefly and avoid re-stating its semantics in multiple places.
 
 ## Alternatives Considered
