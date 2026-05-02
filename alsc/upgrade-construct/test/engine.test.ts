@@ -12,6 +12,8 @@ import {
   preflightDelamainConstructUpgrade,
   runConstructActionManifest,
 } from "../src/index.ts";
+import { detectKnownConstructFingerprint } from "../src/customization.ts";
+import { DISPATCHER_KNOWN_VENDOR_FINGERPRINTS } from "../src/known-fingerprints.ts";
 import {
   discoverSequentialMigrationSteps,
   executeSequentialMigrationChain,
@@ -94,6 +96,18 @@ test("sequential migration discovery rejects malformed directory entries", async
   });
 });
 
+test("canonical dispatcher bundle matches the current known vendor fingerprint", async () => {
+  const fingerprint = await detectKnownConstructFingerprint(
+    resolve(alsRepoRoot, "skills/new/references/dispatcher"),
+    DISPATCHER_KNOWN_VENDOR_FINGERPRINTS,
+  );
+
+  expect(fingerprint).toEqual({
+    matched_version: 13,
+    customized: false,
+  });
+});
+
 test("delamain construct preflight and execute stage the fleet upgrade without mutating the live system", async () => {
   await withTempDir("dispatcher-stage", async (root) => {
     const liveSystemRoot = join(root, "live");
@@ -131,7 +145,7 @@ test("delamain construct preflight and execute stage the fleet upgrade without m
     });
     expect(preflight.needs_upgrade).toBe(true);
     expect(preflight.current_version).toBe(11);
-    expect(preflight.target_version).toBe(12);
+    expect(preflight.target_version).toBe(13);
     expect(preflight.prompts.filter((prompt) => prompt.intent === "pick-construct-lifecycle")).toHaveLength(2);
     expect(preflight.prompts.filter((prompt) => prompt.intent === "confirm-construct-overwrite")).toHaveLength(0);
 
@@ -162,7 +176,7 @@ test("delamain construct preflight and execute stage the fleet upgrade without m
       "factory-jobs",
       "dispatcher",
       "VERSION",
-    ), "utf-8")).toBe("12\n");
+    ), "utf-8")).toBe("13\n");
     expect(execute.validation?.requires_claude_deploy).toBe(true);
   });
 });
