@@ -24,6 +24,7 @@ Proposed
 - Pool membership is restricted to agent-owned non-terminal states.
 - A state may belong to at most one pool.
 - The recommended v1 contract requires each pool to list at least two distinct member states.
+- The order of `states` inside a pool has no scheduler meaning. It is an authored membership list, not a priority list.
 - If a state declares both per-state `concurrency` and pool membership, both constraints apply. A dispatch is allowed only when the destination state's local cap and the pool cap both have headroom.
 - Pool occupancy is counted across all member states using open runtime records whose status is `active` or `blocked`.
 - When a candidate dispatch is suppressed because its pool is full, the dispatcher leaves the job queued and emits `dispatch_suppressed_concurrency` with the existing state/count fields plus pool metadata sufficient to identify the blocked pool and its current holders.
@@ -63,6 +64,7 @@ concurrency_pools:
 - Required: every named pool member state exists on the same delamain.
 - Required: pool member states are agent-owned and non-terminal.
 - Required: each state may appear in at most one pool.
+- Required: the authored order of `states` inside a pool does not change runtime behavior.
 - Required: pool occupancy counts persisted `active` plus `blocked` runtime records across all member states.
 - Required: same-tick in-memory reservations prevent oversubscription before runtime state is flushed.
 - Required: when both a state-local `concurrency` cap and a pool cap exist, both must have headroom before dispatch.
@@ -70,6 +72,7 @@ concurrency_pools:
 - Allowed: unpooled states to keep using only same-state `concurrency`.
 - Allowed: pool capacities greater than `1` when an author wants bounded cross-state parallelism instead of single-flight.
 - Rejected: unknown pool member states.
+- Rejected: pools with fewer than two distinct member states.
 - Rejected: duplicate state ids inside one pool.
 - Rejected: the same state belonging to multiple pools.
 - Rejected: operator-owned or terminal states inside a pool.
@@ -85,6 +88,7 @@ concurrency_pools:
   - valid pool declarations
   - unknown states
   - invalid capacities
+  - single-member pools
   - duplicate state ids inside one pool
   - duplicate membership across pools
   - invalid operator/terminal membership
