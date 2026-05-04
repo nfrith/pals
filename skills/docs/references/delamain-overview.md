@@ -44,6 +44,13 @@ States with `actor: agent` declare:
 
 States with `actor: operator` have no agent binding. They represent wait points where the human decides what happens next. The operator console skill surfaces items in operator states and presents context actions.
 
+### Concurrency Controls
+
+- Agent states may declare `concurrency` when only that one state needs a local cap.
+- Delamains may declare top-level `concurrency_pools` when two or more agent-owned non-terminal states share one capacity pool.
+- A pooled state may still declare its own `concurrency`; dispatch is allowed only when both the state-local cap and the pool cap have headroom.
+- Pool ids are stable delamain-local names, and pools do not cross delamain boundaries.
+
 ## The Delamain Bundle
 
 A delamain is a directory containing:

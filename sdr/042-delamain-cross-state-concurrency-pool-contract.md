@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed
+Accepted
 
 ## Context
 
@@ -27,7 +27,10 @@ Proposed
 - The order of `states` inside a pool has no scheduler meaning. It is an authored membership list, not a priority list.
 - If a state declares both per-state `concurrency` and pool membership, both constraints apply. A dispatch is allowed only when the destination state's local cap and the pool cap both have headroom.
 - Pool occupancy is counted across all member states using open runtime records whose status is `active` or `blocked`.
-- When a candidate dispatch is suppressed because its pool is full, the dispatcher leaves the job queued and emits `dispatch_suppressed_concurrency` with the existing state/count fields plus pool metadata sufficient to identify the blocked pool and its current holders.
+- `dispatch_suppressed_concurrency` adds `blocked_by: "state" | "pool"` so consumers can interpret `current_count` and `concurrency_limit` without guessing which cap fired.
+- When `blocked_by: "state"`, `current_count` and `concurrency_limit` keep their existing same-state meaning and pool metadata is omitted.
+- When `blocked_by: "pool"`, `current_count` and `concurrency_limit` describe pool occupancy and pool capacity, and the event includes `pool_id`, `pool_states`, and `pool_holders`.
+- If the destination state's own cap and its pool cap are both exhausted on the same dispatch attempt, the dispatcher emits `blocked_by: "pool"` so the cross-state cause stays explicit to consumers.
 - Pool capacity must also be reserved in memory during a scheduling tick so two queued jobs targeting different states in the same pool cannot both launch before either persisted record appears.
 - Pools are local to one delamain. This decision does not introduce Ghost-wide or multi-delamain pools.
 - Example authored shape:
@@ -68,9 +71,13 @@ concurrency_pools:
 - Required: pool occupancy counts persisted `active` plus `blocked` runtime records across all member states.
 - Required: same-tick in-memory reservations prevent oversubscription before runtime state is flushed.
 - Required: when both a state-local `concurrency` cap and a pool cap exist, both must have headroom before dispatch.
+- Required: `dispatch_suppressed_concurrency` includes `blocked_by: "state" | "pool"` and consumers interpret `current_count` plus `concurrency_limit` against that discriminator.
+- Required: `blocked_by: "pool"` events include `pool_id`, `pool_states`, and `pool_holders`.
+- Required: if both the state-local cap and the pool cap are exhausted on the same attempt, the event reports `blocked_by: "pool"`.
 - Allowed: pooled states to also declare their own per-state `concurrency`.
 - Allowed: unpooled states to keep using only same-state `concurrency`.
 - Allowed: pool capacities greater than `1` when an author wants bounded cross-state parallelism instead of single-flight.
+- Allowed: pool member states to live in different phases as long as they are agent-owned and non-terminal.
 - Rejected: unknown pool member states.
 - Rejected: pools with fewer than two distinct member states.
 - Rejected: duplicate state ids inside one pool.

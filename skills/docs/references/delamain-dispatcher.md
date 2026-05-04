@@ -55,6 +55,7 @@ The dispatcher now emits three runtime surfaces per deployed Delamain bundle:
 Recent telemetry events include:
 
 - dispatch start
+- dispatch suppressed concurrency
 - worktree prepared
 - dispatch finish
 - dispatch failure
@@ -62,10 +63,21 @@ Recent telemetry events include:
 - merge blocked
 - cleanup
 
-Each event records the Delamain name, module id, dispatch id, item id, current state, agent identity, resume metadata, worktree path and branch, merge outcome, transition targets, duration, turn count, cost, and error text when present.
+Each event records the Delamain name, module id, dispatch id, item id, current state, agent identity, resume metadata, worktree path and branch, merge outcome, transition targets, duration, turn count, cost, and error text when present. Concurrency-suppression events also carry the suppression discriminator and, for pool suppressions, pool metadata.
 Submodule-targeting events also carry `mounted_submodules`, which records each mounted repo path plus its dispatch branch name, mounted worktree path, and any worktree/integrated commit SHAs known at that point in the lifecycle.
 
 Older dispatcher copies that only emit `status.json` remain valid. Consumers must degrade to heartbeat-only mode instead of failing when `telemetry/events.jsonl` is absent.
+
+## Concurrency Gates
+
+The dispatcher enforces both same-state `concurrency` (SDR 036) and cross-state `concurrency_pools` (SDR 042) before spawn.
+
+- Unpooled states keep the existing same-state gate.
+- Pooled states require headroom in both the destination state's local cap, when present, and the shared pool cap.
+- Pool occupancy counts open `active` plus `blocked` runtime records across every member state in the pool.
+- The scheduler reserves pool capacity in memory within one tick so two queued jobs targeting different states in the same pool cannot both launch before persistence lands.
+- `dispatch_suppressed_concurrency` includes `blocked_by: "state" | "pool"`. When `blocked_by: "pool"`, `current_count` and `concurrency_limit` describe pool occupancy and pool capacity, and the event carries `pool_id`, `pool_states`, and lean `pool_holders` records.
+- If both the destination state's own cap and its pool cap are exhausted on the same attempt, the event reports `blocked_by: "pool"` so the cross-state cause is explicit.
 
 ## Source Files
 
@@ -158,7 +170,7 @@ The core logic. Two main functions:
 1. Reads `runtime-manifest.json` from the deployed Delamain bundle root
 2. Reads local `delamain.yaml`
 3. Loads state-agent and sub-agent markdown files from the same deployed bundle
-4. Builds a dispatch table from `actor: agent` states
+4. Builds a dispatch table from `actor: agent` states plus any resolved pool metadata
 
 **`dispatch(itemId, itemFile, entry, agents, config, bundleRoot, runtime)`** — invokes an agent:
 
@@ -201,6 +213,7 @@ Structured telemetry writer and reader.
 
 - Resolves the deployed telemetry path at `telemetry/events.jsonl`
 - Normalizes telemetry events under schema `als-delamain-telemetry-event@1`
+- Carries `dispatch_suppressed_concurrency` discriminator and pool-holder metadata when concurrency gating fires
 - Serializes concurrent writes inside the dispatcher process
 - Enforces bounded retention so only the most recent events remain on disk
 - Lets downstream consumers detect heartbeat-only legacy dispatchers when the file is absent
@@ -210,6 +223,7 @@ Structured telemetry writer and reader.
 Shared reader/writer for `runtime/worktree-state.json`.
 
 - Normalizes persisted dispatch/worktree records
+- Supports same-state and cross-state occupancy queries over open runtime records
 - Lets dashboard consumers inspect current active, blocked, orphaned, and guarded state plus provider metadata
 - Gives the dispatcher registry a single on-disk contract
 
