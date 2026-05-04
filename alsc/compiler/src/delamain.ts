@@ -134,6 +134,23 @@ const delamainStateSchema = z.object({
   }
 });
 
+const delamainConcurrencyPoolSchema = z.object({
+  states: z.array(delamainNameSchema).min(1).superRefine((value, ctx) => {
+    const seen = new Set<string>();
+    for (const [index, stateName] of value.entries()) {
+      if (seen.has(stateName)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `duplicate state ${stateName} in concurrency pool`,
+          path: [index],
+        });
+      }
+      seen.add(stateName);
+    }
+  }),
+  capacity: z.number().int().positive(),
+}).strict();
+
 const delamainTransitionSchema = z.object({
   class: z.enum(["advance", "rework", "exit"]),
   from: transitionFromSchema,
@@ -143,6 +160,7 @@ const delamainTransitionSchema = z.object({
 export const delamainShapeSchema = z.object({
   phases: phasesSchema,
   states: z.record(delamainNameSchema, delamainStateSchema),
+  concurrency_pools: z.record(delamainNameSchema, delamainConcurrencyPoolSchema).optional(),
   transitions: z.array(delamainTransitionSchema),
 }).strict().superRefine((value, ctx) => {
   if (Object.keys(value.states).length === 0) {
@@ -156,6 +174,7 @@ export const delamainShapeSchema = z.object({
 
 export type DelamainShape = z.infer<typeof delamainShapeSchema>;
 export type DelamainStateShape = z.infer<typeof delamainStateSchema>;
+export type DelamainConcurrencyPoolShape = z.infer<typeof delamainConcurrencyPoolSchema>;
 export type DelamainTransitionShape = z.infer<typeof delamainTransitionSchema>;
 export type DelamainStateActor = NonNullable<DelamainStateShape["actor"]>;
 export type DelamainAgentProvider = NonNullable<DelamainStateShape["provider"]>;
@@ -193,6 +212,7 @@ export function validateDelamainDefinition(delamain: DelamainShape): DelamainVal
   const phaseIndex = new Map(delamain.phases.map((phaseName, index) => [phaseName, index]));
   const initialStates = stateEntries.filter(([, state]) => state.initial === true).map(([stateName]) => stateName);
   const lastPhaseName = delamain.phases[delamain.phases.length - 1] ?? null;
+  const statePoolMembership = new Map<string, string>();
 
   if (initialStates.length !== 1) {
     issues.push({
@@ -255,6 +275,57 @@ export function validateDelamainDefinition(delamain: DelamainShape): DelamainVal
       continue;
     }
     sessionFieldOwners.set(sessionFieldName, stateName);
+  }
+
+  for (const [poolId, pool] of Object.entries(delamain.concurrency_pools ?? {})) {
+    const distinctStates = new Set<string>();
+
+    for (const [stateIndex, stateName] of pool.states.entries()) {
+      distinctStates.add(stateName);
+
+      if (!stateNames.has(stateName)) {
+        issues.push({
+          path: ["concurrency_pools", poolId, "states", stateIndex],
+          message: `concurrency pool ${poolId} references unknown state ${stateName}`,
+        });
+        continue;
+      }
+
+      const state = delamain.states[stateName];
+      if (!state) continue;
+
+      if (state.terminal === true) {
+        issues.push({
+          path: ["concurrency_pools", poolId, "states", stateIndex],
+          message: `concurrency pool ${poolId} member ${stateName} must be non-terminal`,
+        });
+      }
+
+      if (state.actor !== "agent") {
+        issues.push({
+          path: ["concurrency_pools", poolId, "states", stateIndex],
+          message: `concurrency pool ${poolId} member ${stateName} must be agent-owned`,
+        });
+      }
+
+      const existingPool = statePoolMembership.get(stateName);
+      if (existingPool) {
+        issues.push({
+          path: ["concurrency_pools", poolId, "states", stateIndex],
+          message: `state ${stateName} already belongs to concurrency pool ${existingPool}`,
+        });
+        continue;
+      }
+
+      statePoolMembership.set(stateName, poolId);
+    }
+
+    if (distinctStates.size < 2) {
+      issues.push({
+        path: ["concurrency_pools", poolId, "states"],
+        message: `concurrency pool ${poolId} must declare at least two distinct states`,
+      });
+    }
   }
 
   const edges: EffectiveEdge[] = [];

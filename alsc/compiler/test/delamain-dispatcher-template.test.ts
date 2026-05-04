@@ -9,6 +9,7 @@ import {
   loadDispatcherVersionInfo,
   parseDispatcherVersion,
 } from "../../../skills/new/references/dispatcher/src/dispatcher-version.ts";
+import { resolve as resolveDispatcherConfig } from "../../../skills/new/references/dispatcher/src/dispatcher.ts";
 import { resolveDispatchLimits } from "../../../skills/new/references/dispatcher/src/dispatch-limits.ts";
 import { runGit } from "../../../skills/new/references/dispatcher/src/git.ts";
 import { loadRuntimeManifest } from "../../../skills/new/references/dispatcher/src/runtime-manifest.ts";
@@ -343,6 +344,53 @@ test("dispatcher resolve uses deployed runtime manifest metadata", async () => {
     });
     expect(updatedOutput.status).toBe("pass");
     expect(await readFile(join(bundleRoot, "delamain.yaml"), "utf-8")).toContain("concurrency: 1");
+  });
+});
+
+test("dispatcher resolve carries authored concurrency pools into runtime config", async () => {
+  await withFixtureSandbox("delamain-dispatcher-concurrency-pools", async ({ root }) => {
+    const delamainSourcePath = join(
+      root,
+      ".als/modules/factory/v1/delamains/development-pipeline/delamain.ts",
+    );
+    const authoredDelamain = await readFile(delamainSourcePath, "utf-8");
+    await writeFile(
+      delamainSourcePath,
+      authoredDelamain.replace(
+        '"transitions": [',
+        '"concurrency_pools": {\n    "rc": {\n      "states": [\n        "in-dev",\n        "in-review"\n      ],\n      "capacity": 1\n    }\n  },\n  "transitions": [',
+      ),
+      "utf-8",
+    );
+
+    const validationContext = loadSystemValidationContext(root);
+    expect(validationContext.system_config).not.toBeNull();
+
+    const output = deployClaudeSkillsFromConfig(root, validationContext.system_config!, "pass", {
+      module_filter: "factory",
+    });
+    expect(output.status).toBe("pass");
+
+    const bundleRoot = join(root, ".claude/delamains/development-pipeline");
+    const delamainYaml = await readFile(join(bundleRoot, "delamain.yaml"), "utf-8");
+    expect(delamainYaml).toContain("concurrency_pools:");
+    expect(delamainYaml).toContain("rc:");
+    expect(delamainYaml).toContain("- in-dev");
+    expect(delamainYaml).toContain("- in-review");
+
+    const resolved = await resolveDispatcherConfig(bundleRoot, root);
+    expect(resolved.concurrencyPools).toEqual({
+      rc: {
+        id: "rc",
+        states: ["in-dev", "in-review"],
+        capacity: 1,
+      },
+    });
+    expect(resolved.dispatchTable.find((entry) => entry.state === "in-dev")?.pool).toEqual({
+      id: "rc",
+      states: ["in-dev", "in-review"],
+      capacity: 1,
+    });
   });
 });
 

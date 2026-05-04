@@ -4,6 +4,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DispatchLifecycle } from "../../../skills/new/references/dispatcher/src/dispatch-lifecycle.ts";
 import {
+  buildConcurrencySnapshot,
+  evaluateDispatchConcurrency,
+  reserveDispatchConcurrency,
+} from "../../../skills/new/references/dispatcher/src/concurrency.ts";
+import {
   buildSessionRuntimeState,
   shouldPersistDispatcherSession,
 } from "../../../skills/new/references/dispatcher/src/session-runtime.ts";
@@ -16,7 +21,9 @@ import {
 } from "../../../skills/new/references/dispatcher/src/telemetry.ts";
 import {
   emptyRuntimeState,
+  evaluatePoolConcurrency,
   evaluateStateConcurrency,
+  listPoolConcurrencyHolders,
   summarizeRuntimeState,
   type RuntimeDispatchRecord,
 } from "../../../skills/new/references/dispatcher/src/runtime-state.ts";
@@ -51,12 +58,189 @@ test("dispatcher concurrency suppression counts blocked records toward the cap",
   });
 });
 
+test("dispatcher pool concurrency suppression counts active and blocked records across member states", () => {
+  const state = emptyRuntimeState();
+  state.records.push(buildRuntimeDispatchRecord({
+    item_id: "ALS-201",
+    state: "changelog",
+    status: "active",
+  }));
+  state.records.push(buildRuntimeDispatchRecord({
+    item_id: "ALS-202",
+    state: "aat",
+    status: "blocked",
+  }));
+
+  const summary = summarizeRuntimeState(state);
+  expect(evaluatePoolConcurrency(summary, {
+    states: ["changelog", "aat"],
+    capacity: 2,
+  })).toEqual({
+    currentCount: 2,
+    suppressed: true,
+    holders: [
+      {
+        dispatch_id: "ALS-201-dispatch",
+        item_id: "ALS-201",
+        state: "changelog",
+        status: "active",
+      },
+      {
+        dispatch_id: "ALS-202-dispatch",
+        item_id: "ALS-202",
+        state: "aat",
+        status: "blocked",
+      },
+    ],
+  });
+});
+
+test("dispatcher pool holders ignore guarded and orphaned runtime records", () => {
+  const state = emptyRuntimeState();
+  state.records.push(buildRuntimeDispatchRecord({
+    item_id: "ALS-301",
+    state: "changelog",
+    status: "guarded",
+  }));
+  state.records.push(buildRuntimeDispatchRecord({
+    item_id: "ALS-302",
+    state: "aat",
+    status: "orphaned",
+  }));
+
+  const summary = summarizeRuntimeState(state);
+  expect(listPoolConcurrencyHolders(summary, ["changelog", "aat"])).toEqual([]);
+});
+
+test("dispatcher concurrency evaluation prefers pool suppression over state suppression", () => {
+  const state = emptyRuntimeState();
+  state.records.push(buildRuntimeDispatchRecord({
+    item_id: "ALS-401",
+    state: "changelog",
+    status: "active",
+  }));
+  state.records.push(buildRuntimeDispatchRecord({
+    item_id: "ALS-402",
+    state: "aat",
+    status: "active",
+  }));
+
+  const summary = summarizeRuntimeState(state);
+  const snapshot = buildConcurrencySnapshot(summary, [
+    {
+      state: "aat",
+      agentName: "aat",
+      provider: "openai",
+      resumable: false,
+      concurrency: 1,
+      pool: {
+        id: "rc",
+        states: ["changelog", "aat"],
+        capacity: 1,
+      },
+      transitions: [{ class: "advance", to: "done" }],
+    },
+  ]);
+
+  expect(evaluateDispatchConcurrency(
+    {
+      state: "aat",
+      agentName: "aat",
+      provider: "openai",
+      resumable: false,
+      concurrency: 1,
+      pool: {
+        id: "rc",
+        states: ["changelog", "aat"],
+        capacity: 1,
+      },
+      transitions: [{ class: "advance", to: "done" }],
+    },
+    snapshot,
+  )).toEqual({
+    blockedBy: "pool",
+    currentCount: 2,
+    concurrencyLimit: 1,
+    poolId: "rc",
+    poolStates: ["changelog", "aat"],
+    poolHolders: [
+      {
+        dispatch_id: "ALS-401-dispatch",
+        item_id: "ALS-401",
+        state: "changelog",
+        status: "active",
+      },
+      {
+        dispatch_id: "ALS-402-dispatch",
+        item_id: "ALS-402",
+        state: "aat",
+        status: "active",
+      },
+    ],
+  });
+});
+
+test("dispatcher same-tick reservation suppresses a second pooled state before persistence", () => {
+  const summary = summarizeRuntimeState(emptyRuntimeState());
+  const dispatchTable = [
+    {
+      state: "changelog",
+      agentName: "changelog",
+      provider: "openai",
+      resumable: false,
+      pool: {
+        id: "rc",
+        states: ["changelog", "aat"],
+        capacity: 1,
+      },
+      transitions: [{ class: "advance", to: "done" }],
+    },
+    {
+      state: "aat",
+      agentName: "aat",
+      provider: "openai",
+      resumable: false,
+      pool: {
+        id: "rc",
+        states: ["changelog", "aat"],
+        capacity: 1,
+      },
+      transitions: [{ class: "advance", to: "done" }],
+    },
+  ] as const;
+  const snapshot = buildConcurrencySnapshot(summary, dispatchTable);
+
+  reserveDispatchConcurrency(dispatchTable[0], snapshot, {
+    dispatch_id: "disp-001",
+    item_id: "ALS-501",
+    state: "changelog",
+    status: "active",
+  });
+
+  expect(evaluateDispatchConcurrency(dispatchTable[1], snapshot)).toEqual({
+    blockedBy: "pool",
+    currentCount: 1,
+    concurrencyLimit: 1,
+    poolId: "rc",
+    poolStates: ["changelog", "aat"],
+    poolHolders: [
+      {
+        dispatch_id: "disp-001",
+        item_id: "ALS-501",
+        state: "changelog",
+        status: "active",
+      },
+    ],
+  });
+});
+
 test("dispatcher telemetry preserves concurrency suppression metadata", async () => {
   await withTelemetrySandbox("concurrency-suppression", async (bundleRoot) => {
     await appendTelemetryEvent(
       bundleRoot,
       buildTelemetryEvent("ALS-203", {
         event_type: "dispatch_suppressed_concurrency",
+        blocked_by: "state",
         dispatch_id: null,
         isolated_item_file: null,
         worker_session_id: null,
@@ -78,8 +262,65 @@ test("dispatcher telemetry preserves concurrency suppression metadata", async ()
     expect(result.events[0]).toMatchObject({
       event_type: "dispatch_suppressed_concurrency",
       item_id: "ALS-203",
+      blocked_by: "state",
       current_count: 1,
       concurrency_limit: 1,
+    });
+    expect(Object.hasOwn(result.events[0]!, "pool_id")).toBe(false);
+  });
+});
+
+test("dispatcher telemetry preserves pool suppression metadata and holders", async () => {
+  await withTelemetrySandbox("pool-concurrency-suppression", async (bundleRoot) => {
+    await appendTelemetryEvent(
+      bundleRoot,
+      buildTelemetryEvent("ALS-204", {
+        event_type: "dispatch_suppressed_concurrency",
+        blocked_by: "pool",
+        dispatch_id: null,
+        isolated_item_file: null,
+        worker_session_id: null,
+        worktree_path: null,
+        branch_name: null,
+        worktree_commit: null,
+        integrated_commit: null,
+        merge_outcome: null,
+        current_count: 1,
+        concurrency_limit: 1,
+        pool_id: "rc",
+        pool_states: ["changelog", "aat"],
+        pool_holders: [
+          {
+            dispatch_id: "disp-101",
+            item_id: "ALS-101",
+            state: "changelog",
+            status: "active",
+          },
+        ],
+        duration_ms: null,
+        num_turns: null,
+        cost_usd: null,
+      }),
+    );
+
+    const result = await readTelemetryEvents(bundleRoot, 10);
+    expect(result.available).toBe(true);
+    expect(result.events[0]).toMatchObject({
+      event_type: "dispatch_suppressed_concurrency",
+      item_id: "ALS-204",
+      blocked_by: "pool",
+      current_count: 1,
+      concurrency_limit: 1,
+      pool_id: "rc",
+      pool_states: ["changelog", "aat"],
+      pool_holders: [
+        {
+          dispatch_id: "disp-101",
+          item_id: "ALS-101",
+          state: "changelog",
+          status: "active",
+        },
+      ],
     });
   });
 });
@@ -474,8 +715,12 @@ function buildTelemetryEvent(
     integrated_commit: overrides.integrated_commit ?? null,
     merge_outcome: overrides.merge_outcome ?? "merged",
     incident_kind: overrides.incident_kind ?? null,
+    blocked_by: overrides.blocked_by,
     current_count: overrides.current_count ?? null,
     concurrency_limit: overrides.concurrency_limit ?? null,
+    pool_id: overrides.pool_id,
+    pool_states: overrides.pool_states,
+    pool_holders: overrides.pool_holders,
     transition_targets: overrides.transition_targets ?? ["in-review"],
     duration_ms: overrides.duration_ms ?? 1200,
     num_turns: overrides.num_turns ?? 6,

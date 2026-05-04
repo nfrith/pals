@@ -4,14 +4,17 @@ import { writeFileSync, unlinkSync } from "fs";
 import { resolve as resolvePath, dirname, join } from "path";
 import { resolve, dispatch, type DispatchEntry } from "./dispatcher.js";
 import {
+  buildConcurrencySnapshot,
+  evaluateDispatchConcurrency,
+  reserveDispatchConcurrency,
+  type DispatchConcurrencySuppression,
+} from "./concurrency.js";
+import {
   DispatcherRuntime,
   type BlockedDirtyRetryResult,
   type DispatcherRuntimeHeartbeat,
 } from "./dispatcher-runtime.js";
-import {
-  countStateConcurrencyOccupancy,
-  type RuntimeDispatchSummary,
-} from "./runtime-state.js";
+import type { RuntimeDispatchSummary } from "./runtime-state.js";
 import { formatDispatcherVersionLine, loadDispatcherVersionInfo } from "./dispatcher-version.js";
 import { appendTelemetryEvent, DISPATCH_TELEMETRY_SCHEMA } from "./telemetry.js";
 import { scan } from "./watcher.js";
@@ -268,7 +271,7 @@ function buildOpenRecordItemIdSet(summary: RuntimeDispatchSummary): Set<string> 
 async function writeConcurrencySuppressionTelemetry(
   item: { id: string; filePath: string },
   rule: DispatchEntry,
-  currentCount: number,
+  suppression: DispatchConcurrencySuppression,
 ): Promise<void> {
   try {
     await appendTelemetryEvent(BUNDLE_ROOT, {
@@ -298,8 +301,16 @@ async function writeConcurrencySuppressionTelemetry(
       integrated_commit: null,
       merge_outcome: null,
       incident_kind: null,
-      current_count: currentCount,
-      concurrency_limit: rule.concurrency ?? null,
+      blocked_by: suppression.blockedBy,
+      current_count: suppression.currentCount,
+      concurrency_limit: suppression.concurrencyLimit,
+      ...(suppression.blockedBy === "pool"
+        ? {
+          pool_id: suppression.poolId,
+          pool_states: suppression.poolStates,
+          pool_holders: suppression.poolHolders,
+        }
+        : {}),
       transition_targets: rule.transitions.map((transition) => transition.to),
       duration_ms: null,
       num_turns: null,
@@ -377,27 +388,34 @@ async function tick() {
 
   const openSummary = await runtime.openDispatchSummary();
   const openItemIds = buildOpenRecordItemIdSet(openSummary);
-  const concurrencyCounts = new Map<string, number>(
-    config.dispatchTable
-      .filter((entry) => entry.concurrency !== undefined)
-      .map((entry) => [entry.state, countStateConcurrencyOccupancy(openSummary, entry.state)]),
-  );
+  const concurrencySnapshot = buildConcurrencySnapshot(openSummary, config.dispatchTable);
 
   for (const item of items) {
     const rule = findRule(item.status);
     if (!rule) continue;
     if (openItemIds.has(item.id)) continue;
 
-    const currentCount = concurrencyCounts.get(rule.state) ?? 0;
-    if (rule.concurrency !== undefined && currentCount >= rule.concurrency) {
-      await writeConcurrencySuppressionTelemetry(item, rule, currentCount);
+    const suppression = evaluateDispatchConcurrency(rule, concurrencySnapshot);
+    if (suppression) {
+      await writeConcurrencySuppressionTelemetry(item, rule, suppression);
+      continue;
+    }
+
+    const prepared = await runtime.prepareDispatch(item.id, item.filePath, rule);
+    if (!prepared) {
+      console.log(`[dispatcher] ${item.id} skipped: runtime registry already owns this item`);
       continue;
     }
 
     openItemIds.add(item.id);
-    if (rule.concurrency !== undefined) {
-      concurrencyCounts.set(rule.state, currentCount + 1);
-    }
+    reserveDispatchConcurrency(rule, concurrencySnapshot, rule.pool
+      ? {
+        dispatch_id: prepared.dispatchId,
+        item_id: item.id,
+        state: rule.state,
+        status: "active",
+      }
+      : undefined);
 
     console.log(`[dispatcher] dispatch ${item.id} -> ${item.status}`);
     void dispatch(
@@ -408,6 +426,7 @@ async function tick() {
       config,
       BUNDLE_ROOT,
       runtime,
+      prepared,
     )
       .then(async (result) => {
         await updateHeartbeat();

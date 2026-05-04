@@ -1,6 +1,9 @@
 import { mkdir, readFile, rename, writeFile } from "fs/promises";
 import { join } from "path";
-import type { RuntimeMountedSubmoduleRecord } from "./runtime-state.js";
+import type {
+  RuntimeConcurrencyHolderRecord,
+  RuntimeMountedSubmoduleRecord,
+} from "./runtime-state.js";
 import type { AgentProvider } from "./provider.js";
 
 export const DISPATCH_TELEMETRY_SCHEMA = "als-delamain-telemetry-event@1";
@@ -45,8 +48,12 @@ export interface DispatchTelemetryEvent {
   integrated_commit: string | null;
   merge_outcome: string | null;
   incident_kind: string | null;
+  blocked_by?: "state" | "pool";
   current_count?: number | null;
   concurrency_limit?: number | null;
+  pool_id?: string;
+  pool_states?: string[];
+  pool_holders?: RuntimeConcurrencyHolderRecord[];
   transition_targets: string[];
   duration_ms: number | null;
   num_turns: number | null;
@@ -186,8 +193,26 @@ function normalizeTelemetryEvent(
       : null,
     merge_outcome: typeof event.merge_outcome === "string" ? event.merge_outcome : null,
     incident_kind: typeof event.incident_kind === "string" ? event.incident_kind : null,
+    ...(event.blocked_by === "state" || event.blocked_by === "pool"
+      ? { blocked_by: event.blocked_by }
+      : {}),
     current_count: typeof event.current_count === "number" ? event.current_count : null,
     concurrency_limit: typeof event.concurrency_limit === "number" ? event.concurrency_limit : null,
+    ...(typeof event.pool_id === "string" && event.pool_id.length > 0
+      ? { pool_id: event.pool_id }
+      : {}),
+    ...(Array.isArray(event.pool_states)
+      ? {
+        pool_states: event.pool_states.filter(
+          (value): value is string => typeof value === "string",
+        ),
+      }
+      : {}),
+    ...(Array.isArray(event.pool_holders)
+      ? {
+        pool_holders: event.pool_holders.map((entry) => normalizeConcurrencyHolder(entry)),
+      }
+      : {}),
     transition_targets: Array.isArray(event.transition_targets)
       ? event.transition_targets.filter((value): value is string => typeof value === "string")
       : [],
@@ -195,6 +220,25 @@ function normalizeTelemetryEvent(
     num_turns: typeof event.num_turns === "number" ? event.num_turns : null,
     cost_usd: typeof event.cost_usd === "number" ? event.cost_usd : null,
     error: typeof event.error === "string" && event.error.length > 0 ? event.error : null,
+  };
+}
+
+function normalizeConcurrencyHolder(value: unknown): RuntimeConcurrencyHolderRecord {
+  const holder = value && typeof value === "object"
+    ? value as Partial<RuntimeConcurrencyHolderRecord>
+    : {};
+
+  return {
+    dispatch_id: typeof holder.dispatch_id === "string" && holder.dispatch_id.length > 0
+      ? holder.dispatch_id
+      : "unknown",
+    item_id: typeof holder.item_id === "string" && holder.item_id.length > 0
+      ? holder.item_id
+      : "unknown",
+    state: typeof holder.state === "string" && holder.state.length > 0
+      ? holder.state
+      : "unknown",
+    status: holder.status === "blocked" ? "blocked" : "active",
   };
 }
 

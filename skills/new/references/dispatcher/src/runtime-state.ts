@@ -96,6 +96,19 @@ export interface StateConcurrencyEvaluation {
   suppressed: boolean;
 }
 
+export interface RuntimeConcurrencyHolderRecord {
+  dispatch_id: string;
+  item_id: string;
+  state: string;
+  status: "active" | "blocked";
+}
+
+export interface PoolConcurrencyEvaluation {
+  currentCount: number;
+  suppressed: boolean;
+  holders: RuntimeConcurrencyHolderRecord[];
+}
+
 interface RuntimeStatePaths {
   directory: string;
   stateFile: string;
@@ -199,6 +212,40 @@ export function countStateConcurrencyOccupancy(
 ): number {
   return summary.active.filter((record) => record.state === state).length
     + summary.blocked.filter((record) => record.state === state).length;
+}
+
+export function listPoolConcurrencyHolders(
+  summary: RuntimeDispatchSummary,
+  states: ReadonlyArray<string>,
+): RuntimeConcurrencyHolderRecord[] {
+  const stateSet = new Set(states);
+  return [...summary.active, ...summary.blocked]
+    .filter((record) => stateSet.has(record.state))
+    .map((record) => ({
+      dispatch_id: record.dispatch_id,
+      item_id: record.item_id,
+      state: record.state,
+      status: record.status === "blocked" ? "blocked" : "active",
+    }));
+}
+
+export function countPoolConcurrencyOccupancy(
+  summary: RuntimeDispatchSummary,
+  states: ReadonlyArray<string>,
+): number {
+  return listPoolConcurrencyHolders(summary, states).length;
+}
+
+export function evaluatePoolConcurrency(
+  summary: RuntimeDispatchSummary,
+  input: { states: ReadonlyArray<string>; capacity: number },
+): PoolConcurrencyEvaluation {
+  const holders = listPoolConcurrencyHolders(summary, input.states);
+  return {
+    currentCount: holders.length,
+    suppressed: holders.length >= input.capacity,
+    holders,
+  };
 }
 
 export function evaluateStateConcurrency(

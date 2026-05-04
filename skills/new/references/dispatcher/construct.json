@@ -1,7 +1,7 @@
 {
   "schema": "als-construct-manifest@1",
   "name": "dispatcher",
-  "version": 14,
+  "version": 15,
   "migration_strategy": "sequential",
   "lifecycle_strategy": "dispatcher-lifecycle",
   "migrations_dir": "migrations",

@@ -191,6 +191,73 @@ test.concurrent("agent-owned states reject string concurrency", async () => {
   });
 });
 
+test.concurrent("Delamain validation accepts top-level concurrency pools", async () => {
+  await withFixtureSandbox("delamain-concurrency-pools-valid", async ({ root }) => {
+    await updateYamlTextFile(
+      root,
+      ".als/modules/factory/v1/delamains/development-pipeline/delamain.ts",
+      (current) => {
+        current.concurrency_pools = {
+          rc: {
+            states: ["in-dev", "in-review"],
+            capacity: 1,
+          },
+        };
+      },
+    );
+
+    const result = validateFixture(root);
+    expect(result.status).toBe("pass");
+    expect(result.summary.error_count).toBe(0);
+  });
+});
+
+test.concurrent("Delamain validation rejects duplicate membership across concurrency pools", async () => {
+  await withFixtureSandbox("delamain-concurrency-pools-duplicate-membership", async ({ root }) => {
+    await updateYamlTextFile(
+      root,
+      ".als/modules/factory/v1/delamains/development-pipeline/delamain.ts",
+      (current) => {
+        current.concurrency_pools = {
+          rc: {
+            states: ["in-dev", "in-review"],
+            capacity: 1,
+          },
+          qa: {
+            states: ["in-review", "deployment-ready"],
+            capacity: 1,
+          },
+        };
+      },
+    );
+
+    const result = validateFixture(root);
+    expect(result.status).toBe("fail");
+    expectModuleDiagnostic(result, "factory", codes.DELAMAIN_CONTRACT_INVALID, "development-pipeline/delamain.ts");
+  });
+});
+
+test.concurrent("Delamain validation rejects terminal and operator-owned concurrency-pool members", async () => {
+  await withFixtureSandbox("delamain-concurrency-pools-invalid-members", async ({ root }) => {
+    await updateYamlTextFile(
+      root,
+      ".als/modules/factory/v1/delamains/development-pipeline/delamain.ts",
+      (current) => {
+        current.concurrency_pools = {
+          invalid: {
+            states: ["uat-test", "completed"],
+            capacity: 1,
+          },
+        };
+      },
+    );
+
+    const result = validateFixture(root);
+    expect(result.status).toBe("fail");
+    expectModuleDiagnostic(result, "factory", codes.DELAMAIN_CONTRACT_INVALID, "development-pipeline/delamain.ts");
+  });
+});
+
 test.concurrent("operator-owned states reject concurrency", async () => {
   await withFixtureSandbox("delamain-concurrency-operator", async ({ root }) => {
     await updateYamlTextFile(
