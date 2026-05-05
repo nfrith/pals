@@ -33,13 +33,20 @@ const systemConfig = structuredClone(loadedSystem.data) as {
 };
 
 await ensureDirectoryExists(canonicalDispatcherRoot, "canonical Delamain dispatcher bundle");
+const constructSourcePaths = await loadVendorConstructSourcePaths(canonicalDispatcherRoot);
 
 const delamainNames = await collectActiveDelamainNames(systemRoot, systemConfig.modules);
 for (const delamainName of delamainNames) {
   const targetRoot = join(installedDispatcherRoot, delamainName);
   await rm(targetRoot, { recursive: true, force: true });
-  await mkdir(dirname(targetRoot), { recursive: true });
-  await cp(canonicalDispatcherRoot, targetRoot, { recursive: true });
+  await mkdir(targetRoot, { recursive: true });
+  for (const sourcePath of constructSourcePaths) {
+    const source = join(canonicalDispatcherRoot, sourcePath);
+    const target = join(targetRoot, sourcePath);
+    await mkdir(dirname(target), { recursive: true });
+    await rm(target, { recursive: true, force: true });
+    await cp(source, target, { recursive: true });
+  }
 }
 
 for (const dispatcherRoot of await collectBundledDispatcherRoots(join(systemRoot, ".als", "modules"))) {
@@ -106,6 +113,38 @@ async function ensureDirectoryExists(path: string, label: string): Promise<void>
   if (!pathStat.isDirectory()) {
     throw new Error(`Expected ${label} at ${path} to be a directory.`);
   }
+}
+
+async function loadVendorConstructSourcePaths(bundleRoot: string): Promise<string[]> {
+  const manifestPath = join(bundleRoot, "construct.json");
+  const rawManifest = await readFile(manifestPath, "utf-8");
+  const parsedManifest = JSON.parse(rawManifest) as {
+    source_paths?: Array<{ path?: unknown; owner?: unknown }>;
+  };
+
+  if (!Array.isArray(parsedManifest.source_paths) || parsedManifest.source_paths.length === 0) {
+    throw new Error(`Construct manifest at ${manifestPath} must declare non-empty source_paths.`);
+  }
+
+  const sourcePaths = parsedManifest.source_paths
+    .filter((entry) => entry.owner === "vendor")
+    .map((entry) => entry.path)
+    .filter((entry): entry is string => typeof entry === "string" && entry.trim().length > 0);
+
+  if (sourcePaths.length === 0) {
+    throw new Error(`Construct manifest at ${manifestPath} must declare at least one vendor source path.`);
+  }
+
+  for (const sourcePath of sourcePaths) {
+    const source = join(bundleRoot, sourcePath);
+    try {
+      await stat(source);
+    } catch {
+      throw new Error(`Construct source path '${sourcePath}' declared in ${manifestPath} is missing at ${source}.`);
+    }
+  }
+
+  return sourcePaths;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
