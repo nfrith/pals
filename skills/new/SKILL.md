@@ -86,13 +86,13 @@ Options:
 
 If the operator says **no**, the status field stays as a plain `type: enum`. Move to Sections.
 
-If the operator says **yes**, enter the Delamain Design sub-interview below. The status field will become `type: delamain` and the module will include a Delamain bundle with agent files and a dispatcher.
+If the operator says **yes**, enter the Delamain Design sub-interview below. The status field will become `type: delamain` and the module will include a Delamain bundle with agent files. The dispatcher is a separate engine-managed construct that ALS installs under `.als/constructs/delamain-dispatcher/<delamain>/`.
 
 Not every module needs a Delamain. Many modules are pure storage with operator-driven skills. Only proceed with Delamain design when the operator explicitly wants agent automation of their lifecycle.
 
 ### Delamain Design
 
-This sub-interview designs the transition graph, actor assignments, session behavior, and dispatcher bundle. Read `../docs/references/shape-language.md` (the Delamain bundles and Delamain agent files sections) and `../docs/references/delamain-dispatcher.md` before proceeding.
+This sub-interview designs the transition graph, actor assignments, session behavior, and dispatcher contract. Read `../docs/references/shape-language.md` (the Delamain bundles and Delamain agent files sections) and `../docs/references/delamain-dispatcher.md` before proceeding.
 
 #### Step 1: Phases
 
@@ -388,19 +388,11 @@ Remove `allowed_values` from the status field — the Delamain states are the le
 ```
 .als/modules/{module_id}/v1/delamains/{delamain-name}/
 ├── delamain.ts
+├── runtime-manifest.config.json   # optional
 ├── agents/
 │   └── {state-name}.md        # one per actor: agent state
-└── dispatcher/
-    ├── VERSION
-    ├── package.json
-    ├── tsconfig.json
-    └── src/
-        ├── dispatcher-version.ts
-        ├── index.ts
-        ├── runtime-manifest.ts
-        ├── session-runtime.ts
-        ├── watcher.ts
-        └── dispatcher.ts
+└── sub-agents/
+    └── {sub-agent-name}.md    # optional helpers
 ```
 
 #### 3. Write delamain.ts
@@ -436,22 +428,15 @@ model: sonnet
 
 The body is a TODO scaffold. The skill cannot write domain-specific agent prompts — the operator or a later session fills these in.
 
-#### 5. Copy the dispatcher template
+#### 5. Preserve the dispatcher boundary
 
-Copy the generic dispatcher template into the bundle:
+Do not copy vendor dispatcher source into the authored Delamain bundle.
 
-```bash
-cp -r ${CLAUDE_PLUGIN_ROOT}/skills/new/references/dispatcher/ .als/modules/{module_id}/v1/delamains/{delamain-name}/dispatcher/
-```
+- The canonical dispatcher construct lives at `${CLAUDE_PLUGIN_ROOT}/delamain-dispatcher/`.
+- ALS installs one operator-side dispatcher source tree per Delamain at `.als/constructs/delamain-dispatcher/{delamain-name}/`.
+- `alsc deploy claude` projects runtime dispatcher files from that installed construct root into `.claude/delamains/{delamain-name}/dispatcher/`.
 
-Then install dependencies:
-
-```bash
-cd .als/modules/{module_id}/v1/delamains/{delamain-name}/dispatcher && bun install
-```
-
-The dispatcher requires zero modification — it derives everything from the ALS declaration surface at runtime.
-The copied `dispatcher/VERSION` file is the local dispatcher template version. It is separate from `dispatcher/package.json` `version` and must stay in the bundle.
+The authored bundle stays limited to `delamain.ts`, agent prompts, optional sub-agent prompts, and optional `runtime-manifest.config.json`.
 
 ### After creation
 
@@ -459,6 +444,6 @@ Tell the operator what was created and where. Suggest they can now create their 
 
 If a Delamain was created, also tell the operator:
 - Agent files are TODO scaffolds that need prompts written before the dispatcher can run.
-- The dispatcher is ready to run once agent prompts are authored: `cd <delamain-bundle>/dispatcher && bun run src/index.ts`
-- The dispatcher reads `${CLAUDE_PLUGIN_ROOT}/skills/new/references/dispatcher/VERSION` at startup and will fail if the plugin root or either `VERSION` file is missing or malformed.
+- The authored bundle does not contain dispatcher source. ALS installs that construct at `.als/constructs/delamain-dispatcher/{delamain-name}/` and deploy projects the runnable copy to `.claude/delamains/{delamain-name}/dispatcher/`.
+- The dispatcher reads `${CLAUDE_PLUGIN_ROOT}/delamain-dispatcher/VERSION` at startup and will fail if the plugin root or either `VERSION` file is missing or malformed.
 - Session fields are implicit — they do not need to be added to `module.ts` or entity frontmatter manually. The dispatcher handles persistence.

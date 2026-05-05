@@ -7,10 +7,10 @@ import {
   setAnthropicSdkLoaderForTests,
   setCodexSdkLoaderForTests,
   getAgentProvider,
-} from "../../../skills/new/references/dispatcher/src/agent-providers.ts";
-import { recoverFreshDispatchAfterMissingResumeSession } from "../../../skills/new/references/dispatcher/src/resume-recovery.ts";
-import { buildSessionRuntimeState } from "../../../skills/new/references/dispatcher/src/session-runtime.ts";
-import { setFrontmatterField } from "../../../skills/new/references/dispatcher/src/frontmatter.ts";
+} from "../../../delamain-dispatcher/src/agent-providers.ts";
+import { recoverFreshDispatchAfterMissingResumeSession } from "../../../delamain-dispatcher/src/resume-recovery.ts";
+import { buildSessionRuntimeState } from "../../../delamain-dispatcher/src/session-runtime.ts";
+import { setFrontmatterField } from "../../../delamain-dispatcher/src/frontmatter.ts";
 
 afterEach(() => {
   resetProviderSdkLoadersForTests();

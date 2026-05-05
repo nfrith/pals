@@ -39,6 +39,7 @@ interface ClaudeSkillProjectionWorkPlan extends ClaudeSkillProjectionPlan {
 
 interface ClaudeDelamainProjectionWorkPlan extends ClaudeDelamainProjectionPlan {
   source_dir_abs: string;
+  dispatcher_source_dir_abs: string;
   target_dir_abs: string;
   module_mount_path: string;
   entity_name: string;
@@ -92,7 +93,7 @@ const ALS_SYSTEM_CLAUDE_MD_TARGET_PATH = ".als/CLAUDE.md";
 const DELAMAIN_RUNTIME_MANIFEST_CONFIG = "runtime-manifest.config.json";
 const CANONICAL_DISPATCHER_TEMPLATE_DIR = resolve(
   import.meta.dir,
-  "../../../skills/new/references/dispatcher",
+  "../../../delamain-dispatcher",
 );
 
 export const ALS_SYSTEM_CLAUDE_MD_CONTENTS = `# .als Directory
@@ -312,7 +313,7 @@ export function deployClaudeSkillsFromConfig(
     for (const plan of delamainPlans) {
       try {
         mergeProjectionDirectory(plan.source_dir_abs, plan.target_dir_abs);
-        mergeCanonicalDispatcherDirectory(plan.target_dir_abs);
+        mergeDispatcherDirectory(plan.dispatcher_source_dir_abs, plan.target_dir_abs);
         removeProjectionOnlyDelamainFiles(plan.target_dir_abs);
         writeProjectedDelamainDefinition(plan);
         writeDelamainRuntimeManifest(plan);
@@ -449,6 +450,19 @@ function buildProjectionPlans(
           error: runtimeManifestConfig.error,
         };
       }
+      const dispatcherSource = resolveDispatcherProjectionSource(
+        systemRootAbs,
+        systemConfig.als_version,
+        delamainName,
+      );
+      if (dispatcherSource.error) {
+        return {
+          skill_plans: skillPlans,
+          delamain_plans: delamainPlans,
+          delamain_name_conflicts: collectDelamainNameConflicts(delamainPlans),
+          error: dispatcherSource.error,
+        };
+      }
 
       delamainPlans.push({
         module_id: moduleId,
@@ -456,6 +470,7 @@ function buildProjectionPlans(
         delamain_name: delamainName,
         source_dir: toSystemRelative(systemRootAbs, sourceDirAbs),
         source_dir_abs: sourceDirAbs,
+        dispatcher_source_dir_abs: dispatcherSource.source_dir_abs,
         target_dir: toSystemRelative(systemRootAbs, targetDirAbs),
         target_dir_abs: targetDirAbs,
         module_mount_path: moduleConfig.path,
@@ -843,13 +858,51 @@ function mergeProjectionDirectory(sourceDirAbs: string, targetDirAbs: string): v
   cpSync(sourceDirAbs, targetDirAbs, { recursive: true, force: true });
 }
 
-function mergeCanonicalDispatcherDirectory(targetDirAbs: string): void {
+function mergeDispatcherDirectory(sourceDirAbs: string, targetDirAbs: string): void {
   const targetDispatcherDirAbs = resolve(targetDirAbs, "dispatcher");
   mkdirSync(dirname(targetDispatcherDirAbs), { recursive: true });
-  cpSync(CANONICAL_DISPATCHER_TEMPLATE_DIR, targetDispatcherDirAbs, {
+  cpSync(sourceDirAbs, targetDispatcherDirAbs, {
     recursive: true,
     force: true,
   });
+}
+
+function resolveDispatcherProjectionSource(
+  systemRootAbs: string,
+  alsVersion: number,
+  delamainName: string,
+): { source_dir_abs: string; error: string | null } {
+  const installedDispatcherDirAbs = resolve(
+    systemRootAbs,
+    ".als/constructs/delamain-dispatcher",
+    delamainName,
+  );
+  const installedDispatcherStat = safeStat(installedDispatcherDirAbs);
+  if (installedDispatcherStat?.isDirectory()) {
+    return {
+      source_dir_abs: installedDispatcherDirAbs,
+      error: null,
+    };
+  }
+
+  if (installedDispatcherStat && !installedDispatcherStat.isDirectory()) {
+    return {
+      source_dir_abs: installedDispatcherDirAbs,
+      error: `Construct-managed dispatcher source for Delamain '${delamainName}' must be a directory at '${toSystemRelative(systemRootAbs, installedDispatcherDirAbs)}'.`,
+    };
+  }
+
+  if (alsVersion >= 2) {
+    return {
+      source_dir_abs: installedDispatcherDirAbs,
+      error: `ALS v${alsVersion} Delamain '${delamainName}' is missing construct-managed dispatcher source at '${toSystemRelative(systemRootAbs, installedDispatcherDirAbs)}'. Run the language upgrade or /update before deploy.`,
+    };
+  }
+
+  return {
+    source_dir_abs: CANONICAL_DISPATCHER_TEMPLATE_DIR,
+    error: null,
+  };
 }
 
 function removeProjectionOnlyDelamainFiles(targetDirAbs: string): void {

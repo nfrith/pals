@@ -1,0 +1,158 @@
+import { defineModule } from "../../../authoring.ts";
+
+export const module = defineModule({
+  "dependencies": [],
+  "entities": {
+    "protocol": {
+      "source_format": "markdown",
+      "path": "runbooks/{id}.md",
+      "identity": {
+        "id_field": "id"
+      },
+      "fields": {
+        "id": {
+          "type": "id",
+          "allow_null": false
+        },
+        "title": {
+          "type": "string",
+          "allow_null": false
+        },
+        "domain": {
+          "type": "enum",
+          "allow_null": false,
+          "allowed_values": [
+            "database",
+            "deployment",
+            "security",
+            "networking",
+            "observability"
+          ]
+        },
+        "status": {
+          "type": "enum",
+          "allow_null": false,
+          "allowed_values": [
+            "draft",
+            "approved",
+            "active",
+            "retired"
+          ]
+        }
+      },
+      "body": {
+        "title": {
+          "source": {
+            "kind": "field",
+            "field": "id"
+          }
+        },
+        "sections": [
+          {
+            "name": "PURPOSE",
+            "allow_null": false,
+            "content": {
+              "mode": "freeform",
+              "blocks": {
+                "paragraph": {}
+              }
+            },
+            "guidance": {
+              "include": "what this protocol achieves and when to use it",
+              "exclude": "step-by-step instructions"
+            }
+          },
+          {
+            "name": "PREREQUISITES",
+            "allow_null": false,
+            "content": {
+              "mode": "freeform",
+              "blocks": {
+                "bullet_list": {},
+                "blockquote": {},
+                "code": {}
+              }
+            },
+            "guidance": {
+              "include": "tools, access, and conditions required before starting",
+              "exclude": "the actual procedure steps"
+            }
+          },
+          {
+            "name": "STEPS",
+            "allow_null": false,
+            "content": {
+              "mode": "freeform",
+              "blocks": {
+                "paragraph": {},
+                "bullet_list": {},
+                "ordered_list": {},
+                "heading": {
+                  "min_depth": 3,
+                  "max_depth": 4
+                },
+                "blockquote": {},
+                "code": {}
+              }
+            },
+            "guidance": {
+              "include": "the full procedure as ordered steps, with validation commands and warnings for dangerous operations",
+              "exclude": "rollback instructions or post-completion verification"
+            }
+          },
+          {
+            "name": "ROLLBACK",
+            "allow_null": true,
+            "content": {
+              "mode": "freeform",
+              "blocks": {
+                "paragraph": {},
+                "ordered_list": {},
+                "bullet_list": {},
+                "blockquote": {},
+                "code": {}
+              }
+            },
+            "guidance": {
+              "include": "how to reverse the procedure if something goes wrong",
+              "exclude": "the forward procedure or verification steps"
+            }
+          },
+          {
+            "name": "VALIDATION",
+            "allow_null": false,
+            "content": {
+              "mode": "freeform",
+              "blocks": {
+                "ordered_list": {},
+                "bullet_list": {},
+                "code": {}
+              }
+            },
+            "guidance": {
+              "include": "commands and checks to verify the procedure succeeded",
+              "exclude": "the procedure itself or rollback steps"
+            }
+          },
+          {
+            "name": "NOTES",
+            "allow_null": true,
+            "content": {
+              "mode": "freeform",
+              "blocks": {
+                "paragraph": {},
+                "bullet_list": {}
+              }
+            },
+            "guidance": {
+              "include": "edge cases, known gotchas, and environment-specific considerations",
+              "exclude": "general documentation about the tools involved"
+            }
+          }
+        ]
+      }
+    }
+  }
+} as const);
+
+export default module;

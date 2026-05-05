@@ -5,13 +5,13 @@ import {
   appendTelemetryEvent,
   DISPATCH_TELEMETRY_SCHEMA,
   type DispatchTelemetryEvent,
-} from "../../skills/new/references/dispatcher/src/telemetry.ts";
+} from "../../delamain-dispatcher/src/telemetry.ts";
 import {
   DELAMAIN_RUNTIME_STATE_SCHEMA,
   type RuntimeDispatchRecord,
   writeRuntimeState,
-} from "../../skills/new/references/dispatcher/src/runtime-state.ts";
-import { runGit } from "../../skills/new/references/dispatcher/src/git.ts";
+} from "../../delamain-dispatcher/src/runtime-state.ts";
+import { runGit } from "../../delamain-dispatcher/src/git.ts";
 import type { DashboardSnapshot, DispatcherSnapshot } from "./feed/types.ts";
 
 export interface DashboardFixture {

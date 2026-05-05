@@ -3,7 +3,7 @@ import {
   getAgentProvider,
   resetProviderSdkLoadersForTests,
   setCodexSdkLoaderForTests,
-} from "../../../skills/new/references/dispatcher/src/agent-providers.ts";
+} from "../../../delamain-dispatcher/src/agent-providers.ts";
 
 afterEach(() => {
   resetProviderSdkLoadersForTests();

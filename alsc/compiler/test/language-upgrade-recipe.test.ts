@@ -1,4 +1,6 @@
 import { expect, test } from "bun:test";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { runCli } from "../src/cli.ts";
 import {
   inspectLanguageUpgradeRecipe,
@@ -8,6 +10,8 @@ import {
   createValidLanguageUpgradeRecipeFixtureInput,
   withLanguageUpgradeRecipeFixture,
 } from "./helpers/language-upgrade-fixture.ts";
+
+const alsRepoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
 
 function captureCli(args: string[]): { exitCode: number; stdout: string; stderr: string } {
   let stdout = "";
@@ -173,4 +177,16 @@ test("inspection rejects recovery-category operator-prompt steps", async () => {
     expect(inspection.status).toBe("fail");
     expect(inspection.errors.some((entry) => entry.code === "step.operator_prompt.recovery_forbidden")).toBe(true);
   });
+});
+
+test("inspection accepts the shipped v1-to-v2 dispatcher relocation recipe", () => {
+  const inspection = inspectLanguageUpgradeRecipe(
+    resolve(alsRepoRoot, "language-upgrades/recipes/v1-to-v2"),
+  );
+
+  expect(inspection.status).toBe("pass");
+  expect(inspection.errors).toEqual([]);
+  expect(inspection.recipe?.from.als_version).toBe(1);
+  expect(inspection.recipe?.to.als_version).toBe(2);
+  expect(inspection.recipe?.steps.map((step) => step.id)).toEqual(["rewrite-dispatcher-layout"]);
 });

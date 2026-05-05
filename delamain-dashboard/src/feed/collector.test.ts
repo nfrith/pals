@@ -1,7 +1,7 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { expect, test } from "bun:test";
-import type { RuntimeDispatchRecord } from "../../../skills/new/references/dispatcher/src/runtime-state.ts";
+import type { RuntimeDispatchRecord } from "../../../delamain-dispatcher/src/runtime-state.ts";
 import { createDashboardFixture } from "../test-fixtures.ts";
 import { collectSystemSnapshot } from "./collector.ts";
 

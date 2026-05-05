@@ -1,5 +1,5 @@
-import type { DispatchTelemetryEvent } from "../../../skills/new/references/dispatcher/src/telemetry.ts";
-import type { RuntimeDispatchRecord } from "../../../skills/new/references/dispatcher/src/runtime-state.ts";
+import type { DispatchTelemetryEvent } from "../../../delamain-dispatcher/src/telemetry.ts";
+import type { RuntimeDispatchRecord } from "../../../delamain-dispatcher/src/runtime-state.ts";
 
 export type DispatcherLivenessState = "live" | "idle" | "offline" | "stale" | "error";
 export type DispatcherAgentProvider = "anthropic" | "openai";

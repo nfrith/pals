@@ -1,0 +1,175 @@
+import { defineModule } from "../../../authoring.ts";
+
+export const module = defineModule({
+  "dependencies": [],
+  "entities": {
+    "evaluation": {
+      "source_format": "markdown",
+      "path": "{id}.md",
+      "identity": {
+        "id_field": "id"
+      },
+      "fields": {
+        "id": {
+          "type": "id",
+          "allow_null": false
+        },
+        "title": {
+          "type": "string",
+          "allow_null": false
+        },
+        "category": {
+          "type": "enum",
+          "allow_null": false,
+          "allowed_values": [
+            "infrastructure",
+            "tooling",
+            "vendor",
+            "library"
+          ]
+        },
+        "owner": {
+          "type": "string",
+          "allow_null": false
+        },
+        "outcome": {
+          "type": "enum",
+          "allow_null": true,
+          "allowed_values": [
+            "pending",
+            "approved",
+            "rejected",
+            "deferred"
+          ]
+        },
+        "decided_on": {
+          "type": "date",
+          "allow_null": true
+        }
+      },
+      "body": {
+        "title": {
+          "source": {
+            "kind": "field",
+            "field": "id"
+          }
+        },
+        "sections": [
+          {
+            "name": "CONTEXT",
+            "allow_null": false,
+            "content": {
+              "mode": "freeform",
+              "blocks": {
+                "paragraph": {
+                  "min_count": 1
+                },
+                "bullet_list": {
+                  "max_items": 8
+                }
+              }
+            },
+            "guidance": {
+              "include": "why this evaluation is happening, what problem it solves, and current state",
+              "exclude": "candidate-specific details or comparison analysis"
+            }
+          },
+          {
+            "name": "CANDIDATES",
+            "allow_null": false,
+            "content": {
+              "mode": "freeform",
+              "blocks": {
+                "paragraph": {
+                  "min_count": 1
+                },
+                "bullet_list": {},
+                "heading": {
+                  "min_depth": 3,
+                  "max_depth": 3
+                },
+                "blockquote": {},
+                "code": {
+                  "require_language": true
+                }
+              }
+            },
+            "guidance": {
+              "include": "each candidate as a subheading with description, quoted terms or pricing, and code samples where relevant",
+              "exclude": "comparative analysis or final recommendation"
+            }
+          },
+          {
+            "name": "CRITERIA",
+            "allow_null": false,
+            "content": {
+              "mode": "freeform",
+              "blocks": {
+                "bullet_list": {
+                  "max_items": 10
+                },
+                "ordered_list": {
+                  "min_items": 3,
+                  "max_items": 10
+                }
+              }
+            },
+            "guidance": {
+              "include": "evaluation criteria ranked by importance with weighting rationale",
+              "exclude": "candidate-specific scores or opinions"
+            }
+          },
+          {
+            "name": "ANALYSIS",
+            "allow_null": false,
+            "content": {
+              "mode": "freeform",
+              "blocks": {
+                "paragraph": {
+                  "min_count": 1
+                },
+                "bullet_list": {},
+                "table": {
+                  "syntax": "gfm"
+                },
+                "heading": {
+                  "min_depth": 3,
+                  "max_depth": 3
+                },
+                "code": {
+                  "require_language": false
+                }
+              }
+            },
+            "guidance": {
+              "include": "per-candidate analysis against criteria, with code benchmarks or config examples where applicable",
+              "exclude": "final recommendation or outcome"
+            }
+          },
+          {
+            "name": "OUTCOME",
+            "allow_null": true,
+            "content": {
+              "mode": "freeform",
+              "blocks": {
+                "paragraph": {
+                  "min_count": 1,
+                  "max_count": 3
+                },
+                "bullet_list": {
+                  "max_items": 8
+                }
+              }
+            },
+            "guidance": {
+              "include": "what was chosen, why, and any conditions or constraints on the outcome",
+              "exclude": "detailed per-candidate analysis"
+            }
+          }
+        ]
+      }
+    }
+  }
+} as const);
+
+export default module;

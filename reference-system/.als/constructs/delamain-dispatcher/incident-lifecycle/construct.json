@@ -1,0 +1,34 @@
+{
+  "schema": "als-construct-manifest@1",
+  "name": "dispatcher",
+  "version": 15,
+  "migration_strategy": "sequential",
+  "lifecycle_strategy": "dispatcher-lifecycle",
+  "migrations_dir": "migrations",
+  "source_paths": [
+    {
+      "path": "VERSION",
+      "owner": "vendor"
+    },
+    {
+      "path": "construct.json",
+      "owner": "vendor"
+    },
+    {
+      "path": "package.json",
+      "owner": "vendor"
+    },
+    {
+      "path": "tsconfig.json",
+      "owner": "vendor"
+    },
+    {
+      "path": "migrations",
+      "owner": "vendor"
+    },
+    {
+      "path": "src",
+      "owner": "vendor"
+    }
+  ]
+}

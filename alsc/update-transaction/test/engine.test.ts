@@ -19,7 +19,7 @@ const alsRepoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../../..")
 const referenceSystemRoot = resolve(alsRepoRoot, "reference-system");
 const authoringRuntimeRoot = resolve(alsRepoRoot, "alsc/compiler/src/authoring");
 const contractsRuntimePath = resolve(alsRepoRoot, "alsc/compiler/src/contracts.ts");
-const dispatcherCurrentBundleRoot = resolve(alsRepoRoot, "skills/new/references/dispatcher");
+const dispatcherCurrentBundleRoot = resolve(alsRepoRoot, "delamain-dispatcher");
 const dispatcherV11FixtureRoot = resolve(alsRepoRoot, "alsc/upgrade-construct/test/fixtures/dispatcher-v11");
 
 async function withSystemRepo(
@@ -345,8 +345,8 @@ test("update-transaction CLI prepare emits a ready transaction payload", async (
     expect(result.exitCode).toBe(0);
     const output = JSON.parse(result.stdout) as PreparedUpdateTransaction;
     expect(output.status).toBe("ready");
-    expect(output.language?.plan.hops.map((hop) => hop.hop_id)).toEqual(["v1-to-v1"]);
-    expect(output.prompts.some((prompt) => prompt.key === "v1-to-v1:confirm-live-apply")).toBe(true);
+    expect(output.language?.plan.hops.map((hop) => hop.hop_id)).toEqual(["v2-to-v2"]);
+    expect(output.prompts.some((prompt) => prompt.key === "v2-to-v2:confirm-live-apply")).toBe(true);
   });
 });
 
@@ -396,17 +396,17 @@ function createLanguagePlan(
   steps: LanguageUpgradeRecipe["steps"],
 ): UpdateTransactionLanguagePlan {
   return {
-    current_als_version: 1,
-    target_als_version: 1,
+    current_als_version: 2,
+    target_als_version: 2,
     hops: [{
-      hop_id: "v1-to-v1",
+      hop_id: "v2-to-v2",
       recipe: {
         schema: "als-language-upgrade-recipe@1",
         from: {
-          als_version: 1,
+          als_version: 2,
         },
         to: {
-          als_version: 1,
+          als_version: 2,
         },
         summary: "Synthetic transaction-wrapper hop.",
         steps,
@@ -456,7 +456,7 @@ async function replaceDispatcherFleet(
 
 function findDispatcherVersionFiles(repoRoot: string): string[] {
   const result = Bun.spawnSync({
-    cmd: ["find", repoRoot, "-path", "*/dispatcher/VERSION"],
+    cmd: ["find", repoRoot, "-path", "*/.als/constructs/delamain-dispatcher/*/VERSION"],
     stdout: "pipe",
     stderr: "pipe",
   });

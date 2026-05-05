@@ -73,33 +73,23 @@ The SKILL.md procedure says "Follow the procedure in references/plan-input.md" f
 **Important**:
 - Claude deploy writes `.als/CLAUDE.md` on every run, including module-filter deploys, and always overwrites it with the canonical ALS-managed guidance.
 - Skill deploy under `.claude/skills/` still overwrites the target directory completely.
-- Delamain deploy under `.claude/delamains/<name>/` refreshes authored files via merge projection so an existing `dispatcher/node_modules/` survives.
-- Delamain deploy projects `dispatcher/VERSION` with the rest of the authored dispatcher bundle.
+- Delamain deploy under `.claude/delamains/<name>/` refreshes authored Delamain files via merge projection so an existing `dispatcher/node_modules/` survives.
+- Delamain deploy projects runtime dispatcher files from `.als/constructs/delamain-dispatcher/<name>/` into `.claude/delamains/<name>/dispatcher/`.
 - Delamain deploy does not run `bun install` or any other package-manager command.
 - If the deployed dispatcher has no installed dependencies yet, deploy warns and continues.
 - Merge projection may leave stale authored files or incidental runtime files in the deployed Delamain target.
 
-## Dispatcher as Copy-From-Template
+## Dispatcher as Engine-Managed Construct
 
-Never hand-write a dispatcher. The template lives at `${CLAUDE_PLUGIN_ROOT}/skills/new/references/dispatcher/` and is copied into new delamain bundles:
+Never hand-write a dispatcher. The canonical bundle lives at `${CLAUDE_PLUGIN_ROOT}/delamain-dispatcher/`, and ALS v2+ installs one operator-side copy per Delamain under `.als/constructs/delamain-dispatcher/<delamain>/`.
 
-```bash
-cp -R ${CLAUDE_PLUGIN_ROOT}/skills/new/references/dispatcher/ \
-  .als/modules/{module}/v{N}/delamains/{delamain}/dispatcher/
-```
+Module bundles no longer carry `delamains/<name>/dispatcher/`. `/change` and other authored-source flows manage only `delamain.ts`, agent prompts, optional sub-agent prompts, and optional `runtime-manifest.config.json`.
 
-The copied dispatcher includes `dispatcher/VERSION`, which is separate from `dispatcher/package.json` `version`.
+When the canonical dispatcher improves, the construct-upgrade engine refreshes the installed `.als/constructs/delamain-dispatcher/<name>/` trees. Deploy then reprojects `.claude/delamains/<name>/dispatcher/` from those installed roots.
 
-When the template improves, all consumers update by re-copying:
+This keeps the dispatcher orthogonal to module-version churn and makes the installed construct root the single operator-side source of truth.
 
-```bash
-cp -R template/src/ target/dispatcher/src/
-cp template/VERSION target/dispatcher/VERSION
-```
-
-This ensures all dispatchers stay consistent with the latest features (multi-module support, variant scanning, OAuth, UUID validation, session context injection, version checks).
-
-At startup, dispatchers compare their local `dispatcher/VERSION` with `${CLAUDE_PLUGIN_ROOT}/skills/new/references/dispatcher/VERSION`. Stale but readable versions log `run /update to update` and keep polling. Missing or malformed local or canonical version files fail startup before polling.
+At startup, dispatchers compare their local `dispatcher/VERSION` with `${CLAUDE_PLUGIN_ROOT}/delamain-dispatcher/VERSION`. Stale but readable versions log `run /update to update` and keep polling. Missing or malformed local or canonical version files fail startup before polling.
 
 <!-- UPDATE THIS MAP when drift is discovered between the template and its targets. -->
 
@@ -107,17 +97,17 @@ At startup, dispatchers compare their local `dispatcher/VERSION` with `${CLAUDE_
 
 | Target | Path |
 |--------|------|
-| Template (canonical) | `skills/new/references/dispatcher/` |
+| Template (canonical) | `delamain-dispatcher/` |
+| incident-lifecycle (installed source) | `reference-system/.als/constructs/delamain-dispatcher/incident-lifecycle/` |
+| release-lifecycle (installed source) | `reference-system/.als/constructs/delamain-dispatcher/release-lifecycle/` |
+| postmortem-lifecycle (installed source) | `reference-system/.als/constructs/delamain-dispatcher/postmortem-lifecycle/` |
+| run-lifecycle (installed source) | `reference-system/.als/constructs/delamain-dispatcher/run-lifecycle/` |
+| development-pipeline (installed source) | `reference-system/.als/constructs/delamain-dispatcher/development-pipeline/` |
 | incident-lifecycle (deployed) | `reference-system/.claude/delamains/incident-lifecycle/dispatcher/` |
 | release-lifecycle (deployed) | `reference-system/.claude/delamains/release-lifecycle/dispatcher/` |
 | postmortem-lifecycle (deployed) | `reference-system/.claude/delamains/postmortem-lifecycle/dispatcher/` |
 | run-lifecycle (deployed) | `reference-system/.claude/delamains/run-lifecycle/dispatcher/` |
 | development-pipeline (deployed) | `reference-system/.claude/delamains/development-pipeline/dispatcher/` |
-| incident-lifecycle (module source) | `reference-system/.als/modules/incident-response/v1/delamains/incident-lifecycle/dispatcher/` |
-| release-lifecycle (module source) | `reference-system/.als/modules/infra/v1/delamains/release-lifecycle/dispatcher/` |
-| postmortem-lifecycle (module source) | `reference-system/.als/modules/postmortems/v1/delamains/postmortem-lifecycle/dispatcher/` |
-| run-lifecycle (module source) | `reference-system/.als/modules/experiments/v2/delamains/run-lifecycle/dispatcher/` |
-| development-pipeline (module source) | `reference-system/.als/modules/factory/v1/delamains/development-pipeline/dispatcher/` |
 
 ## system.ts Registration
 

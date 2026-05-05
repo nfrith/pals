@@ -45,6 +45,7 @@ The shapes in this fixture use:
 ## Delamain Coverage
 
 - `factory`, `incident-response`, `infra`, `experiments`, and `postmortems` now demonstrate Delamain-bound lifecycle surfaces in the reference system.
+- The checked-in `.als/constructs/delamain-dispatcher/` tree is the operator-side installed construct surface for those Delamains.
 - The checked-in `.claude/delamains/` trees mirror the current downstream Claude projection for the active bundles, intentionally omit vendored `dispatcher/node_modules/`, and now include the generated `runtime-manifest.json` contract beside each deployed `delamain.yaml`.
 - The standalone `software-factory` fixture no longer exists. Delamain validation and deploy coverage now run through this merged host.
 

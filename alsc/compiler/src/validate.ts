@@ -4,6 +4,7 @@ import matter from "gray-matter";
 import { ZodError } from "zod";
 import { loadAuthoredSourceExport } from "./authored-load.ts";
 import {
+  ALS_VERSION_V2,
   ALS_UPGRADE_ASSISTANCE,
   ALS_UPGRADE_MODE,
   SUPPORTED_ALS_VERSIONS,
@@ -451,7 +452,13 @@ function loadModuleState(systemRootAbs: string, systemConfig: SystemConfig, modu
     };
   }
 
-  const delamainLoad = loadDelamainBundles(moduleId, moduleBundleAbs, shapePathRel, shapeResult.data);
+  const delamainLoad = loadDelamainBundles(
+    moduleId,
+    moduleBundleAbs,
+    shapePathRel,
+    shapeResult.data,
+    systemConfig.als_version,
+  );
 
   const context: LoadedModuleContext = {
     system_id: systemConfig.system_id,
@@ -509,6 +516,7 @@ function loadDelamainBundles(
   moduleBundleAbs: string,
   shapePathRel: string,
   shape: ModuleShape,
+  alsVersion: number,
 ): { bundles: Map<string, LoadedDelamainBundle>; diagnostics: CompilerDiagnostic[] } {
   const bundles = new Map<string, LoadedDelamainBundle>();
   const diagnostics: CompilerDiagnostic[] = [];
@@ -601,11 +609,54 @@ function loadDelamainBundles(
       session_fields: collectDelamainSessionFields(parsedDelamain.data),
     };
 
+    diagnostics.push(...validateDelamainBundleLayout(moduleId, bundle, alsVersion));
     diagnostics.push(...validateDelamainPromptAssets(moduleId, moduleBundleAbs, bundle));
     bundles.set(delamainName, bundle);
   }
 
   return { bundles, diagnostics };
+}
+
+function validateDelamainBundleLayout(
+  moduleId: string,
+  bundle: LoadedDelamainBundle,
+  alsVersion: number,
+): CompilerDiagnostic[] {
+  if (alsVersion < ALS_VERSION_V2) {
+    return [];
+  }
+
+  const dispatcherRootAbs = resolve(bundle.bundle_root_abs, "dispatcher");
+  const dispatcherRootRel = toRepoRelative(dispatcherRootAbs);
+  const dispatcherStat = safeStatResult(dispatcherRootAbs);
+  if (dispatcherStat.kind === "missing") {
+    return [];
+  }
+
+  const actual = dispatcherStat.kind === "ok"
+    ? dispatcherStat.stat.isDirectory() ? "directory" : "file"
+    : {
+      code: dispatcherStat.error.code ?? null,
+      message: dispatcherStat.error.message,
+    };
+
+  return [
+    diag(
+      codes.DELAMAIN_FILE_INVALID,
+      "error",
+      "module_shape",
+      dispatcherRootRel,
+      `Delamain '${bundle.name}' may not vendor dispatcher source in ALS v${alsVersion}+.`,
+      {
+        module_id: moduleId,
+        field: `delamains.${bundle.name}.dispatcher`,
+        reason: reasons.DELAMAIN_BUNDLED_DISPATCHER_FORBIDDEN,
+        expected: "no dispatcher/ subtree; use .als/constructs/delamain-dispatcher/<name>/",
+        actual,
+        hint: "Run the v1-to-v2 language upgrade or remove the bundled dispatcher subtree from the module bundle.",
+      },
+    ),
+  ];
 }
 
 function validateDelamainPromptAssets(

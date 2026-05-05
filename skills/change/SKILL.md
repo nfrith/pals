@@ -184,6 +184,12 @@ Create:
 ├── module.ts
 ├── skills/                  # omit entirely only when the staged future active skill set is empty
 │   └── <skill_id>/...
+├── delamains/               # only authored Delamain assets when the module declares them
+│   └── <delamain>/
+│       ├── delamain.ts
+│       ├── runtime-manifest.config.json   # optional
+│       ├── agents/
+│       └── sub-agents/                  # optional
 └── migrations/
     ├── MANIFEST.md
     └── <additional migration artifact>
@@ -194,6 +200,7 @@ Create:
 1. **Copy the active shape forward.**
    - Start from `.als/modules/<module_id>/vN/module.ts`.
    - Write the agreed `vN+1` shape by editing the copy.
+   - If the module declares Delamains, carry forward only authored Delamain assets. In `als_version >= 2`, never author or copy `delamains/<name>/dispatcher/`; dispatcher source is engine-managed under `.als/constructs/delamain-dispatcher/<name>/`.
 
 2. **Author the staged future active skill bundle.**
    - Start from the active skill bundle as the baseline.

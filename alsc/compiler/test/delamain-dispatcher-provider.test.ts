@@ -4,7 +4,7 @@ import {
   getAgentProvider,
   resetProviderSdkLoadersForTests,
   setCodexSdkLoaderForTests,
-} from "../../../skills/new/references/dispatcher/src/agent-providers.ts";
+} from "../../../delamain-dispatcher/src/agent-providers.ts";
 
 afterEach(() => {
   resetProviderSdkLoadersForTests();
@@ -142,7 +142,7 @@ test("OpenAI provider streams codex action lines once per started or completed a
       item: {
         type: "file_change",
         changes: [
-          { path: "skills/new/references/dispatcher/src/agent-providers.ts", kind: "update" },
+          { path: "delamain-dispatcher/src/agent-providers.ts", kind: "update" },
           { path: "alsc/compiler/test/delamain-dispatcher-provider.test.ts", kind: "add" },
           { path: "tmp/stale-tail.log", kind: "delete" },
         ],
@@ -169,7 +169,7 @@ test("OpenAI provider streams codex action lines once per started or completed a
     "Bash bun test dispatcher-provider",
     "WebSearch codex sdk thread item taxonomy",
     "MCP docs.search",
-    "Edit skills/new/references/dispatcher/src/agent-providers.ts",
+    "Edit delamain-dispatcher/src/agent-providers.ts",
     "Write alsc/compiler/test/delamain-dispatcher-provider.test.ts",
     "Delete tmp/stale-tail.log",
   ]);

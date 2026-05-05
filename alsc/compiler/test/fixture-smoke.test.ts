@@ -48,8 +48,9 @@ test.concurrent("merged reference fixture validates clean", async () => {
     }
 
     expect(result.schema).toBe(VALIDATION_OUTPUT_SCHEMA_LITERAL);
-    expect(result.als_version).toBe(1);
+    expect(result.als_version).toBe(2);
     expect(result.compiler_contract.supported_als_versions).toContain(1);
+    expect(result.compiler_contract.supported_als_versions).toContain(2);
     expect(result.status).toBe("pass");
     expect(result.module_filter).toBeNull();
     expect(result.summary.error_count).toBe(0);

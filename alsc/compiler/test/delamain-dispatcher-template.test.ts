@@ -8,12 +8,12 @@ import {
   formatDispatcherVersionLine,
   loadDispatcherVersionInfo,
   parseDispatcherVersion,
-} from "../../../skills/new/references/dispatcher/src/dispatcher-version.ts";
-import { resolve as resolveDispatcherConfig } from "../../../skills/new/references/dispatcher/src/dispatcher.ts";
-import { resolveDispatchLimits } from "../../../skills/new/references/dispatcher/src/dispatch-limits.ts";
-import { runGit } from "../../../skills/new/references/dispatcher/src/git.ts";
-import { loadRuntimeManifest } from "../../../skills/new/references/dispatcher/src/runtime-manifest.ts";
-import { scan } from "../../../skills/new/references/dispatcher/src/watcher.ts";
+} from "../../../delamain-dispatcher/src/dispatcher-version.ts";
+import { resolve as resolveDispatcherConfig } from "../../../delamain-dispatcher/src/dispatcher.ts";
+import { resolveDispatchLimits } from "../../../delamain-dispatcher/src/dispatch-limits.ts";
+import { runGit } from "../../../delamain-dispatcher/src/git.ts";
+import { loadRuntimeManifest } from "../../../delamain-dispatcher/src/runtime-manifest.ts";
+import { scan } from "../../../delamain-dispatcher/src/watcher.ts";
 import { withFixtureSandbox, writePath } from "./helpers/fixture.ts";
 
 test("dispatcher version parser accepts positive integers", () => {
@@ -52,10 +52,10 @@ test("dispatch limits resolve authored overrides and canonical defaults", () => 
 
 test("canonical dispatcher template strips ANTHROPIC_API_KEY before SDK imports", async () => {
   const indexText = await Bun.file(
-    new URL("../../../skills/new/references/dispatcher/src/index.ts", import.meta.url),
+    new URL("../../../delamain-dispatcher/src/index.ts", import.meta.url),
   ).text();
   const preflightText = await Bun.file(
-    new URL("../../../skills/new/references/dispatcher/src/preflight.ts", import.meta.url),
+    new URL("../../../delamain-dispatcher/src/preflight.ts", import.meta.url),
   ).text();
 
   expect(indexText.split("\n")[0]).toBe('import "./preflight.js";');
@@ -76,13 +76,13 @@ test("run-demo dispatcher strips ANTHROPIC_API_KEY before SDK imports", async ()
 
 test("canonical dispatcher template ships worktree runtime modules", async () => {
   const runtimeText = await Bun.file(
-    new URL("../../../skills/new/references/dispatcher/src/dispatcher-runtime.ts", import.meta.url),
+    new URL("../../../delamain-dispatcher/src/dispatcher-runtime.ts", import.meta.url),
   ).text();
   const isolationText = await Bun.file(
-    new URL("../../../skills/new/references/dispatcher/src/git-worktree-isolation.ts", import.meta.url),
+    new URL("../../../delamain-dispatcher/src/git-worktree-isolation.ts", import.meta.url),
   ).text();
   const registryText = await Bun.file(
-    new URL("../../../skills/new/references/dispatcher/src/dispatch-registry.ts", import.meta.url),
+    new URL("../../../delamain-dispatcher/src/dispatch-registry.ts", import.meta.url),
   ).text();
 
   expect(runtimeText).toContain("class DispatcherRuntime");
@@ -105,7 +105,7 @@ test("dispatcher version check reads local and canonical VERSION files", async (
     const pluginRoot = join(root, "plugin");
 
     await writeVersionPath(root, ".claude/delamains/version-check/dispatcher/VERSION", "1\n");
-    await writeVersionPath(root, "plugin/skills/new/references/dispatcher/VERSION", "1\n");
+    await writeVersionPath(root, "plugin/delamain-dispatcher/VERSION", "1\n");
 
     const info = await loadDispatcherVersionInfo(bundleRoot, {
       CLAUDE_PLUGIN_ROOT: pluginRoot,
@@ -122,7 +122,7 @@ test("dispatcher version check rejects missing local VERSION", async () => {
     const bundleRoot = join(root, ".claude/delamains/version-check");
     const pluginRoot = join(root, "plugin");
 
-    await writeVersionPath(root, "plugin/skills/new/references/dispatcher/VERSION", "1\n");
+    await writeVersionPath(root, "plugin/delamain-dispatcher/VERSION", "1\n");
 
     await expect(loadDispatcherVersionInfo(bundleRoot, {
       CLAUDE_PLUGIN_ROOT: pluginRoot,
@@ -136,7 +136,7 @@ test("dispatcher version check rejects malformed local VERSION", async () => {
     const pluginRoot = join(root, "plugin");
 
     await writeVersionPath(root, ".claude/delamains/version-check/dispatcher/VERSION", "latest\n");
-    await writeVersionPath(root, "plugin/skills/new/references/dispatcher/VERSION", "1\n");
+    await writeVersionPath(root, "plugin/delamain-dispatcher/VERSION", "1\n");
 
     await expect(loadDispatcherVersionInfo(bundleRoot, {
       CLAUDE_PLUGIN_ROOT: pluginRoot,
@@ -175,7 +175,7 @@ test("dispatcher version check rejects malformed canonical VERSION", async () =>
     const pluginRoot = join(root, "plugin");
 
     await writeVersionPath(root, ".claude/delamains/version-check/dispatcher/VERSION", "1\n");
-    await writeVersionPath(root, "plugin/skills/new/references/dispatcher/VERSION", "v2\n");
+    await writeVersionPath(root, "plugin/delamain-dispatcher/VERSION", "v2\n");
 
     await expect(loadDispatcherVersionInfo(bundleRoot, {
       CLAUDE_PLUGIN_ROOT: pluginRoot,
@@ -189,7 +189,7 @@ test("dispatcher version check logs stale upgrade instruction without failing", 
     const pluginRoot = join(root, "plugin");
 
     await writeVersionPath(root, ".claude/delamains/version-check/dispatcher/VERSION", "1\n");
-    await writeVersionPath(root, "plugin/skills/new/references/dispatcher/VERSION", "2\n");
+    await writeVersionPath(root, "plugin/delamain-dispatcher/VERSION", "2\n");
 
     const info = await loadDispatcherVersionInfo(bundleRoot, {
       CLAUDE_PLUGIN_ROOT: pluginRoot,
@@ -212,7 +212,7 @@ test("dispatcher version check ignores dispatcher package.json version", async (
       ".claude/delamains/version-check/dispatcher/package.json",
       JSON.stringify({ name: "delamain-dispatcher", version: "999.0.0" }) + "\n",
     );
-    await writeVersionPath(root, "plugin/skills/new/references/dispatcher/VERSION", "1\n");
+    await writeVersionPath(root, "plugin/delamain-dispatcher/VERSION", "1\n");
 
     const info = await loadDispatcherVersionInfo(bundleRoot, {
       CLAUDE_PLUGIN_ROOT: pluginRoot,

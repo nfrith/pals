@@ -96,11 +96,11 @@ test("deploy CLI projects active skills into .claude/skills and is idempotent", 
     expect(firstDelamainSnapshot["development-pipeline/runtime-manifest.json"]).not.toContain("\"limits\"");
     expect(firstDelamainSnapshot["development-pipeline/agents/planning.md"]).toContain("description:");
     expect(firstDelamainSnapshot["development-pipeline/sub-agents/developer.md"]).toContain("description:");
-    expect(firstDelamainSnapshot["development-pipeline/dispatcher/VERSION"]).toBe("14\n");
-    expect(firstDelamainSnapshot["run-lifecycle/dispatcher/VERSION"]).toBe("14\n");
-    expect(firstDelamainSnapshot["incident-lifecycle/dispatcher/VERSION"]).toBe("14\n");
-    expect(firstDelamainSnapshot["release-lifecycle/dispatcher/VERSION"]).toBe("14\n");
-    expect(firstDelamainSnapshot["postmortem-lifecycle/dispatcher/VERSION"]).toBe("14\n");
+    expect(firstDelamainSnapshot["development-pipeline/dispatcher/VERSION"]).toBe("15\n");
+    expect(firstDelamainSnapshot["run-lifecycle/dispatcher/VERSION"]).toBe("15\n");
+    expect(firstDelamainSnapshot["incident-lifecycle/dispatcher/VERSION"]).toBe("15\n");
+    expect(firstDelamainSnapshot["release-lifecycle/dispatcher/VERSION"]).toBe("15\n");
+    expect(firstDelamainSnapshot["postmortem-lifecycle/dispatcher/VERSION"]).toBe("15\n");
     expect(firstDelamainSnapshot["run-lifecycle/runtime-manifest.json"]).toContain("\"delamain_name\": \"run-lifecycle\"");
     expect(firstDelamainSnapshot["incident-lifecycle/runtime-manifest.json"]).toContain("\"module_id\": \"incident-response\"");
     expect(firstDelamainSnapshot["release-lifecycle/runtime-manifest.json"]).toContain("\"module_id\": \"infra\"");
@@ -406,7 +406,7 @@ test("deploy CLI projects bound Delamain bundles into .claude/delamains and is i
     expect(firstSnapshot["development-pipeline/runtime-manifest.json"]).toContain("\"state_providers\"");
     expect(firstSnapshot["development-pipeline/agents/planning.md"]).toContain("description:");
     expect(firstSnapshot["development-pipeline/sub-agents/developer.md"]).toContain("description:");
-    expect(firstSnapshot["development-pipeline/dispatcher/VERSION"]).toBe("14\n");
+    expect(firstSnapshot["development-pipeline/dispatcher/VERSION"]).toBe("15\n");
     expect(firstSnapshot["development-pipeline/dispatcher/src/index.ts"].startsWith('import "./preflight.js";\n')).toBe(true);
     expect(firstSnapshot["development-pipeline/dispatcher/src/preflight.ts"]).toContain(
       "delete process.env.ANTHROPIC_API_KEY;",
@@ -425,6 +425,50 @@ test("deploy CLI projects bound Delamain bundles into .claude/delamains and is i
 
     const secondSnapshot = snapshotTree(join(root, ".claude/delamains"));
     expect(secondSnapshot).toEqual(firstSnapshot);
+  });
+});
+
+test("deploy CLI projects dispatcher runtime from installed construct roots", { timeout: 180_000 }, async () => {
+  await withFixtureSandbox("deploy-installed-dispatcher-source", async ({ root }) => {
+    await rm(join(root, ".claude/delamains"), { recursive: true, force: true });
+    await updateTextFile(
+      root,
+      ".als/constructs/delamain-dispatcher/development-pipeline/src/index.ts",
+      (current) => `${current}\n// installed-dispatcher-source-marker\n`,
+    );
+
+    const process = Bun.spawnSync({
+      cmd: ["bun", "src/deploy.ts", root, "factory"],
+      cwd: compilerRoot,
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+
+    expect(process.exitCode).toBe(0);
+    expect(
+      readFileSync(join(root, ".claude/delamains/development-pipeline/dispatcher/src/index.ts"), "utf-8"),
+    ).toContain("installed-dispatcher-source-marker");
+  });
+});
+
+test("deploy CLI fails closed when an ALS v2 Delamain is missing its installed dispatcher construct", { timeout: 180_000 }, async () => {
+  await withFixtureSandbox("deploy-missing-installed-dispatcher", async ({ root }) => {
+    await removePath(root, ".als/constructs/delamain-dispatcher/development-pipeline");
+
+    const process = Bun.spawnSync({
+      cmd: ["bun", "src/deploy.ts", root, "factory"],
+      cwd: compilerRoot,
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+
+    expect(process.exitCode).toBe(1);
+    const output = JSON.parse(new TextDecoder().decode(process.stdout)) as {
+      status: string;
+      error: string | null;
+    };
+    expect(output.status).toBe("fail");
+    expect(output.error).toContain(".als/constructs/delamain-dispatcher/development-pipeline");
   });
 });
 

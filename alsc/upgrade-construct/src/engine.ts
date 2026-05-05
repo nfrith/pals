@@ -39,7 +39,7 @@ export async function preflightDelamainConstructUpgrade(input: {
   system_root: string;
   plugin_root: string;
 }): Promise<ConstructUpgradePreflightResult> {
-  const bundle = loadConstructBundle(join(input.plugin_root, "skills", "new", "references", "dispatcher"));
+  const bundle = loadConstructBundle(join(input.plugin_root, "delamain-dispatcher"));
   const instances = await discoverDelamainDispatcherInstances(input.system_root);
   if (instances.length === 0) {
     return {
@@ -161,7 +161,7 @@ export async function executeDelamainConstructUpgrade(input: {
     };
   }
 
-  const bundle = loadConstructBundle(join(input.plugin_root, "skills", "new", "references", "dispatcher"));
+  const bundle = loadConstructBundle(join(input.plugin_root, "delamain-dispatcher"));
   const instances = await discoverDelamainDispatcherInstances(input.live_system_root);
   const currentVersion = preflight.current_version!;
   const migrationSteps = await discoverSequentialMigrationSteps(join(bundle.root, bundle.manifest.migrations_dir));
@@ -409,26 +409,20 @@ export function createDashboardProcessDefinition(pluginRoot: string): ProcessCon
 export async function discoverDelamainDispatcherInstances(
   systemRoot: string,
 ): Promise<DelamainDispatcherInstance[]> {
-  const modulesRoot = join(resolve(systemRoot), ".als", "modules");
+  const installedConstructsRoot = join(resolve(systemRoot), ".als", "constructs", "delamain-dispatcher");
   const instances: DelamainDispatcherInstance[] = [];
-  for (const moduleEntry of await safeDirectoryEntries(modulesRoot)) {
-    const moduleRoot = join(modulesRoot, moduleEntry);
-    for (const versionEntry of await safeDirectoryEntries(moduleRoot)) {
-      const delamainsRoot = join(moduleRoot, versionEntry, "delamains");
-      for (const delamainEntry of await safeDirectoryEntries(delamainsRoot)) {
-        const dispatcherRoot = join(delamainsRoot, delamainEntry, "dispatcher");
-        try {
-          await readFile(join(dispatcherRoot, "VERSION"), "utf-8");
-          instances.push({
-            instance_id: delamainEntry,
-            display_name: delamainEntry,
-            dispatcher_root: dispatcherRoot,
-            relative_dispatcher_root: relative(resolve(systemRoot), dispatcherRoot),
-          });
-        } catch {
-          // Ignore partial or missing dispatcher bundles.
-        }
-      }
+  for (const delamainEntry of await safeDirectoryEntries(installedConstructsRoot)) {
+    const dispatcherRoot = join(installedConstructsRoot, delamainEntry);
+    try {
+      await readFile(join(dispatcherRoot, "VERSION"), "utf-8");
+      instances.push({
+        instance_id: delamainEntry,
+        display_name: delamainEntry,
+        dispatcher_root: dispatcherRoot,
+        relative_dispatcher_root: relative(resolve(systemRoot), dispatcherRoot),
+      });
+    } catch {
+      // Ignore partial or missing dispatcher bundles.
     }
   }
   return instances;

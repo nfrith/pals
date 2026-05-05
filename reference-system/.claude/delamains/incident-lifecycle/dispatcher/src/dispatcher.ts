@@ -7,7 +7,10 @@ import {
   type ProviderDispatchResult,
 } from "./agent-providers.js";
 import { resolveDispatchLimits } from "./dispatch-limits.js";
-import { DispatcherRuntime } from "./dispatcher-runtime.js";
+import {
+  DispatcherRuntime,
+  type PreparedDispatch,
+} from "./dispatcher-runtime.js";
 import { parseMd, readFrontmatterField, setFrontmatterField } from "./frontmatter.js";
 import type { AgentProvider } from "./provider.js";
 import { buildSessionRuntimeState, shouldPersistDispatcherSession } from "./session-runtime.js";
@@ -33,14 +36,27 @@ interface StateDef {
   provider?: AgentProvider;
   path?: string;
   resumable?: boolean;
+  concurrency?: number;
   "session-field"?: string;
   "sub-agent"?: string;
+}
+
+interface ConcurrencyPoolDef {
+  states: string[];
+  capacity: number;
 }
 
 interface DelamainConfig {
   phases: string[];
   states: Record<string, StateDef>;
+  concurrency_pools?: Record<string, ConcurrencyPoolDef>;
   transitions: Transition[];
+}
+
+export interface ResolvedConcurrencyPool {
+  id: string;
+  states: string[];
+  capacity: number;
 }
 
 export interface DispatchEntry {
@@ -49,6 +65,8 @@ export interface DispatchEntry {
   subAgentName?: string;
   provider: AgentProvider;
   resumable: boolean;
+  concurrency?: number;
+  pool?: ResolvedConcurrencyPool;
   sessionField?: string;
   transitions: Array<Pick<Transition, "class" | "to">>;
 }
@@ -68,6 +86,7 @@ export interface ResolvedConfig {
   discriminatorValue?: string;
   agents: Record<string, AgentDef>;
   allStates: string[];
+  concurrencyPools: Record<string, ResolvedConcurrencyPool>;
   dispatchTable: DispatchEntry[];
 }
 
@@ -150,6 +169,23 @@ export async function resolve(
   }
 
   const dispatchTable: DispatchEntry[] = [];
+  const concurrencyPools = Object.fromEntries(
+    Object.entries(delamain.concurrency_pools ?? {}).map(([poolId, pool]) => [
+      poolId,
+      {
+        id: poolId,
+        states: [...pool.states],
+        capacity: pool.capacity,
+      } satisfies ResolvedConcurrencyPool,
+    ]),
+  );
+  const poolByState = new Map<string, ResolvedConcurrencyPool>();
+  for (const pool of Object.values(concurrencyPools)) {
+    for (const stateName of pool.states) {
+      poolByState.set(stateName, pool);
+    }
+  }
+
   for (const [stateId, state] of Object.entries(delamain.states)) {
     if (state.actor !== "agent" || !state.path || !agents[stateId]) continue;
 
@@ -174,6 +210,8 @@ export async function resolve(
       subAgentName: subAgentPath ? basename(subAgentPath, ".md") : undefined,
       provider,
       resumable: state.resumable === true,
+      concurrency: state.concurrency,
+      pool: poolByState.get(stateId),
       sessionField: state.resumable ? state["session-field"] : undefined,
       transitions,
     });
@@ -194,6 +232,7 @@ export async function resolve(
     discriminatorValue: manifest.discriminator_value ?? undefined,
     agents,
     allStates: Object.keys(delamain.states),
+    concurrencyPools,
     dispatchTable,
   };
 }
@@ -212,9 +251,10 @@ export async function dispatch(
   config: Pick<ResolvedConfig, "moduleId" | "delamainName" | "maxTurns" | "maxBudgetUsdByProvider">,
   bundleRoot: string,
   runtime: DispatcherRuntime,
+  preparedInput?: PreparedDispatch,
 ): Promise<{ success: boolean; blocked: boolean; sessionId?: string; dispatchId?: string }> {
   const agent = agents[entry.agentName]!;
-  const prepared = await runtime.prepareDispatch(itemId, itemFile, entry);
+  const prepared = preparedInput ?? await runtime.prepareDispatch(itemId, itemFile, entry);
   if (!prepared) {
     console.log(`[dispatcher] ${itemId} skipped: runtime registry already owns this item`);
     return { success: false, blocked: true };

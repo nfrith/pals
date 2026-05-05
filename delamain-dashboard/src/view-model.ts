@@ -1,4 +1,4 @@
-import type { DispatchTelemetryEvent } from "../../skills/new/references/dispatcher/src/telemetry.ts";
+import type { DispatchTelemetryEvent } from "../../delamain-dispatcher/src/telemetry.ts";
 import type {
   DashboardSnapshot,
   DispatcherDefinitionState,

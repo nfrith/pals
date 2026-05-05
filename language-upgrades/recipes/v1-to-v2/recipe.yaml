@@ -1,0 +1,21 @@
+schema: als-language-upgrade-recipe@1
+from:
+  als_version: 1
+to:
+  als_version: 2
+summary: Seed installed Delamain dispatcher constructs, archive bundled dispatcher trees, and flip the system to ALS v2.
+steps:
+  - id: rewrite-dispatcher-layout
+    title: Rewrite dispatcher source layout for ALS v2
+    type: script
+    category: must-run
+    depends_on: []
+    preconditions:
+      - als-version-matches-from
+      - validates-as-from-version
+    postconditions:
+      - als-version-matches-to
+      - validates-as-to-version
+    trigger: auto
+    path: scripts/apply-dispatcher-cutover.sh
+    args: []

@@ -98,12 +98,12 @@ test("sequential migration discovery rejects malformed directory entries", async
 
 test("canonical dispatcher bundle matches the current known vendor fingerprint", async () => {
   const fingerprint = await detectKnownConstructFingerprint(
-    resolve(alsRepoRoot, "skills/new/references/dispatcher"),
+    resolve(alsRepoRoot, "delamain-dispatcher"),
     DISPATCHER_KNOWN_VENDOR_FINGERPRINTS,
   );
 
   expect(fingerprint).toEqual({
-    matched_version: 14,
+    matched_version: 15,
     customized: false,
   });
 });
@@ -115,22 +115,16 @@ test("delamain construct preflight and execute stage the fleet upgrade without m
     const dispatcherA = join(
       liveSystemRoot,
       ".als",
-      "modules",
-      "backlog",
-      "v1",
-      "delamains",
+      "constructs",
+      "delamain-dispatcher",
       "factory-jobs",
-      "dispatcher",
     );
     const dispatcherB = join(
       liveSystemRoot,
       ".als",
-      "modules",
-      "backlog",
-      "v1",
-      "delamains",
+      "constructs",
+      "delamain-dispatcher",
       "release-jobs",
-      "dispatcher",
     );
 
     await mkdir(dispatcherA, { recursive: true });
@@ -145,7 +139,7 @@ test("delamain construct preflight and execute stage the fleet upgrade without m
     });
     expect(preflight.needs_upgrade).toBe(true);
     expect(preflight.current_version).toBe(11);
-    expect(preflight.target_version).toBe(14);
+    expect(preflight.target_version).toBe(15);
     expect(preflight.prompts.filter((prompt) => prompt.intent === "pick-construct-lifecycle")).toHaveLength(2);
     expect(preflight.prompts.filter((prompt) => prompt.intent === "confirm-construct-overwrite")).toHaveLength(0);
 
@@ -169,14 +163,11 @@ test("delamain construct preflight and execute stage the fleet upgrade without m
     expect(await readFile(join(
       stagingSystemRoot,
       ".als",
-      "modules",
-      "backlog",
-      "v1",
-      "delamains",
+      "constructs",
+      "delamain-dispatcher",
       "factory-jobs",
-      "dispatcher",
       "VERSION",
-    ), "utf-8")).toBe("14\n");
+    ), "utf-8")).toBe("15\n");
     expect(execute.validation?.requires_claude_deploy).toBe(true);
   });
 });

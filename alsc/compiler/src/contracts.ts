@@ -1,5 +1,6 @@
 export const ALS_VERSION_V1 = 1 as const;
-export const SUPPORTED_ALS_VERSIONS = [ALS_VERSION_V1] as const;
+export const ALS_VERSION_V2 = 2 as const;
+export const SUPPORTED_ALS_VERSIONS = [ALS_VERSION_V1, ALS_VERSION_V2] as const;
 
 export const VALIDATION_OUTPUT_SCHEMA_LITERAL = "als-validation-output@1" as const;
 export const DEPLOY_OUTPUT_SCHEMA_LITERAL = "als-claude-deploy-output@4" as const;

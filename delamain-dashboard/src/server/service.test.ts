@@ -8,7 +8,7 @@ import { createDashboardFixture } from "../test-fixtures.ts";
 import { collectSystemSnapshot } from "../feed/collector.ts";
 import { createDashboardServiceRuntime } from "./service.ts";
 import type { DashboardSnapshot } from "../feed/types.ts";
-import { runGit } from "../../../skills/new/references/dispatcher/src/git.ts";
+import { runGit } from "../../../delamain-dispatcher/src/git.ts";
 
 test("dashboard handlers serve snapshot JSON and fan out SSE updates to concurrent clients", async () => {
   const fixture = await createDashboardFixture("service");

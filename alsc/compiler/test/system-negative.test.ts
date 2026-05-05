@@ -268,7 +268,7 @@ for (const { label, value } of [
 test.concurrent("unsupported als_version stops validation before module loading", async () => {
   await withFixtureSandbox("system-als-version-unsupported", async ({ root }) => {
     await updateSystemYaml(root, (config) => {
-      config.als_version = 2;
+      config.als_version = 3;
     });
 
     const result = validateFixture(root);
@@ -276,7 +276,28 @@ test.concurrent("unsupported als_version stops validation before module loading"
     const diagnostic = expectSystemDiagnostic(result, codes.SYSTEM_ALS_VERSION_UNSUPPORTED, ".als/system.ts");
     expect(diagnostic.reason).toBe(reasons.SYSTEM_ALS_VERSION_UNSUPPORTED);
     expect(result.modules).toHaveLength(0);
-    expect(result.als_version).toBe(2);
+    expect(result.als_version).toBe(3);
+  });
+});
+
+test.concurrent("ALS v2 rejects bundled dispatcher source inside Delamain bundles", async () => {
+  await withFixtureSandbox("system-v2-bundled-dispatcher-forbidden", async ({ root }) => {
+    await mkdirPath(root, ".als/modules/factory/v1/delamains/development-pipeline/dispatcher");
+    await writePath(
+      root,
+      ".als/modules/factory/v1/delamains/development-pipeline/dispatcher/VERSION",
+      "15\n",
+    );
+
+    const result = validateFixture(root);
+    expect(result.status).toBe("fail");
+    const diagnostic = expectModuleDiagnostic(
+      result,
+      "factory",
+      codes.DELAMAIN_FILE_INVALID,
+      ".als/modules/factory/v1/delamains/development-pipeline/dispatcher",
+    );
+    expect(diagnostic.reason).toBe(reasons.DELAMAIN_BUNDLED_DISPATCHER_FORBIDDEN);
   });
 });
 

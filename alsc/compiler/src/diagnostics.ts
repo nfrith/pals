@@ -111,6 +111,7 @@ export const reasons = {
   DELAMAIN_ASSET_TARGET_NOT_FILE: "delamain.asset.target_not_file",
   DELAMAIN_ASSET_TARGET_UNREADABLE: "delamain.asset.target_unreadable",
   DELAMAIN_ASSET_PATH_ESCAPE: "delamain.asset.path_escape",
+  DELAMAIN_BUNDLED_DISPATCHER_FORBIDDEN: "delamain.bundled_dispatcher.forbidden",
   DELAMAIN_BINDING_UNRESOLVED: "delamain.binding.unresolved",
   DELAMAIN_SESSION_FIELD_COLLISION: "delamain.session_field.collision",
   DELAMAIN_EFFECTIVE_FIELD_CONFLICT: "delamain.effective_field.conflict",

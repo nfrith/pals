@@ -21,4 +21,4 @@ Rules:
 - Asset paths stay inside the hop bundle.
 - Public recipes mutate only `.als/` through the runtime engine's diff-enforced boundary.
 
-ALS-066 does not ship a public `v1 → v2` bundle because ALS v2 does not exist yet. Use synthetic fixtures and tests as the proving ground until the first real hop is authored.
+ALS now ships the first public hop at `v1-to-v2/`. That bundle seeds `.als/constructs/delamain-dispatcher/`, archives bundled dispatcher trees, removes them from module bundles, and flips the system to `als_version: 2`.

@@ -19,6 +19,11 @@ interface OpenAIModelPricing {
 }
 
 const OPENAI_MODEL_PRICING: Record<string, OpenAIModelPricing> = {
+  "gpt-5.5": {
+    short: { inputUsdPer1M: 5, cachedInputUsdPer1M: 0.5, outputUsdPer1M: 30 },
+    long: { inputUsdPer1M: 10, cachedInputUsdPer1M: 1, outputUsdPer1M: 45 },
+    longContextThresholdTokens: OPENAI_LONG_CONTEXT_THRESHOLD_TOKENS,
+  },
   "gpt-5.4": {
     short: { inputUsdPer1M: 2.5, cachedInputUsdPer1M: 0.25, outputUsdPer1M: 15 },
     long: { inputUsdPer1M: 5, cachedInputUsdPer1M: 0.5, outputUsdPer1M: 22.5 },

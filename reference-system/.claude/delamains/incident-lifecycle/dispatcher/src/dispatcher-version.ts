@@ -21,7 +21,7 @@ export function resolveCanonicalDispatcherVersionPath(
   if (!pluginRoot) {
     throw new Error("CLAUDE_PLUGIN_ROOT is not set; cannot read canonical dispatcher VERSION");
   }
-  return join(pluginRoot, "skills", "new", "references", "dispatcher", "VERSION");
+  return join(pluginRoot, "delamain-dispatcher", "VERSION");
 }
 
 export async function loadDispatcherVersionInfo(

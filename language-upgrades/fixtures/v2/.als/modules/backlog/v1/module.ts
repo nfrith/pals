@@ -1,0 +1,363 @@
+import { defineModule } from "../../../authoring.ts";
+
+export const module = defineModule({
+  "dependencies": [
+    {
+      "module": "people"
+    }
+  ],
+  "entities": {
+    "item": {
+      "source_format": "markdown",
+      "path": "items/{id}.md",
+      "identity": {
+        "id_field": "id"
+      },
+      "discriminator": "type",
+      "fields": {
+        "id": {
+          "type": "id",
+          "allow_null": false
+        },
+        "title": {
+          "type": "string",
+          "allow_null": false
+        },
+        "type": {
+          "type": "enum",
+          "allow_null": false,
+          "allowed_values": [
+            "app",
+            "infra",
+            "client",
+            "event",
+            "s9-ops",
+            "personal-ops",
+            "research"
+          ]
+        },
+        "owner_ref": {
+          "type": "ref",
+          "allow_null": false,
+          "target": {
+            "module": "people",
+            "entity": "person"
+          }
+        },
+        "collaborator_refs": {
+          "type": "list",
+          "allow_null": true,
+          "items": {
+            "type": "ref",
+            "target": {
+              "module": "people",
+              "entity": "person"
+            }
+          }
+        },
+        "context_file": {
+          "type": "file_path",
+          "allow_null": true,
+          "base": "system_root"
+        },
+        "session_files": {
+          "type": "list",
+          "allow_null": true,
+          "items": {
+            "type": "file_path",
+            "base": "system_root"
+          }
+        }
+      },
+      "body": {
+        "title": {
+          "source": {
+            "kind": "field",
+            "field": "id"
+          }
+        }
+      },
+      "section_definitions": {
+        "DESCRIPTION": {
+          "allow_null": false,
+          "content": {
+            "mode": "freeform",
+            "blocks": {
+              "paragraph": {}
+            }
+          },
+          "guidance": {
+            "include": "what this item is, why it exists, and the relevant operating context",
+            "exclude": "timestamped progress notes and variant-specific implementation detail that belongs elsewhere"
+          }
+        },
+        "ACTIVITY_LOG": {
+          "allow_null": false,
+          "content": {
+            "mode": "freeform",
+            "blocks": {
+              "bullet_list": {},
+              "ordered_list": {}
+            }
+          },
+          "guidance": {
+            "include": "dated work log entries, decisions, and notable state changes in chronological order",
+            "exclude": "evergreen requirements or long-form architectural rationale"
+          }
+        },
+        "REQUIREMENTS": {
+          "allow_null": true,
+          "content": {
+            "mode": "freeform",
+            "blocks": {
+              "bullet_list": {},
+              "ordered_list": {}
+            }
+          },
+          "guidance": {
+            "include": "completion criteria, constraints, and checklist-style requirements",
+            "exclude": "session history and exploratory findings"
+          }
+        },
+        "ARCHITECTURE": {
+          "allow_null": true,
+          "content": {
+            "mode": "freeform",
+            "blocks": {
+              "paragraph": {},
+              "bullet_list": {},
+              "ordered_list": {}
+            }
+          },
+          "guidance": {
+            "include": "technical design choices, structural implications, and implementation approach",
+            "exclude": "raw research conclusions and generic task history"
+          }
+        },
+        "HYPOTHESIS": {
+          "allow_null": true,
+          "content": {
+            "mode": "freeform",
+            "blocks": {
+              "paragraph": {}
+            }
+          },
+          "guidance": {
+            "include": "the belief or question being tested for exploratory work",
+            "exclude": "settled implementation plans"
+          }
+        },
+        "FINDINGS": {
+          "allow_null": true,
+          "content": {
+            "mode": "freeform",
+            "blocks": {
+              "paragraph": {},
+              "bullet_list": {},
+              "ordered_list": {}
+            }
+          },
+          "guidance": {
+            "include": "conclusions, evidence summaries, and next-step implications from research work",
+            "exclude": "speculative work that has not been observed or learned yet"
+          }
+        }
+      },
+      "variants": {
+        "app": {
+          "fields": {
+            "status": {
+              "type": "enum",
+              "allow_null": false,
+              "allowed_values": [
+                "draft",
+                "scoped",
+                "active",
+                "blocked",
+                "delivered",
+                "completed",
+                "cancelled"
+              ]
+            },
+            "delivery_track": {
+              "type": "enum",
+              "allow_null": false,
+              "allowed_values": [
+                "net-new",
+                "enhancement",
+                "hardening"
+              ]
+            },
+            "target_release": {
+              "type": "string",
+              "allow_null": false
+            },
+            "design_doc": {
+              "type": "file_path",
+              "allow_null": false,
+              "base": "system_root"
+            },
+            "launch_date": {
+              "type": "date",
+              "allow_null": false
+            },
+            "reviewer_refs": {
+              "type": "list",
+              "allow_null": false,
+              "items": {
+                "type": "ref",
+                "target": {
+                  "module": "people",
+                  "entity": "person"
+                }
+              }
+            },
+            "success_metrics": {
+              "type": "list",
+              "allow_null": false,
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "sections": [
+            "DESCRIPTION",
+            "REQUIREMENTS",
+            "ARCHITECTURE",
+            "ACTIVITY_LOG"
+          ]
+        },
+        "infra": {
+          "fields": {
+            "status": {
+              "type": "enum",
+              "allow_null": false,
+              "allowed_values": [
+                "draft",
+                "scoped",
+                "active",
+                "blocked",
+                "completed",
+                "cancelled"
+              ]
+            }
+          },
+          "sections": [
+            "DESCRIPTION",
+            "REQUIREMENTS",
+            "ACTIVITY_LOG"
+          ]
+        },
+        "client": {
+          "fields": {
+            "status": {
+              "type": "enum",
+              "allow_null": false,
+              "allowed_values": [
+                "draft",
+                "scoped",
+                "active",
+                "blocked",
+                "delivered",
+                "completed",
+                "cancelled"
+              ]
+            }
+          },
+          "sections": [
+            "DESCRIPTION",
+            "REQUIREMENTS",
+            "ACTIVITY_LOG"
+          ]
+        },
+        "event": {
+          "fields": {
+            "status": {
+              "type": "enum",
+              "allow_null": false,
+              "allowed_values": [
+                "draft",
+                "scoped",
+                "active",
+                "blocked",
+                "completed",
+                "cancelled"
+              ]
+            }
+          },
+          "sections": [
+            "DESCRIPTION",
+            "REQUIREMENTS",
+            "ACTIVITY_LOG"
+          ]
+        },
+        "s9-ops": {
+          "fields": {
+            "status": {
+              "type": "enum",
+              "allow_null": false,
+              "allowed_values": [
+                "draft",
+                "active",
+                "blocked",
+                "completed",
+                "deferred",
+                "cancelled"
+              ]
+            }
+          },
+          "sections": [
+            "DESCRIPTION",
+            "REQUIREMENTS",
+            "ACTIVITY_LOG"
+          ]
+        },
+        "personal-ops": {
+          "fields": {
+            "status": {
+              "type": "enum",
+              "allow_null": false,
+              "allowed_values": [
+                "draft",
+                "active",
+                "blocked",
+                "completed",
+                "deferred",
+                "cancelled"
+              ]
+            }
+          },
+          "sections": [
+            "DESCRIPTION",
+            "REQUIREMENTS",
+            "ACTIVITY_LOG"
+          ]
+        },
+        "research": {
+          "fields": {
+            "status": {
+              "type": "enum",
+              "allow_null": false,
+              "allowed_values": [
+                "draft",
+                "active",
+                "blocked",
+                "findings-ready",
+                "completed",
+                "cancelled"
+              ]
+            }
+          },
+          "sections": [
+            "DESCRIPTION",
+            "HYPOTHESIS",
+            "FINDINGS",
+            "ACTIVITY_LOG"
+          ]
+        }
+      }
+    }
+  }
+} as const);
+
+export default module;

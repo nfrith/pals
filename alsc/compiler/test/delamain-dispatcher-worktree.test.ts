@@ -6,16 +6,16 @@ import { join } from "node:path";
 import {
   DIRTY_INTEGRATION_RETRY_LIMIT,
   DispatcherRuntime,
-} from "../../../skills/new/references/dispatcher/src/dispatcher-runtime.ts";
-import { RepoMutationLock } from "../../../skills/new/references/dispatcher/src/repo-mutation-lock.ts";
-import { scan } from "../../../skills/new/references/dispatcher/src/watcher.ts";
+} from "../../../delamain-dispatcher/src/dispatcher-runtime.ts";
+import { RepoMutationLock } from "../../../delamain-dispatcher/src/repo-mutation-lock.ts";
+import { scan } from "../../../delamain-dispatcher/src/watcher.ts";
 import {
   readRuntimeState,
   writeRuntimeState,
   type RuntimeDispatchState,
-} from "../../../skills/new/references/dispatcher/src/runtime-state.ts";
-import { runCommand, runGit } from "../../../skills/new/references/dispatcher/src/git.ts";
-import type { DispatchEntry } from "../../../skills/new/references/dispatcher/src/dispatcher.ts";
+} from "../../../delamain-dispatcher/src/runtime-state.ts";
+import { runCommand, runGit } from "../../../delamain-dispatcher/src/git.ts";
+import type { DispatchEntry } from "../../../delamain-dispatcher/src/dispatcher.ts";
 
 const ENTRY: DispatchEntry = {
   state: "in-dev",

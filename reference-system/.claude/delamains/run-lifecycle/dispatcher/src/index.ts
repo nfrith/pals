@@ -4,10 +4,17 @@ import { writeFileSync, unlinkSync } from "fs";
 import { resolve as resolvePath, dirname, join } from "path";
 import { resolve, dispatch, type DispatchEntry } from "./dispatcher.js";
 import {
+  buildConcurrencySnapshot,
+  evaluateDispatchConcurrency,
+  reserveDispatchConcurrency,
+  type DispatchConcurrencySuppression,
+} from "./concurrency.js";
+import {
   DispatcherRuntime,
   type BlockedDirtyRetryResult,
   type DispatcherRuntimeHeartbeat,
 } from "./dispatcher-runtime.js";
+import type { RuntimeDispatchSummary } from "./runtime-state.js";
 import { formatDispatcherVersionLine, loadDispatcherVersionInfo } from "./dispatcher-version.js";
 import { appendTelemetryEvent, DISPATCH_TELEMETRY_SCHEMA } from "./telemetry.js";
 import { scan } from "./watcher.js";
@@ -73,6 +80,17 @@ const STATUS_FILE = join(
   config.delamainName,
   "status.json",
 );
+const DRAIN_REQUEST_FILE = join(
+  SYSTEM_ROOT,
+  ".claude",
+  "delamains",
+  config.delamainName,
+  "dispatcher",
+  "control",
+  "drain-request.json",
+);
+
+type DispatcherLifecycleMode = "running" | "draining";
 
 let lastItemsScanned = 0;
 let lastRuntimeHeartbeat: DispatcherRuntimeHeartbeat = {
@@ -85,6 +103,8 @@ let lastRuntimeHeartbeat: DispatcherRuntimeHeartbeat = {
   orphaned_dispatches: 0,
   guarded_dispatches: 0,
 };
+let lifecycleMode: DispatcherLifecycleMode = "running";
+let drainRequestedAt: string | null = null;
 
 async function writeHeartbeat(itemsScanned: number) {
   lastRuntimeHeartbeat = await runtime.heartbeat();
@@ -102,6 +122,8 @@ async function writeHeartbeat(itemsScanned: number) {
         orphaned_dispatches: lastRuntimeHeartbeat.orphaned_dispatches,
         guarded_dispatches: lastRuntimeHeartbeat.guarded_dispatches,
         items_scanned: itemsScanned,
+        lifecycle_mode: lifecycleMode,
+        drain_requested_at: drainRequestedAt,
       }) + "\n",
     );
   } catch {
@@ -112,6 +134,14 @@ async function writeHeartbeat(itemsScanned: number) {
 function clearHeartbeat() {
   try {
     unlinkSync(STATUS_FILE);
+  } catch {
+    // Already gone
+  }
+}
+
+function clearDrainRequest() {
+  try {
+    unlinkSync(DRAIN_REQUEST_FILE);
   } catch {
     // Already gone
   }
@@ -129,6 +159,31 @@ function logCounts(prefix: string) {
 
 async function updateHeartbeat() {
   await writeHeartbeat(lastItemsScanned);
+}
+
+async function enterDrainingMode(): Promise<void> {
+  if (lifecycleMode === "draining") {
+    return;
+  }
+
+  lifecycleMode = "draining";
+  drainRequestedAt = new Date().toISOString();
+  console.log(
+    `[dispatcher] drain requested — stopping new dispatches and waiting for ${lastRuntimeHeartbeat.active_dispatches} active dispatch(es) to finish`,
+  );
+  await updateHeartbeat();
+}
+
+async function maybeHandleDrainRequest(): Promise<void> {
+  if (lifecycleMode === "draining") {
+    return;
+  }
+
+  if (!existsSync(DRAIN_REQUEST_FILE)) {
+    return;
+  }
+
+  await enterDrainingMode();
 }
 
 async function writeRetryTelemetry(result: BlockedDirtyRetryResult): Promise<void> {
@@ -204,6 +259,71 @@ function logSweep(prefix: string, summary: Awaited<ReturnType<typeof runtime.swe
   );
 }
 
+function buildOpenRecordItemIdSet(summary: RuntimeDispatchSummary): Set<string> {
+  return new Set([
+    ...summary.active,
+    ...summary.blocked,
+    ...summary.guarded,
+    ...summary.orphaned,
+  ].map((record) => record.item_id));
+}
+
+async function writeConcurrencySuppressionTelemetry(
+  item: { id: string; filePath: string },
+  rule: DispatchEntry,
+  suppression: DispatchConcurrencySuppression,
+): Promise<void> {
+  try {
+    await appendTelemetryEvent(BUNDLE_ROOT, {
+      schema: DISPATCH_TELEMETRY_SCHEMA,
+      event_id: crypto.randomUUID(),
+      event_type: "dispatch_suppressed_concurrency",
+      timestamp: new Date().toISOString(),
+      dispatcher_name: config.delamainName,
+      module_id: config.moduleId,
+      dispatch_id: null,
+      item_id: item.id,
+      item_file: item.filePath,
+      isolated_item_file: null,
+      state: rule.state,
+      agent_name: rule.agentName,
+      sub_agent_name: rule.subAgentName ?? null,
+      provider: rule.provider,
+      resumable: rule.resumable,
+      resume_requested: false,
+      session_field: rule.sessionField ?? null,
+      runtime_session_id: null,
+      resume_session_id: null,
+      worker_session_id: null,
+      worktree_path: null,
+      branch_name: null,
+      worktree_commit: null,
+      integrated_commit: null,
+      merge_outcome: null,
+      incident_kind: null,
+      blocked_by: suppression.blockedBy,
+      current_count: suppression.currentCount,
+      concurrency_limit: suppression.concurrencyLimit,
+      ...(suppression.blockedBy === "pool"
+        ? {
+          pool_id: suppression.poolId,
+          pool_states: suppression.poolStates,
+          pool_holders: suppression.poolHolders,
+        }
+        : {}),
+      transition_targets: rule.transitions.map((transition) => transition.to),
+      duration_ms: null,
+      num_turns: null,
+      cost_usd: null,
+      error: null,
+    });
+  } catch (error) {
+    console.warn(
+      `[dispatcher] ${item.id} concurrency telemetry write failed: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+}
+
 process.on("beforeExit", (code) => {
   console.log(
     `[dispatcher] beforeExit fired (code=${code}, active=${lastRuntimeHeartbeat.active_dispatches}, blocked=${lastRuntimeHeartbeat.blocked_dispatches})`,
@@ -232,6 +352,17 @@ async function tick() {
 
   const sweep = await runtime.sweepOrphans();
   logSweep("[dispatcher] orphan sweep", sweep);
+  await maybeHandleDrainRequest();
+
+  if (lifecycleMode === "draining") {
+    await updateHeartbeat();
+    if (lastRuntimeHeartbeat.active_dispatches === 0) {
+      console.log("[dispatcher] drain complete — exiting cleanly");
+      clearDrainRequest();
+      clearRuntimeAndExit(0);
+    }
+    return;
+  }
 
   const items = await scan(
     config.moduleRoot,
@@ -255,10 +386,36 @@ async function tick() {
     await writeRetryTelemetry(retry);
   }
 
+  const openSummary = await runtime.openDispatchSummary();
+  const openItemIds = buildOpenRecordItemIdSet(openSummary);
+  const concurrencySnapshot = buildConcurrencySnapshot(openSummary, config.dispatchTable);
+
   for (const item of items) {
     const rule = findRule(item.status);
     if (!rule) continue;
-    if (await runtime.hasOpenRecord(item.id)) continue;
+    if (openItemIds.has(item.id)) continue;
+
+    const suppression = evaluateDispatchConcurrency(rule, concurrencySnapshot);
+    if (suppression) {
+      await writeConcurrencySuppressionTelemetry(item, rule, suppression);
+      continue;
+    }
+
+    const prepared = await runtime.prepareDispatch(item.id, item.filePath, rule);
+    if (!prepared) {
+      console.log(`[dispatcher] ${item.id} skipped: runtime registry already owns this item`);
+      continue;
+    }
+
+    openItemIds.add(item.id);
+    reserveDispatchConcurrency(rule, concurrencySnapshot, rule.pool
+      ? {
+        dispatch_id: prepared.dispatchId,
+        item_id: item.id,
+        state: rule.state,
+        status: "active",
+      }
+      : undefined);
 
     console.log(`[dispatcher] dispatch ${item.id} -> ${item.status}`);
     void dispatch(
@@ -269,6 +426,7 @@ async function tick() {
       config,
       BUNDLE_ROOT,
       runtime,
+      prepared,
     )
       .then(async (result) => {
         await updateHeartbeat();
@@ -304,6 +462,7 @@ let forceShutdownRequested = false;
 function clearRuntimeAndExit(code: number) {
   clearInterval(interval);
   keepalive.stop();
+  clearDrainRequest();
   clearHeartbeat();
   process.exit(code);
 }

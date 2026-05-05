@@ -59,7 +59,7 @@ test("construct manifest inspection accepts the canonical authored surface", asy
 
 test("construct manifest inspection accepts shipped construct bundles", () => {
   for (const constructRoot of [
-    resolve(alsRepoRoot, "skills/new/references/dispatcher"),
+    resolve(alsRepoRoot, "delamain-dispatcher"),
     resolve(alsRepoRoot, "statusline"),
     resolve(alsRepoRoot, "delamain-dashboard"),
   ]) {

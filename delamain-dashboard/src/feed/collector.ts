@@ -1,19 +1,19 @@
 import { existsSync } from "fs";
 import { readFile } from "fs/promises";
 import { join } from "path";
-import { loadRuntimeManifest } from "../../../skills/new/references/dispatcher/src/runtime-manifest.ts";
+import { loadRuntimeManifest } from "../../../delamain-dispatcher/src/runtime-manifest.ts";
 import {
   readRuntimeState,
   resolveRuntimeStatePaths,
   summarizeRuntimeState,
   type RuntimeDispatchSummary,
-} from "../../../skills/new/references/dispatcher/src/runtime-state.ts";
+} from "../../../delamain-dispatcher/src/runtime-state.ts";
 import {
   readTelemetryEvents,
   resolveTelemetryPaths,
   type DispatchTelemetryEvent,
-} from "../../../skills/new/references/dispatcher/src/telemetry.ts";
-import { scan } from "../../../skills/new/references/dispatcher/src/watcher.ts";
+} from "../../../delamain-dispatcher/src/telemetry.ts";
+import { scan } from "../../../delamain-dispatcher/src/watcher.ts";
 import { parseDelamainYaml } from "./delamain-yaml.ts";
 import { discoverDelamainBundles } from "./discovery.ts";
 import type {

@@ -99,7 +99,7 @@ Today's runtime surface splits into two tiers.
 
 These surfaces participate in the ALS-067 construct-upgrade engine. Each carries its own `VERSION` file, and any state-shape move requires a sequential migration script alongside the VERSION bump.
 
-- **Delamain dispatcher source** — the runtime engine that reads delamain definitions, dispatches agents, manages worktrees. Template lives at `nfrith-repos/als/skills/new/references/dispatcher/` and is tracked by `nfrith-repos/als/skills/new/references/dispatcher/VERSION`.
+- **Delamain dispatcher source** — the runtime engine that reads delamain definitions, dispatches agents, manages worktrees. Canonical template lives at `nfrith-repos/als/delamain-dispatcher/`; ALS v2+ installs per-Delamain copies under `<system_root>/.als/constructs/delamain-dispatcher/<delamain>/`; canonical version is tracked by `nfrith-repos/als/delamain-dispatcher/VERSION`.
 - **Statusline service** — the runtime scripts that produce the live status line (delamain health, OBS state, context usage, clock). Tracked by `nfrith-repos/als/statusline/VERSION`.
 - **Dashboard service** — the localhost dashboard that visualizes dispatcher state. Tracked by `nfrith-repos/als/delamain-dashboard/VERSION`.
 
@@ -144,7 +144,7 @@ The ALS Factory `targets` field uses the six slugs below. This section is the ca
 | Slug | What it is | Primary location | Tier |
 |------|------------|------------------|------|
 | `language` | The ALS language contract — compiler rules, SDR-backed semantics, and canonical reference docs | `nfrith-repos/als/alsc/compiler/`, `nfrith-repos/als/sdr/`, `nfrith-repos/als/skills/docs/references/` | Language contract |
-| `construct:dispatcher` | Delamain dispatcher constructs | `nfrith-repos/als/skills/new/references/dispatcher/` | [Engine-managed constructs](#engine-managed-constructs) |
+| `construct:dispatcher` | Delamain dispatcher constructs | `nfrith-repos/als/delamain-dispatcher/` | [Engine-managed constructs](#engine-managed-constructs) |
 | `construct:statusline` | Statusline service | `nfrith-repos/als/statusline/` | [Engine-managed constructs](#engine-managed-constructs) |
 | `construct:dashboard` | Delamain-dashboard service | `nfrith-repos/als/delamain-dashboard/` | [Engine-managed constructs](#engine-managed-constructs) |
 | `skill` | Plugin-shipped skills | `nfrith-repos/als/skills/` | [Bundled plugin assets](#bundled-plugin-assets) |
@@ -172,7 +172,7 @@ ALS has multiple version axes that evolve at different rates.
 |------|----------------|---------|--------------------|
 | **`als_version`** | `.als/system.ts` (operator-side); `SUPPORTED_ALS_VERSIONS` (plugin-side) | Rare. Hop event. | `/upgrade-language` + language-upgrade-recipe (ALS-066) |
 | **`module_version`** | `.als/modules/{module}/v{N}/module.ts` | Per-module, as the operator's data shape evolves | `/change` + `/migrate` |
-| **Construct version** | `nfrith-repos/als/skills/new/references/dispatcher/VERSION` (and similar per construct) | Per-construct, as the runtime evolves | Construct upgrade (Punchlist #1, future job) |
+| **Construct version** | `nfrith-repos/als/delamain-dispatcher/VERSION` (and similar per construct) | Per-construct, as the runtime evolves | Construct upgrade (Punchlist #1, future job) |
 | **Plugin version** | `.claude-plugin/plugin.json` | Vendor release. Rolls up all of the above. | `/update` |
 
 The plugin version is the rollup that edgerunners see ("you're on plugin 0.2.1"). The other axes are internal; the engine reconciles them during upgrade flows.

@@ -1,15 +1,25 @@
 import { expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
-import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { cp, mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { dirname, join, resolve } from "node:path";
 import { tmpdir } from "node:os";
+import { fileURLToPath } from "node:url";
 import { LANGUAGE_UPGRADE_RECIPE_SCHEMA_LITERAL } from "../../compiler/src/contracts.ts";
+import { inspectLanguageUpgradeRecipe } from "../../compiler/src/language-upgrade-recipe.ts";
+import { validateSystem } from "../../compiler/src/validate.ts";
 import type { LanguageUpgradeRecipe } from "../../compiler/src/types.ts";
 import { buildHopId, planLanguageUpgradeChain, type PlannedLanguageUpgradeHop } from "../src/plan-chain.ts";
 import { preflightLanguageUpgradeChain } from "../src/preflight.ts";
 import { executeLanguageUpgradeChain } from "../src/runner.ts";
 import { readLanguageUpgradeRuntimeState } from "../src/runtime-state.ts";
 import { verifyLanguageUpgradeRecipe } from "../src/verify.ts";
+
+const alsRepoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
+const authoringRuntimePath = resolve(alsRepoRoot, "alsc/compiler/src/authoring/index.ts");
+const contractsRuntimePath = resolve(alsRepoRoot, "alsc/compiler/src/contracts.ts");
+const v1FixtureRoot = resolve(alsRepoRoot, "language-upgrades/fixtures/v1");
+const v2FixtureRoot = resolve(alsRepoRoot, "language-upgrades/fixtures/v2");
+const v1ToV2RecipeRoot = resolve(alsRepoRoot, "language-upgrades/recipes/v1-to-v2");
 
 interface UpgradeHarness {
   root: string;
@@ -427,12 +437,77 @@ test("verification compares the upgraded snapshot against the expected fixture",
   });
 });
 
+test("shipped v1-to-v2 recipe verifies against the frozen fixtures", async () => {
+  const inspection = inspectLanguageUpgradeRecipe(v1ToV2RecipeRoot);
+  expect(inspection.status).toBe("pass");
+  if (inspection.status !== "pass" || !inspection.recipe) {
+    return;
+  }
+
+  const workingRoot = await mkdtemp(join(tmpdir(), "als-upgrade-language-fixture-"));
+  const fromFixtureRoot = join(workingRoot, "from");
+  const expectedFixtureRoot = join(workingRoot, "expected");
+
+  try {
+    await prepareRunnableFixture(v1FixtureRoot, fromFixtureRoot);
+    await prepareRunnableFixture(v2FixtureRoot, expectedFixtureRoot);
+
+    const verification = await verifyLanguageUpgradeRecipe({
+      from_fixture_path: fromFixtureRoot,
+      expected_fixture_path: expectedFixtureRoot,
+      hop: {
+        hop_id: "v1-to-v2",
+        recipe: inspection.recipe,
+        recipe_path: inspection.recipe_path,
+        bundle_root: inspection.bundle_root,
+      },
+      services: {
+        inspect_system(systemRoot) {
+          const validation = validateSystem(systemRoot);
+          return {
+            als_version: validation.als_version,
+            status: validation.status,
+          };
+        },
+      },
+    });
+
+    expect(verification.status).toBe("pass");
+    expect(verification.mismatches).toEqual([]);
+    expect(verification.step_results.map((step) => step.status)).toEqual(["completed"]);
+  } finally {
+    await rm(workingRoot, { recursive: true, force: true });
+  }
+});
+
 async function writeFixtureFiles(root: string, files: Record<string, string>): Promise<void> {
   for (const [relativePath, contents] of Object.entries(files)) {
     const filePath = join(root, relativePath);
     await mkdir(dirname(filePath), { recursive: true });
     await writeFile(filePath, contents, "utf-8");
   }
+}
+
+async function prepareRunnableFixture(sourceRoot: string, targetRoot: string): Promise<void> {
+  await cp(sourceRoot, targetRoot, { recursive: true });
+  await writeFile(
+    join(targetRoot, ".als", "authoring.ts"),
+    [
+      `export { defineSystem, defineModule, defineDelamain } from ${JSON.stringify(authoringRuntimePath)};`,
+      "export {",
+      "  COMPATIBILITY_CLASSES,",
+      "  COMPATIBILITY_CLASS_METADATA,",
+      "  COMPATIBILITY_CLASS_RELEASE_HEADLINE_ORDER,",
+      "  compareCompatibilityClassesByPrecedence,",
+      "  highestCompatibilityClass,",
+      "  isCompatibilityClass,",
+      "  sortCompatibilityClassesByPrecedence,",
+      "  type CompatibilityClass,",
+      `} from ${JSON.stringify(contractsRuntimePath)};`,
+      "",
+    ].join("\n"),
+    "utf-8",
+  );
 }
 
 function initializeGitRepository(root: string): void {

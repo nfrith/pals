@@ -2,23 +2,23 @@ import { expect, test } from "bun:test";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { DispatchLifecycle } from "../../../skills/new/references/dispatcher/src/dispatch-lifecycle.ts";
+import { DispatchLifecycle } from "../../../delamain-dispatcher/src/dispatch-lifecycle.ts";
 import {
   buildConcurrencySnapshot,
   evaluateDispatchConcurrency,
   reserveDispatchConcurrency,
-} from "../../../skills/new/references/dispatcher/src/concurrency.ts";
+} from "../../../delamain-dispatcher/src/concurrency.ts";
 import {
   buildSessionRuntimeState,
   shouldPersistDispatcherSession,
-} from "../../../skills/new/references/dispatcher/src/session-runtime.ts";
+} from "../../../delamain-dispatcher/src/session-runtime.ts";
 import {
   appendTelemetryEvent,
   DISPATCH_TELEMETRY_SCHEMA,
   readTelemetryEvents,
   resolveTelemetryPaths,
   type DispatchTelemetryEvent,
-} from "../../../skills/new/references/dispatcher/src/telemetry.ts";
+} from "../../../delamain-dispatcher/src/telemetry.ts";
 import {
   emptyRuntimeState,
   evaluatePoolConcurrency,
@@ -26,7 +26,7 @@ import {
   listPoolConcurrencyHolders,
   summarizeRuntimeState,
   type RuntimeDispatchRecord,
-} from "../../../skills/new/references/dispatcher/src/runtime-state.ts";
+} from "../../../delamain-dispatcher/src/runtime-state.ts";
 
 test("dispatcher concurrency suppression counts active records toward the cap", () => {
   const state = emptyRuntimeState();

@@ -11,6 +11,7 @@ import { RepoMutationLock } from "./repo-mutation-lock.js";
 import type {
   RuntimeDispatchRecord,
   RuntimeMountedSubmoduleRecord,
+  RuntimeDispatchSummary,
 } from "./runtime-state.js";
 import type { ProviderDispatchCounts } from "./provider.js";
 import type { DispatchEntry } from "./dispatcher.js";
@@ -375,6 +376,10 @@ export class DispatcherRuntime {
 
   async hasOpenRecord(itemId: string): Promise<boolean> {
     return (await this.registry.getByItemId(itemId)) !== null;
+  }
+
+  async openDispatchSummary(): Promise<RuntimeDispatchSummary> {
+    return this.registry.summary();
   }
 
   async heartbeat(): Promise<DispatcherRuntimeHeartbeat> {

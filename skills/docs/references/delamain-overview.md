@@ -58,29 +58,23 @@ A delamain is a directory containing:
 ```
 development-pipeline/
 ├── delamain.ts           # phases, states, transitions
+├── runtime-manifest.config.json   # optional authored runtime hints
 ├── agents/
 │   ├── queued.md           # one per agent-owned state
 │   ├── planning.md
 │   └── ...
-├── sub-agents/
-│   └── developer.md        # optional helpers
-└── dispatcher/
-    ├── package.json
-    ├── tsconfig.json
-    └── src/
-        ├── index.ts
-        ├── dispatcher.ts
-        ├── session-runtime.ts
-        └── watcher.ts
+└── sub-agents/
+    └── developer.md        # optional helpers
 ```
 
-The Delamain bundle is self-contained. It lives in `.als/modules/{module}/v{N}/delamains/` as authored `delamain.ts` plus markdown assets, and is deployed to `.claude/delamains/` by the compiler as runtime files.
+The authored Delamain bundle lives in `.als/modules/{module}/v{N}/delamains/` as `delamain.ts` plus markdown assets. Dispatcher source is not authored inside that bundle in ALS v2+; ALS installs it separately under `.als/constructs/delamain-dispatcher/<name>/` and deploy projects the runnable copy to `.claude/delamains/`.
 
 ## Claude Projection
 
 `alsc deploy claude` projects each active Delamain bundle to `.claude/delamains/<delamain-name>/`.
 
 - Authored Delamain files refresh from the canonical ALS bundle on deploy.
+- Runtime dispatcher files project from `.als/constructs/delamain-dispatcher/<name>/`.
 - If the deployed target already has `dispatcher/node_modules/`, deploy preserves it.
 - Deploy stays filesystem-only. It does not run `bun install` or any other package-manager command.
 - If the target dispatcher has no `node_modules/` yet, deploy warns and continues.
