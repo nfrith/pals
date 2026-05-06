@@ -1,6 +1,6 @@
 {
   "name": "als",
-  "version": "0.4.2",
+  "version": "0.5.0",
   "description": "ALS tools and skills — create modules, validate systems, and prepare schema changes",
   "author": {
     "name": "Nicholas Frith"
