@@ -1,5 +1,7 @@
 # Delamain dispatcher runtime artifacts
 .claude/delamains/*/status.json
+.claude/delamains/*/runtime/
+.claude/scripts/.cache/pulse/*.json
 
 # Dependencies
 node_modules/
