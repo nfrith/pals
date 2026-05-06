@@ -23,7 +23,7 @@ Accepted
   - runs language-upgrade preflight
   - runs construct-upgrade preflight
   - batches every returned operator prompt into one AskUserQuestion round
-- `/update` refuses to start when the live system has tracked changes under `.als/` or `.claude/`.
+- `/update` refuses to start when the live system has tracked changes under `.als/` or user-authored tracked changes under `.claude/`. Canonical transient-runtime hygiene is the narrow exception refined by [SDR 044](./044-update-transaction-transient-runtime-hygiene-contract.md).
 - After the operator gate succeeds, `/update` creates exactly one detached staging worktree from the current `HEAD` and shares that same worktree across every execute pass in the transaction.
 - The staging worktree lives beside the operator repo in an ALS-owned path. Successful runs remove it. Validation or commit failures preserve it for inspection and report the path. Later `/update` runs prune stale ALS-owned staging worktrees before creating a new one.
 - `/upgrade-language` becomes a two-phase runtime contract without a recipe-schema bump:
@@ -57,7 +57,8 @@ Accepted
 
 - Required: `/update` owns one transaction boundary for language-upgrade, construct-upgrade, bundled-surface refresh, commit, and post-commit lifecycle.
 - Required: `/update` batches every language and construct prompt into one operator gate before it creates a staging worktree.
-- Required: `/update` rejects runs with tracked live changes under `.als/` or `.claude/`.
+- Required: `/update` rejects runs with tracked live changes under `.als/` or tracked non-transient live changes under `.claude/`.
+- Required: canonical transient-runtime repair, when applicable, follows the narrower live-hygiene contract in [SDR 044](./044-update-transaction-transient-runtime-hygiene-contract.md) rather than surfacing as a generic dirty-tree blocker.
 - Required: the wrapper creates exactly one detached staging worktree per run and shares it across every execute participant.
 - Required: successful runs remove the staging worktree; validation or commit failures preserve it and report its path; later runs prune stale ALS-owned staging worktrees first.
 - Required: `/upgrade-language` exposes `preflight` and `execute` runtime entrypoints instead of a single live-mutation phase.

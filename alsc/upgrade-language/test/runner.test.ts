@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { LANGUAGE_UPGRADE_RECIPE_SCHEMA_LITERAL } from "../../compiler/src/contracts.ts";
 import { inspectLanguageUpgradeRecipe } from "../../compiler/src/language-upgrade-recipe.ts";
+import { TRANSIENT_RUNTIME_GITIGNORE_PATTERNS } from "../../shared/transient-runtime.ts";
 import { validateSystem } from "../../compiler/src/validate.ts";
 import type { LanguageUpgradeRecipe } from "../../compiler/src/types.ts";
 import { buildHopId, planLanguageUpgradeChain, type PlannedLanguageUpgradeHop } from "../src/plan-chain.ts";
@@ -313,6 +314,8 @@ test("shipped cleanup step untracks historical runtime ephemera and commits the 
       ".claude/delamains/ops/runtime/worktree-state.json": "{\"dirty\":false}\n",
       ".claude/delamains/ops/status.json": "{\"pid\":123}\n",
       ".claude/scripts/.cache/pulse/delamains.json": "{}\n",
+      ".claude/delamains/ops/telemetry/events.jsonl": "{\"event\":\"tick\"}\n",
+      ".claude/delamains/ops/dispatcher/control/drain-request.json": "{\"requested\":true}\n",
     },
   }, async ({ state_path, system_root }) => {
     const hop = {
@@ -343,13 +346,14 @@ test("shipped cleanup step untracks historical runtime ephemera and commits the 
     expect(trackedFiles).not.toContain(".claude/delamains/ops/runtime/worktree-state.json");
     expect(trackedFiles).not.toContain(".claude/delamains/ops/status.json");
     expect(trackedFiles).not.toContain(".claude/scripts/.cache/pulse/delamains.json");
+    expect(trackedFiles).not.toContain(".claude/delamains/ops/telemetry/events.jsonl");
+    expect(trackedFiles).not.toContain(".claude/delamains/ops/dispatcher/control/drain-request.json");
 
-    expect((await readFile(join(system_root, ".gitignore"), "utf-8"))).toContain(
-      ".claude/delamains/*/runtime/",
-    );
-    expect((await readFile(join(system_root, ".gitignore"), "utf-8"))).toContain(
-      ".claude/scripts/.cache/pulse/*.json",
-    );
+    const gitignore = await readFile(join(system_root, ".gitignore"), "utf-8");
+    for (const pattern of TRANSIENT_RUNTIME_GITIGNORE_PATTERNS) {
+      expect(gitignore).toContain(pattern);
+      expect(gitignore.split(pattern).length - 1).toBe(1);
+    }
     expect((await readFile(
       join(system_root, ".claude", "delamains", "ops", "runtime", "worktree-state.json"),
       "utf-8",
@@ -358,6 +362,37 @@ test("shipped cleanup step untracks historical runtime ephemera and commits the 
       join(system_root, ".claude", "scripts", ".cache", "pulse", "delamains.json"),
       "utf-8",
     )).trim()).toBe("{}");
+    expect((await readFile(
+      join(system_root, ".claude", "delamains", "ops", "telemetry", "events.jsonl"),
+      "utf-8",
+    )).trim()).toBe("{\"event\":\"tick\"}");
+    expect((await readFile(
+      join(system_root, ".claude", "delamains", "ops", "dispatcher", "control", "drain-request.json"),
+      "utf-8",
+    )).trim()).toBe("{\"requested\":true}");
+
+    await writeFile(
+      join(system_root, ".claude", "delamains", "ops", "runtime", "worktree-state.json"),
+      "{\"dirty\":true}\n",
+      "utf-8",
+    );
+    expect(readGit(system_root, [
+      "check-ignore",
+      "-q",
+      "--",
+      ".claude/delamains/ops/runtime/worktree-state.json",
+    ])).toBe("");
+
+    const rerun = spawnSync("bash", [
+      join(v1ToV2RecipeRoot, "scripts", "cleanup-tracked-runtime-ephemera.sh"),
+      ".",
+    ], {
+      cwd: system_root,
+      encoding: "utf-8",
+    });
+    expect(rerun.status).toBe(0);
+    expect(readGit(system_root, ["rev-list", "--count", "HEAD"])).toBe("2");
+    expect(readGit(system_root, ["status", "--short"])).toBe("");
   });
 });
 

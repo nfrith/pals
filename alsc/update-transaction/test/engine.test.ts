@@ -4,6 +4,7 @@ import { dirname, join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { deployClaudeSkills } from "../../compiler/src/claude-skills.ts";
+import { TRANSIENT_RUNTIME_GITIGNORE_PATTERNS } from "../../shared/transient-runtime.ts";
 import type { LanguageUpgradeRecipe } from "../../compiler/src/types.ts";
 import type { PlannedLanguageUpgradeHop } from "../../upgrade-language/src/plan-chain.ts";
 import { runCli } from "../src/cli.ts";
@@ -88,6 +89,73 @@ test("prepareUpdateTransaction rejects tracked .als changes before any prompt ba
     expect(prepared.status).toBe("blocked");
     if (prepared.status === "blocked") {
       expect(prepared.reason).toBe("dirty-live-tree");
+    }
+  });
+});
+
+test("prepareUpdateTransaction checkpoints tracked transient runtime dirt before batching prompts", async () => {
+  await withSystemRepo("transient-runtime-checkpoint", async ({ repo_root }) => {
+    const trackedTransientPaths = await seedTrackedTransientRuntimeFiles(repo_root);
+    await writeFile(join(repo_root, trackedTransientPaths[0]!), "{\"dirty\":true}\n", "utf-8");
+    await writeFile(join(repo_root, ".claude", "scripts", ".cache", "pulse", "meta.json"), "{\"pid\":456}\n", "utf-8");
+    await writeFile(join(repo_root, "notes.txt"), "leave staged\n", "utf-8");
+    git(repo_root, ["add", "notes.txt"]);
+
+    const prepared = await prepareUpdateTransaction({
+      repo_root,
+      plugin_root: alsRepoRoot,
+    });
+
+    expect(prepared.status).toBe("ready");
+    expect(git(repo_root, ["log", "-1", "--pretty=%s"])).toBe(
+      "chore: checkpoint transient runtime hygiene before /update",
+    );
+
+    const trackedFiles = git(repo_root, ["ls-files"]).split("\n").filter((entry) => entry.length > 0);
+    for (const path of trackedTransientPaths) {
+      expect(trackedFiles).not.toContain(path);
+      expect(await pathExists(join(repo_root, path))).toBe(true);
+    }
+
+    const gitignore = await readFile(join(repo_root, ".gitignore"), "utf-8");
+    for (const pattern of TRANSIENT_RUNTIME_GITIGNORE_PATTERNS) {
+      expect(gitignore).toContain(pattern);
+    }
+
+    expect(git(repo_root, ["diff", "--cached", "--name-only"])).toBe("notes.txt");
+    const checkpointPaths = git(repo_root, ["show", "--pretty=", "--name-only", "HEAD"])
+      .split("\n")
+      .filter((entry) => entry.length > 0);
+    expect(checkpointPaths).not.toContain("notes.txt");
+
+    await writeFile(join(repo_root, trackedTransientPaths[0]!), "{\"dirty\":\"again\"}\n", "utf-8");
+    expect(
+      git(repo_root, [
+        "check-ignore",
+        "-q",
+        "--",
+        trackedTransientPaths[0]!,
+      ]),
+    ).toBe("");
+  });
+});
+
+test("prepareUpdateTransaction still blocks tracked non-transient .claude changes", async () => {
+  await withSystemRepo("dirty-projected-claude", async ({ repo_root }) => {
+    await writeFixtureFile(repo_root, ".claude/manual-note.txt", "initial\n");
+    git(repo_root, ["add", ".claude/manual-note.txt"]);
+    git(repo_root, ["commit", "--no-gpg-sign", "-m", "Track manual claude note"]);
+    await writeFile(join(repo_root, ".claude", "manual-note.txt"), "modified\n", "utf-8");
+
+    const prepared = await prepareUpdateTransaction({
+      repo_root,
+      plugin_root: alsRepoRoot,
+    });
+
+    expect(prepared.status).toBe("blocked");
+    if (prepared.status === "blocked") {
+      expect(prepared.reason).toBe("dirty-live-tree");
+      expect(prepared.diagnostic).toContain(".claude/manual-note.txt");
     }
   });
 });
@@ -307,6 +375,65 @@ test("runPreparedUpdateTransaction commits once, runs lifecycle after writeback,
   });
 });
 
+test("runPreparedUpdateTransaction completes after transient runtime hygiene checkpoint and live rewrites", async () => {
+  await withSystemRepo("checkpoint-writeback", async ({ repo_root, root }) => {
+    const trackedTransientPaths = await seedTrackedTransientRuntimeFiles(repo_root);
+    await writeFile(join(repo_root, trackedTransientPaths[0]!), "{\"dirty\":true}\n", "utf-8");
+    const bundleRoot = join(root, "bundle");
+    await writeFixtureFile(
+      bundleRoot,
+      "scripts/mark-update.sh",
+      "#!/usr/bin/env bash\nprintf 'updated\\n' > .als/update-marker.txt\n",
+    );
+    const languagePlan = createLanguagePlan(bundleRoot, [
+      {
+        id: "mark-update",
+        title: "Mark update",
+        type: "script",
+        category: "must-run",
+        depends_on: [],
+        preconditions: [],
+        postconditions: [],
+        trigger: "auto",
+        path: "scripts/mark-update.sh",
+        args: [],
+      },
+    ]);
+
+    const prepared = await prepareUpdateTransaction({
+      repo_root,
+      plugin_root: alsRepoRoot,
+      language_plan: languagePlan,
+    });
+    expect(prepared.status).toBe("ready");
+    if (prepared.status !== "ready") {
+      return;
+    }
+
+    await writeFile(join(repo_root, trackedTransientPaths[0]!), "{\"dirty\":\"live\"}\n", "utf-8");
+    const result = await runPreparedUpdateTransaction({
+      prepared,
+    });
+
+    expect(result.status).toBe("completed");
+    expect((await readFile(join(repo_root, ".als", "update-marker.txt"), "utf-8")).trim()).toBe("updated");
+    expect(git(repo_root, ["rev-list", "--count", "HEAD"])).toBe("4");
+
+    const trackedFiles = git(repo_root, ["ls-files"]).split("\n").filter((entry) => entry.length > 0);
+    for (const path of trackedTransientPaths) {
+      expect(trackedFiles).not.toContain(path);
+    }
+    expect(
+      git(repo_root, [
+        "check-ignore",
+        "-q",
+        "--",
+        trackedTransientPaths[0]!,
+      ]),
+    ).toBe("");
+  });
+});
+
 test("update-transaction CLI prepare emits a ready transaction payload", async () => {
   await withSystemRepo("cli-prepare", async ({ repo_root, root }) => {
     const bundleRoot = join(root, "bundle");
@@ -439,6 +566,25 @@ async function writeFixtureFile(
   const filePath = join(root, relativePath);
   await mkdir(dirname(filePath), { recursive: true });
   await writeFile(filePath, contents, "utf-8");
+}
+
+async function seedTrackedTransientRuntimeFiles(repoRoot: string): Promise<string[]> {
+  const files: Record<string, string> = {
+    ".claude/delamains/ops/runtime/worktree-state.json": "{\"dirty\":false}\n",
+    ".claude/delamains/ops/status.json": "{\"pid\":123}\n",
+    ".claude/scripts/.cache/pulse/meta.json": "{\"pid\":123}\n",
+    ".claude/delamains/ops/telemetry/events.jsonl": "{\"event\":\"tick\"}\n",
+    ".claude/delamains/ops/dispatcher/control/drain-request.json": "{\"requested\":true}\n",
+  };
+
+  for (const [relativePath, contents] of Object.entries(files)) {
+    await writeFixtureFile(repoRoot, relativePath, contents);
+  }
+
+  const paths = Object.keys(files).sort();
+  git(repoRoot, ["add", "-f", "--", ...paths]);
+  git(repoRoot, ["commit", "--no-gpg-sign", "-m", "Track transient runtime files"]);
+  return paths;
 }
 
 async function replaceDispatcherFleet(

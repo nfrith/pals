@@ -5,6 +5,10 @@ import { basename, dirname, join, relative, resolve } from "node:path";
 import { deployClaudeSkills } from "../../compiler/src/claude-skills.ts";
 import type { ConstructFailureState } from "../../compiler/src/construct-contracts.ts";
 import type { ConstructActionManifest } from "../../compiler/src/construct-upgrade.ts";
+import {
+  applyTransientRuntimeCleanup,
+  isTransientRuntimePath,
+} from "../../shared/transient-runtime.ts";
 import { validateSystem } from "../../compiler/src/validate.ts";
 import {
   createDashboardProcessDefinition,
@@ -29,6 +33,8 @@ import { executeLanguageUpgradeChain } from "../../upgrade-language/src/runner.t
 import type { PlannedLanguageUpgradeHop } from "../../upgrade-language/src/plan-chain.ts";
 
 const UPDATE_STAGING_WORKTREE_PREFIX = ".als-update-staging-";
+const TRANSIENT_RUNTIME_HYGIENE_CHECKPOINT_COMMIT_MESSAGE =
+  "chore: checkpoint transient runtime hygiene before /update";
 const CONSTRUCT_ORDER = ["dispatcher", "statusline", "dashboard"] as const;
 
 type ConstructName = (typeof CONSTRUCT_ORDER)[number];
@@ -140,6 +146,14 @@ export async function prepareUpdateTransaction(input: {
   const systemRoot = canonicalizeExistingPath(resolve(input.system_root ?? repoRoot));
   const pluginRoot = resolve(input.plugin_root);
   assertSystemRootWithinRepo(repoRoot, systemRoot);
+
+  const initialDirtyPaths = readTrackedDirtyPaths(repoRoot);
+  if (shouldCheckpointTransientRuntimePaths(initialDirtyPaths)) {
+    applyTransientRuntimeCleanup({
+      system_root: systemRoot,
+      commit_message: TRANSIENT_RUNTIME_HYGIENE_CHECKPOINT_COMMIT_MESSAGE,
+    });
+  }
 
   const dirtyPaths = readTrackedDirtyPaths(repoRoot);
   if (dirtyPaths.length > 0) {
@@ -536,6 +550,11 @@ function readTrackedDirtyPaths(repoRoot: string): string[] {
     .map((line) => line.trimEnd())
     .filter((line) => line.length > 0)
     .map((line) => line.slice(3));
+}
+
+function shouldCheckpointTransientRuntimePaths(dirtyPaths: string[]): boolean {
+  return dirtyPaths.length > 0
+    && dirtyPaths.every((path) => path.startsWith(".claude/") && isTransientRuntimePath(path));
 }
 
 function hasCachedChanges(repoRoot: string): boolean {

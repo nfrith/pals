@@ -65,7 +65,8 @@ Notes:
 ## Runtime Rules
 
 - Mutating steps normally change only `<system_root>/.als/`.
-- The shipped v1→v2 hop begins with a bootstrap hygiene step that may append root `.gitignore` rules and remove historical `.claude/` runtime ephemera from the git index for pre-fix installs. It must commit that cleanup immediately and leave no residual out-of-scope diff behind.
+- The shipped v1→v2 hop retains an idempotent bootstrap hygiene step that may append root `.gitignore` rules and remove historical `.claude/` transient-runtime paths from the git index for pre-fix installs. The canonical taxonomy is shared with SDR 044's live `/update` prepare repair path and currently covers dispatcher `runtime/`, `status.json`, pulse cache JSON, telemetry `events.jsonl`, and dispatcher `drain-request.json`.
+- The recipe-side hygiene step is follow-through and convergence, not the only path that can unblock `/update` prepare. When `/update` sees tracked canonical transient-runtime dirt in the live repo, the transaction wrapper may checkpoint that machine-managed state before staging begins.
 - The runner executes mutating `script` and `agent-task` steps in a disposable clone or worktree.
 - Post-step `git diff` / status is the source of truth for the actual mutation set.
 - Any residual non-`.als/` path change fails the step closed.

@@ -1,6 +1,8 @@
 # Delamain dispatcher runtime artifacts
 .claude/delamains/*/status.json
 .claude/delamains/*/runtime/
+.claude/delamains/*/telemetry/events.jsonl
+.claude/delamains/*/dispatcher/control/drain-request.json
 .claude/scripts/.cache/pulse/*.json
 
 # Dependencies

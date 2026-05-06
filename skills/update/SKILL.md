@@ -224,6 +224,7 @@ For `reason: "dirty-live-tree"`:
 git -C "$REPO_ROOT" status --porcelain --untracked-files=no -- .als .claude
 ```
 
+- By the time this blocker surfaces, prepare has already auto-repaired the canonical transient-runtime taxonomy (`runtime/`, `status.json`, pulse cache JSON, telemetry `events.jsonl`, and dispatcher `drain-request.json`) if those were the only tracked `.claude/` offenders. Treat the remaining list as user-authored drift or other non-transient projected-state divergence.
 - Show the exact dirty path list in the AskUserQuestion body.
 - Offer these options:
   - `Commit the dirty files and proceed`
