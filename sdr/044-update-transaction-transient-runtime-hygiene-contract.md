@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed
+Accepted
 
 ## Context
 
@@ -20,7 +20,7 @@ Proposed
 - Before SDR 039's dirty-tree rejection path fires, `/update` prepare may inspect tracked dirty paths under `.claude/` and separate canonical transient-runtime paths from blocking user-authored drift.
 - When the only tracked dirty paths under `.claude/` are canonical transient-runtime paths, `/update` performs one automatic pre-prepare hygiene checkpoint in the live repo before it creates a staging worktree.
 - The hygiene checkpoint:
-  - removes only canonical transient-runtime paths from git tracking
+  - enumerates every currently tracked path that matches the canonical transient-runtime taxonomy at commit time and removes that full tracked set from git tracking
   - leaves those runtime files on disk so active dispatchers and pulse can keep writing
   - creates one machine-authored checkpoint commit before staging begins
   - does not mutate `.als/` or any user-authored `.claude/` content
@@ -38,9 +38,9 @@ Proposed
 ## Normative Effect
 
 - Required: `/update` distinguishes canonical transient-runtime paths from blocking user-authored drift before `dirty-live-tree` is reported.
-- Required: tracked dirty canonical transient-runtime paths are repaired in the live repo before staging begins.
+- Required: canonical transient-runtime paths that are both tracked and currently within the taxonomy match set at checkpoint time are repaired in the live repo before staging begins, even if only a subset was dirty when prepare first observed the blocker.
 - Required: the live repair creates exactly one checkpoint commit and preserves the runtime files on disk.
-- Required: the checkpoint commit may touch only canonical transient-runtime paths. Long-term ignore-pattern convergence remains owned by the shared cleanup follow-through.
+- Required: the checkpoint commit removes the full currently tracked taxonomy-matching set, not merely the initially dirty subset. Long-term ignore-pattern convergence remains owned by the shared cleanup follow-through.
 - Required: tracked user-authored changes under `.als/` or `.claude/` still block `/update` exactly as they do today.
 - Required: the canonical transient-runtime taxonomy is shared by the live repair path and the cleanup migration path.
 - Required: the existing-edgerunner half-applied ALS-080 state becomes self-healing when `/update` is re-run after this contract lands.
@@ -56,6 +56,7 @@ Proposed
 - Update `nfrith-repos/als/alsc/update-transaction/` so prepare:
   - classifies tracked dirty paths under `.claude/`
   - auto-repairs the all-transient historical case through the live checkpoint commit
+  - expands the checkpoint commit's target set to every currently tracked taxonomy-matching transient path at commit time
   - preserves the existing `dirty-live-tree` blocker for any non-transient tracked path
 - Update the `v1 -> v2` cleanup implementation to consume the shared taxonomy instead of hard-coding its own shell pattern list.
 - Keep SDR 039's top-level failure surfaces and staged writeback model unchanged after the live checkpoint completes.
