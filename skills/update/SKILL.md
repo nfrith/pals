@@ -204,7 +204,42 @@ set -e
 cat "$PREPARED_JSON"
 ```
 
-If `PREPARE_EXIT` is non-zero, stop and surface the JSON plus stderr. Typical blocked outcomes are dirty live `.als/` or `.claude/`, live validation failure, or an unreachable language target.
+Then inspect the payload:
+
+```bash
+PREPARED_STATUS=$(jq -r '.status // empty' "$PREPARED_JSON" 2>/dev/null || true)
+PREPARED_REASON=$(jq -r '.reason // empty' "$PREPARED_JSON" 2>/dev/null || true)
+PREPARED_DIAGNOSTIC=$(jq -r '.diagnostic // empty' "$PREPARED_JSON" 2>/dev/null || true)
+```
+
+If `PREPARED_STATUS` is `blocked` or `PREPARE_EXIT` is non-zero, do not stop cold. `/update` must always turn prepare-time blockers into an AskUserQuestion conversation.
+
+- Always surface the raw JSON plus any stderr so support still has the full diagnostic record.
+- Always include the blocker `reason` and `diagnostic` in the AskUserQuestion body.
+- If the payload is not valid JSON, AskUserQuestion with the raw stdout+stderr and options `Retry` or `Abort`.
+
+For `reason: "dirty-live-tree"`:
+
+```bash
+git -C "$REPO_ROOT" status --porcelain --untracked-files=no -- .als .claude
+```
+
+- Show the exact dirty path list in the AskUserQuestion body.
+- Offer these options:
+  - `Commit the dirty files and proceed`
+  - `Walk through them with me`
+  - `Abort`
+- If the operator chooses `Commit the dirty files and proceed`, stage only the listed tracked paths and commit them with a clear checkpoint message such as `chore: checkpoint local ALS state before /update`, then rerun Step 2.
+- If the operator chooses `Walk through them with me`, iterate the path list one file at a time via AskUserQuestion. For each path, offer options like `Commit this file`, `Discard this file`, or `Stop here`. After each requested action, re-check the dirty-path list. When the list is empty, rerun Step 2.
+- If the operator chooses `Abort`, stop cleanly.
+
+For every other prepare blocker, still use AskUserQuestion rather than terminating:
+
+- `live-validation-failed`: offer to run `/validate` together and retry, or abort.
+- `language-plan-mismatch`: offer to re-read the current ALS version / reachable target and retry, or abort.
+- Any future blocker reason: surface the raw `reason` + `diagnostic`, offer `Retry after investigation`, and `Abort`.
+
+Do not proceed to execute until prepare returns a valid payload with `status: "ready"`.
 
 3. If the prepared payload contains prompts, batch them into one AskUserQuestion round before execute. Use `$PREPARED_JSON` as the source of truth:
    - Prompt key: `.prompts[].key`

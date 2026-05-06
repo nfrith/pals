@@ -5,11 +5,27 @@ to:
   als_version: 2
 summary: Seed installed Delamain dispatcher constructs, archive bundled dispatcher trees, and flip the system to ALS v2.
 steps:
+  - id: cleanup-tracked-runtime-ephemera
+    title: Clean tracked runtime ephemera before the ALS v2 rewrite
+    type: script
+    category: must-run
+    depends_on: []
+    preconditions:
+      - als-version-matches-from
+      - validates-as-from-version
+    postconditions:
+      - als-version-matches-from
+      - validates-as-from-version
+    trigger: auto
+    path: scripts/cleanup-tracked-runtime-ephemera.sh
+    args:
+      - "."
   - id: rewrite-dispatcher-layout
     title: Rewrite dispatcher source layout for ALS v2
     type: script
     category: must-run
-    depends_on: []
+    depends_on:
+      - cleanup-tracked-runtime-ephemera
     preconditions:
       - als-version-matches-from
       - validates-as-from-version

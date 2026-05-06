@@ -188,5 +188,15 @@ test("inspection accepts the shipped v1-to-v2 dispatcher relocation recipe", () 
   expect(inspection.errors).toEqual([]);
   expect(inspection.recipe?.from.als_version).toBe(1);
   expect(inspection.recipe?.to.als_version).toBe(2);
-  expect(inspection.recipe?.steps.map((step) => step.id)).toEqual(["rewrite-dispatcher-layout"]);
+  expect(inspection.recipe?.steps.map((step) => step.id)).toEqual([
+    "cleanup-tracked-runtime-ephemera",
+    "rewrite-dispatcher-layout",
+  ]);
+  expect(inspection.recipe?.steps[0]).toEqual(expect.objectContaining({
+    type: "script",
+    path: "scripts/cleanup-tracked-runtime-ephemera.sh",
+    args: ["."],
+    preconditions: ["als-version-matches-from", "validates-as-from-version"],
+    postconditions: ["als-version-matches-from", "validates-as-from-version"],
+  }));
 });

@@ -288,6 +288,79 @@ test("runner dispatches declared recovery steps and continues the hop", async ()
   });
 });
 
+test("shipped cleanup step untracks historical runtime ephemera and commits the hygiene update", async () => {
+  const inspection = inspectLanguageUpgradeRecipe(v1ToV2RecipeRoot);
+  expect(inspection.status).toBe("pass");
+  if (inspection.status !== "pass" || !inspection.recipe) {
+    return;
+  }
+
+  const cleanupStep = inspection.recipe.steps.find((step) => step.id === "cleanup-tracked-runtime-ephemera");
+  expect(cleanupStep).toBeDefined();
+  if (!cleanupStep) {
+    return;
+  }
+
+  await withUpgradeHarness("cleanup-runtime-ephemera", {
+    system_files: {
+      ".als/version.txt": "1\n",
+      ".als/system.ts": "export const system = { als_version: 1 };\n",
+      ".gitignore": [
+        "# Delamain dispatcher runtime artifacts",
+        ".claude/delamains/*/status.json",
+        "",
+      ].join("\n"),
+      ".claude/delamains/ops/runtime/worktree-state.json": "{\"dirty\":false}\n",
+      ".claude/delamains/ops/status.json": "{\"pid\":123}\n",
+      ".claude/scripts/.cache/pulse/delamains.json": "{}\n",
+    },
+  }, async ({ state_path, system_root }) => {
+    const hop = {
+      hop_id: "v1-to-v1-cleanup-runtime-ephemera",
+      recipe: createRecipe([cleanupStep], 1),
+      recipe_path: join(v1ToV2RecipeRoot, "recipe.yaml"),
+      bundle_root: v1ToV2RecipeRoot,
+    };
+
+    const result = await executeLanguageUpgradeChain({
+      system_root,
+      hops: [hop],
+      target_als_version: 1,
+      services: createInspectableServices(),
+      options: {
+        state_path,
+      },
+    });
+
+    expect(result.status).toBe("completed");
+    expect(result.state.hops[0]?.steps.map((step) => step.status)).toEqual(["completed"]);
+    expect(readGit(system_root, ["status", "--short"])).toBe("");
+    expect(readGit(system_root, ["log", "-1", "--pretty=%s"])).toBe(
+      "chore: clean tracked runtime ephemera before ALS v2 upgrade",
+    );
+
+    const trackedFiles = readGit(system_root, ["ls-files"]);
+    expect(trackedFiles).not.toContain(".claude/delamains/ops/runtime/worktree-state.json");
+    expect(trackedFiles).not.toContain(".claude/delamains/ops/status.json");
+    expect(trackedFiles).not.toContain(".claude/scripts/.cache/pulse/delamains.json");
+
+    expect((await readFile(join(system_root, ".gitignore"), "utf-8"))).toContain(
+      ".claude/delamains/*/runtime/",
+    );
+    expect((await readFile(join(system_root, ".gitignore"), "utf-8"))).toContain(
+      ".claude/scripts/.cache/pulse/*.json",
+    );
+    expect((await readFile(
+      join(system_root, ".claude", "delamains", "ops", "runtime", "worktree-state.json"),
+      "utf-8",
+    )).trim()).toBe("{\"dirty\":false}");
+    expect((await readFile(
+      join(system_root, ".claude", "scripts", ".cache", "pulse", "delamains.json"),
+      "utf-8",
+    )).trim()).toBe("{}");
+  });
+});
+
 test("runner fails closed when a mutating step writes outside .als/", async () => {
   await withUpgradeHarness("boundary", {
     bundle_files: {
@@ -474,7 +547,7 @@ test("shipped v1-to-v2 recipe verifies against the frozen fixtures", async () =>
 
     expect(verification.status).toBe("pass");
     expect(verification.mismatches).toEqual([]);
-    expect(verification.step_results.map((step) => step.status)).toEqual(["completed"]);
+    expect(verification.step_results.map((step) => step.status)).toEqual(["completed", "completed"]);
   } finally {
     await rm(workingRoot, { recursive: true, force: true });
   }
@@ -526,4 +599,16 @@ function runGit(root: string, args: string[]): void {
   if (result.status !== 0) {
     throw new Error(result.stderr.trim() || result.stdout.trim() || `git ${args.join(" ")} failed`);
   }
+}
+
+function readGit(root: string, args: string[]): string {
+  const result = spawnSync("git", args, {
+    cwd: root,
+    encoding: "utf-8",
+  });
+  if (result.status !== 0) {
+    throw new Error(result.stderr.trim() || result.stdout.trim() || `git ${args.join(" ")} failed`);
+  }
+
+  return result.stdout.trim();
 }

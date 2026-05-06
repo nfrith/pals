@@ -64,10 +64,11 @@ Notes:
 
 ## Runtime Rules
 
-- Mutating steps may change only `<system_root>/.als/`.
+- Mutating steps normally change only `<system_root>/.als/`.
+- The shipped v1→v2 hop begins with a bootstrap hygiene step that may append root `.gitignore` rules and remove historical `.claude/` runtime ephemera from the git index for pre-fix installs. It must commit that cleanup immediately and leave no residual out-of-scope diff behind.
 - The runner executes mutating `script` and `agent-task` steps in a disposable clone or worktree.
-- Post-step `git diff` is the source of truth for the actual mutation set.
-- Any non-`.als/` path change fails the step closed.
+- Post-step `git diff` / status is the source of truth for the actual mutation set.
+- Any residual non-`.als/` path change fails the step closed.
 - Preflight discovers every `operator-prompt` step that can fire for the selected hop chain and option set.
 - Execute consumes a pre-collected operator-answer map and fails closed if a required answer is missing.
 - `operator-prompt` steps in `category: "recovery"` are rejected so prompt discovery stays static.

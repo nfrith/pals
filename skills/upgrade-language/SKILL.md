@@ -65,7 +65,7 @@ bun ${CLAUDE_PLUGIN_ROOT}/alsc/compiler/src/cli.ts upgrade-recipe inspect <recip
    - per-hop summary
    - operator-prompt steps
    - recommended and optional steps
-   - that recipe mutation is confined to `.als/`
+   - whether the selected hop includes any shipped bootstrap hygiene outside `.als/` (currently the v1→v2 runtime-ephemera cleanup step)
    - that rollback is not supported
 7. Gather every `operator-prompt` answer before execute begins. Execute must not stop for a mid-run AskUserQuestion.
 
@@ -83,7 +83,8 @@ Honor these rules exactly:
 - `recovery` steps run only after their declared failure trigger.
 - `operator-prompt` steps are discovered during preflight and consume pre-collected answers during execute.
 - `operator-prompt` steps in `category: "recovery"` are invalid and must fail closed.
-- Mutating `script` and `agent-task` steps may change only `<system_root>/.als/`.
+- Mutating `script` and `agent-task` steps normally change only `<system_root>/.als/`.
+- The current shipped exception is the v1→v2 bootstrap cleanup step, which may update the root `.gitignore` and remove historical `.claude/` runtime ephemera from the git index, but it must commit that hygiene immediately and leave the worktree clean for downstream steps.
 - The post-step mutation set is enforced through git diff / status inspection in the disposable execution workspace.
 
 ## Execute
@@ -114,6 +115,7 @@ bun ${CLAUDE_PLUGIN_ROOT}/alsc/compiler/src/cli.ts validate <system-root>
 
 - No rollback.
 - No partial-system upgrades.
-- No plugin-tree or `.claude/` mutation from recipe-authored steps.
+- No plugin-tree mutation from recipe-authored steps.
+- No uncommitted `.claude/` mutation may escape a step. The shipped v1→v2 bootstrap cleanup step may only remove historical `.claude/` runtime ephemera from the git index as one-time hygiene.
 - No construct-upgrade authorship here; that stays a sibling primitive.
 - ALS-066 ships the engine and contract only. Do not fabricate a public `v1 → v2` recipe when none exists.

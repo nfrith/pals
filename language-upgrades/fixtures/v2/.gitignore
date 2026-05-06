@@ -4,3 +4,5 @@
 # Dependencies
 node_modules/
 bun.lock
+.claude/delamains/*/runtime/
+.claude/scripts/.cache/pulse/*.json
