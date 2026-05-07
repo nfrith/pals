@@ -139,7 +139,7 @@ test("delamain construct preflight and execute stage the fleet upgrade without m
     });
     expect(preflight.needs_upgrade).toBe(true);
     expect(preflight.current_version).toBe(11);
-    expect(preflight.target_version).toBe(15);
+    expect(preflight.target_version).toBe(16);
     expect(preflight.prompts.filter((prompt) => prompt.intent === "pick-construct-lifecycle")).toHaveLength(2);
     expect(preflight.prompts.filter((prompt) => prompt.intent === "confirm-construct-overwrite")).toHaveLength(0);
 

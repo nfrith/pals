@@ -138,6 +138,22 @@ export async function gitChangedFilesAgainstHead(
   return output.split("\n").filter(Boolean);
 }
 
+export async function gitChangedFilesBetween(
+  cwd: string,
+  fromRef: string,
+  toRef: string,
+  pathspec?: string,
+): Promise<string[]> {
+  const args = ["diff", "--name-only", fromRef, toRef];
+  if (pathspec) {
+    args.push("--", pathspec);
+  }
+
+  const output = await runGit(cwd, args);
+  if (output.length === 0) return [];
+  return output.split("\n").filter(Boolean);
+}
+
 async function readGitObject(
   cwd: string,
   objectSpec: string,
@@ -246,6 +262,13 @@ export async function gitPush(
   return runCommand(["git", "push", remote, refspec], { cwd });
 }
 
+export async function gitCherryPickNoCommit(
+  cwd: string,
+  commit: string,
+): Promise<{ stdout: string; stderr: string; exitCode: number }> {
+  return runCommand(["git", "cherry-pick", "--no-commit", commit], { cwd });
+}
+
 export async function gitAbortRebase(cwd: string): Promise<void> {
   const result = await runCommand(["git", "rebase", "--abort"], { cwd });
   const stderr = result.stderr.toLowerCase();
@@ -269,6 +292,105 @@ export async function gitAbortMerge(cwd: string): Promise<void> {
       `git merge --abort failed in '${cwd}': ${result.stderr || result.stdout || `exit ${result.exitCode}`}`,
     );
   }
+}
+
+export async function gitAbortCherryPick(cwd: string): Promise<void> {
+  const result = await runCommand(["git", "cherry-pick", "--abort"], { cwd });
+  const stderr = result.stderr.toLowerCase();
+  if (
+    result.exitCode !== 0
+    && !stderr.includes("no cherry-pick or revert in progress")
+    && !stderr.includes("no cherry-pick in progress")
+    && !stderr.includes("cherry-pick is not in progress")
+    && !stderr.includes("there is no cherry-pick in progress")
+  ) {
+    throw new Error(
+      `git cherry-pick --abort failed in '${cwd}': ${result.stderr || result.stdout || `exit ${result.exitCode}`}`,
+    );
+  }
+}
+
+export async function gitRemoteRefCommit(
+  cwd: string,
+  remote: string,
+  ref: string,
+): Promise<string | null> {
+  const result = await runCommand(["git", "ls-remote", "--exit-code", remote, ref], { cwd });
+  if (result.exitCode === 2) {
+    return null;
+  }
+  if (result.exitCode !== 0) {
+    throw new Error(
+      `git ls-remote --exit-code ${remote} ${ref} failed in '${cwd}': ${
+        result.stderr || result.stdout || `exit ${result.exitCode}`
+      }`,
+    );
+  }
+
+  const line = result.stdout.trim().split("\n")[0]?.trim();
+  const commit = line?.split(/\s+/)[0];
+  return commit && /^[0-9a-f]{40}$/i.test(commit) ? commit : null;
+}
+
+export interface CanonicalGitRefTarget {
+  remoteName: string;
+  branchName: string;
+  fullRef: string;
+}
+
+export async function gitResolveCanonicalRefTarget(
+  cwd: string,
+): Promise<CanonicalGitRefTarget | null> {
+  const currentBranch = await gitCurrentBranch(cwd);
+  if (currentBranch !== "HEAD") {
+    const upstream = await readGitRefName(cwd, "@{upstream}");
+    if (upstream) {
+      const parsed = parseRemoteBranchRef(upstream);
+      if (parsed) {
+        return parsed;
+      }
+    }
+  }
+
+  const remotes = (await runGit(cwd, ["remote"]))
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+  for (const remote of remotes) {
+    const symbolicHead = await readGitRefName(cwd, `refs/remotes/${remote}/HEAD`);
+    if (!symbolicHead) continue;
+    const parsed = parseRemoteBranchRef(symbolicHead);
+    if (parsed) {
+      return parsed;
+    }
+  }
+
+  return null;
+}
+
+async function readGitRefName(cwd: string, ref: string): Promise<string | null> {
+  const result = await runCommand(["git", "rev-parse", "--abbrev-ref", "--symbolic-full-name", ref], {
+    cwd,
+  });
+  if (result.exitCode !== 0) {
+    return null;
+  }
+
+  const value = result.stdout.trim();
+  return value.length > 0 ? value : null;
+}
+
+function parseRemoteBranchRef(ref: string): CanonicalGitRefTarget | null {
+  const normalized = ref.trim();
+  const match = normalized.match(/^(?:refs\/remotes\/)?([^/]+)\/(.+)$/);
+  if (!match) return null;
+  const [, remoteName, branchName] = match;
+  if (!remoteName || !branchName) return null;
+  return {
+    remoteName,
+    branchName,
+    fullRef: `refs/heads/${branchName}`,
+  };
 }
 
 export function isProcessAlive(pid: number | null): boolean {
