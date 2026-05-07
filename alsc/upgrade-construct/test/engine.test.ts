@@ -310,7 +310,7 @@ test("drain-then-restart acknowledges worst-case timing without waiting for a 30
     await mkdir(join(systemRoot, ".claude", "delamains", "factory-jobs", "dispatcher", "control"), { recursive: true });
 
     const scriptPath = await writeGenericFakeDispatcher(pluginRoot);
-    const configPath = join(root, "worst-case.json");
+    const configPath = buildFakeDispatcherConfigPath(systemRoot);
     await writeFile(configPath, JSON.stringify({
       tickMs: 30_000,
       watchDrain: true,
@@ -370,7 +370,7 @@ test("drain-then-restart still reports lifecycle-drain-stalled for a frozen disp
     await mkdir(join(systemRoot, ".claude", "delamains", "factory-jobs", "dispatcher", "control"), { recursive: true });
 
     const scriptPath = await writeGenericFakeDispatcher(pluginRoot);
-    const configPath = join(root, "frozen.json");
+    const configPath = buildFakeDispatcherConfigPath(systemRoot);
     await writeFile(configPath, JSON.stringify({
       tickMs: 30_000,
       watchDrain: true,
@@ -424,7 +424,13 @@ function buildDrainManifest() {
         instance_id: "factory-jobs",
         display_name: "Factory Jobs",
         start: {
-          command: ["bun", "run", "$CLAUDE_PLUGIN_ROOT/fake-dispatcher.ts", "$ALS_SYSTEM_ROOT"],
+          command: [
+            "bun",
+            "run",
+            "$CLAUDE_PLUGIN_ROOT/fake-dispatcher.ts",
+            "$ALS_SYSTEM_ROOT",
+            "$ALS_SYSTEM_ROOT/.claude/delamains/factory-jobs/dispatcher/fake-dispatcher-config.json",
+          ],
           cwd: "$ALS_SYSTEM_ROOT",
         },
         process_locator: {
@@ -442,6 +448,17 @@ function buildDrainManifest() {
       },
     ],
   };
+}
+
+function buildFakeDispatcherConfigPath(systemRoot: string): string {
+  return join(
+    systemRoot,
+    ".claude",
+    "delamains",
+    "factory-jobs",
+    "dispatcher",
+    "fake-dispatcher-config.json",
+  );
 }
 
 async function writeGenericFakeDispatcher(pluginRoot: string): Promise<string> {
