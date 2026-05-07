@@ -103,7 +103,7 @@ test("canonical dispatcher bundle matches the current known vendor fingerprint",
   );
 
   expect(fingerprint).toEqual({
-    matched_version: 16,
+    matched_version: 17,
     customized: false,
   });
 });
@@ -139,7 +139,7 @@ test("delamain construct preflight and execute stage the fleet upgrade without m
     });
     expect(preflight.needs_upgrade).toBe(true);
     expect(preflight.current_version).toBe(11);
-    expect(preflight.target_version).toBe(16);
+    expect(preflight.target_version).toBe(17);
     expect(preflight.prompts.filter((prompt) => prompt.intent === "pick-construct-lifecycle")).toHaveLength(2);
     expect(preflight.prompts.filter((prompt) => prompt.intent === "confirm-construct-overwrite")).toHaveLength(0);
 
@@ -167,7 +167,7 @@ test("delamain construct preflight and execute stage the fleet upgrade without m
       "delamain-dispatcher",
       "factory-jobs",
       "VERSION",
-    ), "utf-8")).toBe("16\n");
+    ), "utf-8")).toBe("17\n");
     expect(execute.validation?.requires_claude_deploy).toBe(true);
   });
 });
@@ -274,35 +274,7 @@ test("drain-then-restart action runner waits for drain acknowledgement and resta
     firstProcess.unref();
     await Bun.sleep(400);
 
-    const manifest = {
-      schema: "als-construct-action-manifest@1" as const,
-      actions: [
-        {
-          kind: "drain-then-restart" as const,
-          construct: "dispatcher",
-          instance_id: "factory-jobs",
-          display_name: "Factory Jobs",
-          start: {
-            command: ["bun", "run", "$CLAUDE_PLUGIN_ROOT/fake-dispatcher.ts", "$ALS_SYSTEM_ROOT"],
-            cwd: "$ALS_SYSTEM_ROOT",
-          },
-          process_locator: {
-            kind: "json-file-pid" as const,
-            path: "$ALS_SYSTEM_ROOT/.claude/delamains/factory-jobs/status.json",
-            pid_field: "pid",
-          },
-          drain_signal: {
-            kind: "json-file-write" as const,
-            path: "$ALS_SYSTEM_ROOT/.claude/delamains/factory-jobs/dispatcher/control/drain-request.json",
-            payload: {
-              requested_at: new Date().toISOString(),
-            },
-          },
-        },
-      ],
-    };
-
-    const result = await runConstructActionManifest(manifest, {
+    const result = await runConstructActionManifest(buildDrainManifest(), {
       system_root: systemRoot,
       plugin_root: pluginRoot,
       poll_ms: 100,
@@ -328,3 +300,227 @@ test("drain-then-restart action runner waits for drain acknowledgement and resta
     }
   });
 });
+
+test("drain-then-restart acknowledges worst-case timing without waiting for a 30s scan tick", async () => {
+  await withTempDir("drain-runner-worst-case", async (root) => {
+    const pluginRoot = join(root, "plugin");
+    const systemRoot = join(root, "system");
+    const ackFile = join(root, "ack.json");
+    await mkdir(pluginRoot, { recursive: true });
+    await mkdir(join(systemRoot, ".claude", "delamains", "factory-jobs", "dispatcher", "control"), { recursive: true });
+
+    const scriptPath = await writeGenericFakeDispatcher(pluginRoot);
+    const configPath = join(root, "worst-case.json");
+    await writeFile(configPath, JSON.stringify({
+      tickMs: 30_000,
+      watchDrain: true,
+      controlPollMs: 250,
+      exitDelayMs: 200,
+      ackFile,
+    }, null, 2) + "\n", "utf-8");
+
+    const firstProcess = spawn("bun", ["run", scriptPath, systemRoot, configPath], {
+      stdio: "ignore",
+      detached: true,
+    });
+    firstProcess.unref();
+    await Bun.sleep(300);
+
+    const result = await runConstructActionManifest(buildDrainManifest(), {
+      system_root: systemRoot,
+      plugin_root: pluginRoot,
+      poll_ms: 100,
+      drain_ack_timeout_ms: 5_000,
+      start_timeout_ms: 5_000,
+      dispatcher_heartbeat_stale_threshold_ms: 5_000,
+    });
+
+    expect(result.success).toBe(true);
+    const ack = JSON.parse(await readFile(ackFile, "utf-8")) as {
+      source: string;
+      requested_at: string;
+      acknowledged_at: string;
+    };
+    const latencyMs = Date.parse(ack.acknowledged_at) - Date.parse(ack.requested_at);
+    expect(["watch", "control-poll"]).toContain(ack.source);
+    expect(latencyMs).toBeLessThan(1_000);
+
+    const status = JSON.parse(await readFile(
+      join(systemRoot, ".claude", "delamains", "factory-jobs", "status.json"),
+      "utf-8",
+    )) as {
+      pid: number;
+      lifecycle_mode: string;
+    };
+    expect(status.lifecycle_mode).toBe("running");
+
+    try {
+      process.kill(status.pid, "SIGKILL");
+    } catch {
+      // Ignore cleanup races.
+    }
+  });
+});
+
+test("drain-then-restart still reports lifecycle-drain-stalled for a frozen dispatcher", async () => {
+  await withTempDir("drain-runner-frozen", async (root) => {
+    const pluginRoot = join(root, "plugin");
+    const systemRoot = join(root, "system");
+    await mkdir(pluginRoot, { recursive: true });
+    await mkdir(join(systemRoot, ".claude", "delamains", "factory-jobs", "dispatcher", "control"), { recursive: true });
+
+    const scriptPath = await writeGenericFakeDispatcher(pluginRoot);
+    const configPath = join(root, "frozen.json");
+    await writeFile(configPath, JSON.stringify({
+      tickMs: 30_000,
+      watchDrain: true,
+      controlPollMs: 250,
+      exitDelayMs: 200,
+    }, null, 2) + "\n", "utf-8");
+
+    const firstProcess = spawn("bun", ["run", scriptPath, systemRoot, configPath], {
+      stdio: "ignore",
+      detached: true,
+    });
+    firstProcess.unref();
+    await Bun.sleep(300);
+    process.kill(firstProcess.pid!, "SIGSTOP");
+
+    try {
+      const result = await runConstructActionManifest(buildDrainManifest(), {
+        system_root: systemRoot,
+        plugin_root: pluginRoot,
+        poll_ms: 100,
+        drain_ack_timeout_ms: 1_000,
+        start_timeout_ms: 5_000,
+        dispatcher_heartbeat_stale_threshold_ms: 5_000,
+      });
+
+      expect(result.success).toBe(false);
+      expect(result.failure?.precise_failure_state).toBe("lifecycle-drain-stalled");
+      expect(result.failure?.message).toContain("did not acknowledge drain before");
+    } finally {
+      try {
+        process.kill(firstProcess.pid!, "SIGCONT");
+      } catch {
+        // Ignore cleanup races.
+      }
+      try {
+        process.kill(firstProcess.pid!, "SIGKILL");
+      } catch {
+        // Ignore cleanup races.
+      }
+    }
+  });
+});
+
+function buildDrainManifest() {
+  return {
+    schema: "als-construct-action-manifest@1" as const,
+    actions: [
+      {
+        kind: "drain-then-restart" as const,
+        construct: "dispatcher",
+        instance_id: "factory-jobs",
+        display_name: "Factory Jobs",
+        start: {
+          command: ["bun", "run", "$CLAUDE_PLUGIN_ROOT/fake-dispatcher.ts", "$ALS_SYSTEM_ROOT"],
+          cwd: "$ALS_SYSTEM_ROOT",
+        },
+        process_locator: {
+          kind: "json-file-pid" as const,
+          path: "$ALS_SYSTEM_ROOT/.claude/delamains/factory-jobs/status.json",
+          pid_field: "pid",
+        },
+        drain_signal: {
+          kind: "json-file-write" as const,
+          path: "$ALS_SYSTEM_ROOT/.claude/delamains/factory-jobs/dispatcher/control/drain-request.json",
+          payload: {
+            requested_at: new Date().toISOString(),
+          },
+        },
+      },
+    ],
+  };
+}
+
+async function writeGenericFakeDispatcher(pluginRoot: string): Promise<string> {
+  const scriptPath = join(pluginRoot, "fake-dispatcher.ts");
+  await writeFile(scriptPath, [
+    "import { existsSync, mkdirSync, readFileSync, rmSync, watch, writeFileSync } from 'node:fs';",
+    "import { dirname, join } from 'node:path';",
+    "const systemRoot = process.argv[2];",
+    "const config = JSON.parse(readFileSync(process.argv[3], 'utf-8'));",
+    "const statusPath = join(systemRoot, '.claude', 'delamains', 'factory-jobs', 'status.json');",
+    "const drainPath = join(systemRoot, '.claude', 'delamains', 'factory-jobs', 'dispatcher', 'control', 'drain-request.json');",
+    "mkdirSync(dirname(statusPath), { recursive: true });",
+    "mkdirSync(dirname(drainPath), { recursive: true });",
+    "let mode = 'running';",
+    "let active = 1;",
+    "let acknowledged = false;",
+    "const writeStatus = () => {",
+    "  writeFileSync(statusPath, JSON.stringify({",
+    "    pid: process.pid,",
+    "    last_tick: new Date().toISOString(),",
+    "    active_dispatches: active,",
+    "    lifecycle_mode: mode",
+    "  }) + '\\n');",
+    "};",
+    "const clearIntervals = () => {",
+    "  clearInterval(tickInterval);",
+    "  if (controlInterval) clearInterval(controlInterval);",
+    "  if (drainWatcher) {",
+    "    try {",
+    "      drainWatcher.close();",
+    "    } catch {}",
+    "  }",
+    "};",
+    "const recordAck = (source) => {",
+    "  if (!config.ackFile) return;",
+    "  const request = JSON.parse(readFileSync(drainPath, 'utf-8'));",
+    "  writeFileSync(config.ackFile, JSON.stringify({",
+    "    source,",
+    "    requested_at: request.requested_at ?? null,",
+    "    acknowledged_at: new Date().toISOString()",
+    "  }) + '\\n');",
+    "};",
+    "const acknowledge = (source) => {",
+    "  if (mode !== 'running' || acknowledged || !existsSync(drainPath)) return;",
+    "  acknowledged = true;",
+    "  mode = 'draining';",
+    "  writeStatus();",
+    "  recordAck(source);",
+    "  if (config.hangAfterAck) return;",
+    "  setTimeout(() => {",
+    "    active = 0;",
+    "    writeStatus();",
+    "    clearIntervals();",
+    "    process.exit(0);",
+    "  }, config.exitDelayMs ?? 300);",
+    "};",
+    "const reconcile = (source) => {",
+    "  acknowledge(source);",
+    "};",
+    "writeStatus();",
+    "const tickInterval = setInterval(() => {",
+    "  reconcile('tick');",
+    "  writeStatus();",
+    "}, config.tickMs ?? 100);",
+    "const controlInterval = typeof config.controlPollMs === 'number'",
+    "  ? setInterval(() => { reconcile('control-poll'); }, config.controlPollMs)",
+    "  : null;",
+    "const drainWatcher = config.watchDrain",
+    "  ? watch(dirname(drainPath), () => { reconcile('watch'); })",
+    "  : null;",
+    "const stop = () => {",
+    "  clearIntervals();",
+    "  try { rmSync(statusPath, { force: true }); } catch {}",
+    "  process.exit(0);",
+    "};",
+    "process.on('SIGTERM', stop);",
+    "process.on('SIGINT', stop);",
+    "",
+  ].join("\n"), "utf-8");
+
+  return scriptPath;
+}

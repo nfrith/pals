@@ -135,7 +135,7 @@ async function executeDrainThenRestart(
   };
   const drainFailure = await waitForDrain(action, roots, options);
   if (drainFailure) {
-    return buildFailure(actionIndex, action.kind, drainFailure, "dispatcher drain did not complete cleanly");
+    return buildFailure(actionIndex, action.kind, drainFailure.state, drainFailure.message);
   }
 
   const startFailure = await startAction(action, roots, options);
@@ -180,12 +180,18 @@ async function waitForDrain(
   action: ConstructAction,
   roots: RuntimePathRoots,
   options: ConstructActionRunnerOptions,
-): Promise<Exclude<ConstructFailureState, "lifecycle-partial"> | null> {
+): Promise<{
+  state: Exclude<ConstructFailureState, "lifecycle-partial">;
+  message: string;
+} | null> {
   if (
     action.process_locator?.kind !== "json-file-pid"
     || !action.drain_signal
   ) {
-    return "lifecycle-drain-stalled";
+    return {
+      state: "lifecycle-drain-stalled",
+      message: "dispatcher drain action is missing the JSON PID locator or drain signal",
+    };
   }
 
   const statusPath = resolveRuntimePlaceholderPath(action.process_locator.path, roots);
@@ -194,7 +200,8 @@ async function waitForDrain(
   await writeFile(drainSignalPath, JSON.stringify(action.drain_signal.payload, null, 2) + "\n", "utf-8");
 
   const pollMs = options.poll_ms ?? DEFAULT_POLL_MS;
-  const ackDeadline = Date.now() + (options.drain_ack_timeout_ms ?? DEFAULT_DRAIN_ACK_TIMEOUT_MS);
+  const drainAckTimeoutMs = options.drain_ack_timeout_ms ?? DEFAULT_DRAIN_ACK_TIMEOUT_MS;
+  const ackDeadline = Date.now() + drainAckTimeoutMs;
   const staleThreshold = options.dispatcher_heartbeat_stale_threshold_ms ?? DISPATCHER_HEARTBEAT_STALE_THRESHOLD_MS;
 
   while (Date.now() < ackDeadline) {
@@ -209,17 +216,26 @@ async function waitForDrain(
   }
 
   const acknowledgedStatus = await readJsonFile(statusPath);
-  if (
-    acknowledgedStatus?.lifecycle_mode !== "draining"
-    || !isFreshHeartbeat(acknowledgedStatus?.last_tick, staleThreshold)
-  ) {
-    return "lifecycle-drain-stalled";
+  if (acknowledgedStatus?.lifecycle_mode !== "draining") {
+    return {
+      state: "lifecycle-drain-stalled",
+      message: `dispatcher did not acknowledge drain before the ${drainAckTimeoutMs}ms acknowledgement deadline`,
+    };
+  }
+  if (!isFreshHeartbeat(acknowledgedStatus?.last_tick, staleThreshold)) {
+    return {
+      state: "lifecycle-drain-stalled",
+      message: "dispatcher heartbeat went stale while waiting for drain acknowledgement",
+    };
   }
 
   while (true) {
     const status = await readJsonFile(statusPath);
     if (!isFreshHeartbeat(status?.last_tick, staleThreshold)) {
-      return "lifecycle-drain-stalled";
+      return {
+        state: "lifecycle-drain-stalled",
+        message: "dispatcher heartbeat went stale after drain acknowledgement",
+      };
     }
     const activeDispatches = typeof status?.active_dispatches === "number" ? status.active_dispatches : Number.NaN;
     const pid = typeof status?.pid === "number" ? status.pid : null;

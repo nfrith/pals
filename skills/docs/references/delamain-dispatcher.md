@@ -96,7 +96,8 @@ Entry point. Handles:
 - **Startup**: calls `resolve()` once to load `runtime-manifest.json`, local `delamain.yaml`, and state-agent files, then enters the poll loop.
 - **Effective limits**: resolves `runtime-manifest.json.limits` once at startup, applies `maxBudgetUsdByProvider[provider] ?? maxBudgetUsd ?? providerDefault`, falls back to canonical defaults `anthropic: 20` / `openai: 50` when absent, and logs `maxTurns` plus the active per-provider budget map before polling.
 - **Runtime boot**: creates one `DispatcherRuntime`, runs orphan sweep at startup, and keeps the persisted dispatch registry as the source of truth for active, blocked, orphaned, and guarded ownership.
-- **Poll loop**: scans items at a configurable interval (`POLL_MS`, default 30s). Reads committed `HEAD` state only, warns when a status transition exists in the checkout but not in `HEAD`, reconciles registry records against current item status, retries blocked `dirty_integration_checkout` merge-backs under the existing repo-mutation lease, suppresses redispatch for all other unresolved incidents, runs periodic orphan sweeping, and refreshes the heartbeat after dispatch completions.
+- **Drain control plane**: acknowledges `dispatcher/control/drain-request.json` outside the heavy scan tick. Startup reconciliation checks for a pre-existing request before the first scan tick, `fs.watch` on the control directory provides the low-latency path, and a lightweight control poll (`CONTROL_POLL_MS`, default 250ms) re-checks the file and re-arms the watcher if the watch path drops.
+- **Poll loop**: scans items at a configurable interval (`POLL_MS`, default 30s). Reads committed `HEAD` state only, warns when a status transition exists in the checkout but not in `HEAD`, reconciles registry records against current item status, retries blocked `dirty_integration_checkout` merge-backs under the existing repo-mutation lease, suppresses redispatch for all other unresolved incidents, runs periodic orphan sweeping, and refreshes the heartbeat after dispatch completions. Drain acknowledgement is no longer phase-coupled to this loop.
 - **Blocked merge taxonomy**: keeps `dirty_integration_checkout` as the only automatic retry path. Other merge-back failures stay preserved and cause-specific, including `tracked_path_conflict`, `submodule_concurrent_advance`, `merge_back_publish_failed`, `canonical_upstream_unsynced`, and `submodule_pointer_invariant_violation`.
 - **Runtime hardening**: keeps the event loop alive with an internal keepalive server, logs tick and process lifecycle events, and ignores stray `SIGTERM` so dispatcher children do not accidentally kill the parent runtime.
 
@@ -351,6 +352,7 @@ Environment variables:
 
 - `SYSTEM_ROOT` — override the system root (optional; auto-detected by default)
 - `POLL_MS` — polling interval in milliseconds (default: 30000)
+- `CONTROL_POLL_MS` — drain-control fallback poll interval in milliseconds (default: 250)
 - `CLAUDE_PLUGIN_ROOT` — installed ALS plugin root used to read the canonical dispatcher `VERSION` file (required)
 
 If `dispatcher/VERSION`, `CLAUDE_PLUGIN_ROOT`, the canonical dispatcher `VERSION`, or `runtime-manifest.json` is missing or invalid, the dispatcher fails closed before polling. Stale but readable dispatcher versions continue running and instruct the operator to run `/update`.
@@ -374,6 +376,15 @@ Provider-aware dispatchers add:
 - `active_by_provider` — object with active counts per provider, currently `{ anthropic, openai }`
 
 Older consumers that only read the compatibility fields remain valid.
+
+Current dispatcher copies also expose additive drain-control diagnostics:
+
+- `control_poll_ms` — the lightweight control-plane poll interval
+- `control_watch_state` — `initializing`, `active`, or `retrying`
+- `control_watch_last_event_at` — timestamp of the last filesystem-watch event observed on the control directory
+- `control_watch_last_error` — latest watcher attach/runtime error when the watch path is retrying
+- `drain_detection_source` — which control-plane path most recently detected `drain-request.json` (`startup`, `watch`, or `control-poll`)
+- `drain_detection_at` — timestamp of that most recent detection
 
 ## Dependencies
 

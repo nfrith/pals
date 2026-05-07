@@ -17,6 +17,7 @@ import {
 import type { RuntimeDispatchSummary } from "./runtime-state.js";
 import { formatDispatcherVersionLine, loadDispatcherVersionInfo } from "./dispatcher-version.js";
 import { appendTelemetryEvent, DISPATCH_TELEMETRY_SCHEMA } from "./telemetry.js";
+import { createDrainControlPlane, type DrainControlPlane } from "./drain-control.js";
 import { scan } from "./watcher.js";
 
 function findSystemRoot(start: string): string {
@@ -34,6 +35,7 @@ const SYSTEM_ROOT = process.env["SYSTEM_ROOT"]
 const BUNDLE_ROOT = dirname(dirname(resolvePath(import.meta.dir)));
 
 const POLL_MS = parseInt(process.env["POLL_MS"] ?? "30000", 10);
+const CONTROL_POLL_MS = parseInt(process.env["CONTROL_POLL_MS"] ?? "250", 10);
 
 try {
   console.log(formatDispatcherVersionLine(await loadDispatcherVersionInfo(BUNDLE_ROOT)));
@@ -72,6 +74,7 @@ if (config.discriminatorField) {
 console.log(`[dispatcher] states: ${config.allStates.join(", ")}`);
 console.log(`[dispatcher] watching: ${config.dispatchTable.map((e) => e.state).join(", ")}`);
 console.log(`[dispatcher] polling every ${POLL_MS}ms`);
+console.log(`[dispatcher] drain control poll every ${CONTROL_POLL_MS}ms`);
 
 const STATUS_FILE = join(
   SYSTEM_ROOT,
@@ -105,9 +108,18 @@ let lastRuntimeHeartbeat: DispatcherRuntimeHeartbeat = {
 };
 let lifecycleMode: DispatcherLifecycleMode = "running";
 let drainRequestedAt: string | null = null;
+let drainControl: DrainControlPlane | null = null;
 
 async function writeHeartbeat(itemsScanned: number) {
   lastRuntimeHeartbeat = await runtime.heartbeat();
+  const drainControlSnapshot = drainControl?.snapshot() ?? {
+    control_poll_ms: CONTROL_POLL_MS,
+    watch_state: "initializing" as const,
+    last_watch_event_at: null,
+    last_watch_error: null,
+    last_drain_detection_source: null,
+    last_drain_detection_at: null,
+  };
   try {
     writeFileSync(
       STATUS_FILE,
@@ -124,6 +136,12 @@ async function writeHeartbeat(itemsScanned: number) {
         items_scanned: itemsScanned,
         lifecycle_mode: lifecycleMode,
         drain_requested_at: drainRequestedAt,
+        control_poll_ms: drainControlSnapshot.control_poll_ms,
+        control_watch_state: drainControlSnapshot.watch_state,
+        control_watch_last_event_at: drainControlSnapshot.last_watch_event_at,
+        control_watch_last_error: drainControlSnapshot.last_watch_error,
+        drain_detection_source: drainControlSnapshot.last_drain_detection_source,
+        drain_detection_at: drainControlSnapshot.last_drain_detection_at,
       }) + "\n",
     );
   } catch {
@@ -161,7 +179,7 @@ async function updateHeartbeat() {
   await writeHeartbeat(lastItemsScanned);
 }
 
-async function enterDrainingMode(): Promise<void> {
+async function enterDrainingMode(source: string): Promise<void> {
   if (lifecycleMode === "draining") {
     return;
   }
@@ -169,21 +187,9 @@ async function enterDrainingMode(): Promise<void> {
   lifecycleMode = "draining";
   drainRequestedAt = new Date().toISOString();
   console.log(
-    `[dispatcher] drain requested — stopping new dispatches and waiting for ${lastRuntimeHeartbeat.active_dispatches} active dispatch(es) to finish`,
+    `[dispatcher] drain requested via ${source} — stopping new dispatches and waiting for ${lastRuntimeHeartbeat.active_dispatches} active dispatch(es) to finish`,
   );
   await updateHeartbeat();
-}
-
-async function maybeHandleDrainRequest(): Promise<void> {
-  if (lifecycleMode === "draining") {
-    return;
-  }
-
-  if (!existsSync(DRAIN_REQUEST_FILE)) {
-    return;
-  }
-
-  await enterDrainingMode();
 }
 
 async function writeRetryTelemetry(result: BlockedDirtyRetryResult): Promise<void> {
@@ -346,21 +352,27 @@ process.on("unhandledRejection", (reason) => {
 
 let tickCount = 0;
 
+async function maybeExitForDrain(): Promise<boolean> {
+  if (lifecycleMode !== "draining") {
+    return false;
+  }
+
+  await updateHeartbeat();
+  if (lastRuntimeHeartbeat.active_dispatches === 0) {
+    console.log("[dispatcher] drain complete — exiting cleanly");
+    clearDrainRequest();
+    clearRuntimeAndExit(0);
+  }
+  return true;
+}
+
 async function tick() {
   tickCount += 1;
   logCounts(`[dispatcher] tick #${tickCount}`);
 
   const sweep = await runtime.sweepOrphans();
   logSweep("[dispatcher] orphan sweep", sweep);
-  await maybeHandleDrainRequest();
-
-  if (lifecycleMode === "draining") {
-    await updateHeartbeat();
-    if (lastRuntimeHeartbeat.active_dispatches === 0) {
-      console.log("[dispatcher] drain complete — exiting cleanly");
-      clearDrainRequest();
-      clearRuntimeAndExit(0);
-    }
+  if (await maybeExitForDrain()) {
     return;
   }
 
@@ -386,11 +398,19 @@ async function tick() {
     await writeRetryTelemetry(retry);
   }
 
+  if (await maybeExitForDrain()) {
+    return;
+  }
+
   const openSummary = await runtime.openDispatchSummary();
   const openItemIds = buildOpenRecordItemIdSet(openSummary);
   const concurrencySnapshot = buildConcurrencySnapshot(openSummary, config.dispatchTable);
 
   for (const item of items) {
+    if (lifecycleMode === "draining") {
+      break;
+    }
+
     const rule = findRule(item.status);
     if (!rule) continue;
     if (openItemIds.has(item.id)) continue;
@@ -441,6 +461,18 @@ async function tick() {
   await updateHeartbeat();
 }
 
+drainControl = createDrainControlPlane({
+  drainRequestFile: DRAIN_REQUEST_FILE,
+  controlPollMs: CONTROL_POLL_MS,
+  onDrainRequested: ({ source }) => enterDrainingMode(source),
+  onStateChange: async () => {
+    await updateHeartbeat();
+  },
+  log: (message) => {
+    console.warn(message);
+  },
+});
+await drainControl.start();
 const bootSweep = await runtime.sweepOrphans();
 logSweep("[dispatcher] startup orphan sweep", bootSweep);
 await updateHeartbeat();
@@ -461,6 +493,7 @@ let forceShutdownRequested = false;
 
 function clearRuntimeAndExit(code: number) {
   clearInterval(interval);
+  drainControl?.stop();
   keepalive.stop();
   clearDrainRequest();
   clearHeartbeat();
