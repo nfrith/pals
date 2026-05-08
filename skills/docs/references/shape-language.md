@@ -14,11 +14,14 @@ Use `as const` on authored definitions so literal ids, enum values, and path fra
 
 ## Authoring Helpers
 
-Use the typed helper surface from `.als/authoring.ts`:
+Use the typed helper surface through the ALS-reserved virtual specifiers:
 
 ```ts
-export { defineSystem, defineModule, defineDelamain } from "../path/to/compiler/src/authoring/index.ts";
+import { defineSystem, defineModule, defineDelamain } from "als:authoring";
+import { COMPATIBILITY_CLASSES } from "als:contracts";
 ```
+
+`als:authoring` and `als:contracts` are resolved by ALS-owned evaluation paths. Authored systems do not carry a local `.als/authoring.ts` shim in the v3 contract.
 
 The helpers are identity functions. Their job is to give TypeScript a stable typed authoring surface.
 
@@ -27,10 +30,10 @@ The helpers are identity functions. Their job is to give TypeScript a stable typ
 `system.ts` declares the system identity plus the mounted module registry.
 
 ```ts
-import { defineSystem } from "./authoring.ts";
+import { defineSystem } from "als:authoring";
 
 export const system = defineSystem({
-  als_version: 1,
+  als_version: 3,
   system_id: "reference-system",
   modules: {
     backlog: {
@@ -66,7 +69,7 @@ Rules:
 `module.ts` defines the authored module contract that record validation uses.
 
 ```ts
-import { defineModule } from "../../../authoring.ts";
+import { defineModule } from "als:authoring";
 
 export const module = defineModule({
   dependencies: [{ module: "people" }],
@@ -125,6 +128,7 @@ Rules:
 - `dependencies` names other modules whose entities may be referenced from this module.
 - `delamains.{name}.path` is module-bundle-relative and points at an authored `delamain.ts`.
 - `entities` defines the valid authored record contract for the mounted module path.
+- If authored source needs compatibility-class runtime values, import them from `als:contracts`.
 
 ## Entity Source Formats
 

@@ -65,10 +65,12 @@ Notes:
 ## Runtime Rules
 
 - Mutating steps normally change only `<system_root>/.als/`.
+- A hop may rewrite multiple authored entrypoints when the authored load contract changes. The no-shim `v2 -> v3` authoring cutover is the reference pattern: rewrite `.als/system.ts`, every active `module.ts`, every active `delamain.ts`, and remove the obsolete `.als/authoring.ts`.
 - The shipped v1→v2 hop retains an idempotent bootstrap hygiene step that may append root `.gitignore` rules and remove historical `.claude/` transient-runtime paths from the git index for pre-fix installs. The canonical taxonomy is shared with SDR 044's live `/update` prepare repair path and currently covers dispatcher `runtime/`, `status.json`, pulse cache JSON, telemetry `events.jsonl`, and dispatcher `drain-request.json`.
 - The recipe-side hygiene step is follow-through and convergence, not the only path that can unblock `/update` prepare. When `/update` sees tracked canonical transient-runtime dirt in the live repo, the transaction wrapper may checkpoint that machine-managed state before staging begins.
 - The runner executes mutating `script` and `agent-task` steps in a disposable clone or worktree.
 - Post-step `git diff` / status is the source of truth for the actual mutation set.
+- Recipe-owned rewrites must be deterministic and idempotent. Re-running a completed hop should produce no further diff beyond the already-migrated target shape.
 - Any residual non-`.als/` path change fails the step closed.
 - Preflight discovers every `operator-prompt` step that can fire for the selected hop chain and option set.
 - Execute consumes a pre-collected operator-answer map and fails closed if a required answer is missing.
@@ -79,6 +81,7 @@ Notes:
 
 - `language-upgrades/fixtures/v<N>/` stores the retained authored snapshot for each shipped `als_version`.
 - Fixtures include `.als/` plus the retained mounted module roots and exclude `.claude/`.
+- Fixture archives may prove both file rewrites and file removal. The no-shim `v2 -> v3` hop's retained `fixtures/v3/` snapshot intentionally omits `.als/authoring.ts`.
 - Inspection output uses `als-language-upgrade-recipe-inspection@N`.
 - Verification output uses `als-language-upgrade-recipe-verification@N`.
 
