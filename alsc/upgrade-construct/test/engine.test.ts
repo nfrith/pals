@@ -139,7 +139,7 @@ test("delamain construct preflight and execute stage the fleet upgrade without m
     });
     expect(preflight.needs_upgrade).toBe(true);
     expect(preflight.current_version).toBe(11);
-    expect(preflight.target_version).toBe(17);
+    expect(preflight.target_version).toBe(18);
     expect(preflight.prompts.filter((prompt) => prompt.intent === "pick-construct-lifecycle")).toHaveLength(2);
     expect(preflight.prompts.filter((prompt) => prompt.intent === "confirm-construct-overwrite")).toHaveLength(0);
 
@@ -167,7 +167,7 @@ test("delamain construct preflight and execute stage the fleet upgrade without m
       "delamain-dispatcher",
       "factory-jobs",
       "VERSION",
-    ), "utf-8")).toBe("17\n");
+    ), "utf-8")).toBe("18\n");
     expect(execute.validation?.requires_claude_deploy).toBe(true);
   });
 });
