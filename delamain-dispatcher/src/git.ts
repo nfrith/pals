@@ -75,6 +75,10 @@ export async function gitHeadCommit(cwd: string): Promise<string> {
   return runGit(cwd, ["rev-parse", "HEAD"]);
 }
 
+export async function gitRevParse(cwd: string, rev: string): Promise<string> {
+  return runGit(cwd, ["rev-parse", rev]);
+}
+
 export async function gitRepoRoot(cwd: string): Promise<string> {
   return runGit(cwd, ["rev-parse", "--show-toplevel"]);
 }
@@ -260,6 +264,15 @@ export async function gitPush(
   refspec: string,
 ): Promise<{ stdout: string; stderr: string; exitCode: number }> {
   return runCommand(["git", "push", remote, refspec], { cwd });
+}
+
+export async function gitFetchRef(
+  cwd: string,
+  remote: string,
+  sourceRef: string,
+  destinationRef: string,
+): Promise<{ stdout: string; stderr: string; exitCode: number }> {
+  return runCommand(["git", "fetch", remote, `${sourceRef}:${destinationRef}`], { cwd });
 }
 
 export async function gitCherryPickNoCommit(

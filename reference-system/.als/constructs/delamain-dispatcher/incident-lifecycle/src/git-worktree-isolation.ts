@@ -5,9 +5,11 @@ import { dirname, join, relative, resolve } from "path";
 import {
   gitAbortCherryPick,
   gitAbortMerge,
+  gitAbortRebase,
   gitChangedFilesBetween,
   gitCherryPickNoCommit,
   gitCurrentBranch,
+  gitFetchRef,
   gitHasChanges,
   gitHeadCommit,
   gitIsAncestor,
@@ -16,7 +18,9 @@ import {
   gitMerge,
   gitMergeFastForward,
   gitPush,
+  gitRebase,
   gitRemoteRefCommit,
+  gitRevParse,
   gitResolveCanonicalRefTarget,
   runCommand,
   runGit,
@@ -73,6 +77,7 @@ export interface MergeBackResult {
   mountedSubmodules: MountedSubmoduleMergeState[];
   error: string | null;
   incidentKind: string | null;
+  retryCount: number;
 }
 
 export interface RefreshMergeBackResult {
@@ -93,6 +98,7 @@ interface IntegratedSubmoduleCommit extends MountedSubmoduleMergeState {
   primaryRepoPath: string;
   worktreePath: string;
   branchName: string;
+  baseCommit: string;
   worktreeCommit: string;
   integratedCommit: string;
   preIntegrationHead: string;
@@ -108,6 +114,7 @@ const INCIDENT_SUBMODULE_CONCURRENT_ADVANCE = "submodule_concurrent_advance";
 const INCIDENT_MERGE_BACK_PUBLISH_FAILED = "merge_back_publish_failed";
 const INCIDENT_CANONICAL_UPSTREAM_UNSYNCED = "canonical_upstream_unsynced";
 const INCIDENT_SUBMODULE_POINTER_INVARIANT_VIOLATION = "submodule_pointer_invariant_violation";
+const MAX_PUBLISH_REPLAY_ATTEMPTS = 3;
 
 export class GitWorktreeIsolationStrategy {
   private readonly systemRoot: string;
@@ -381,6 +388,7 @@ export class GitWorktreeIsolationStrategy {
         ),
         error: `Integration checkout is dirty: ${dirtyRepo}`,
         incidentKind: "dirty_integration_checkout",
+        retryCount: 0,
       };
     }
 
@@ -408,6 +416,7 @@ export class GitWorktreeIsolationStrategy {
             ),
             error: `Mounted submodule metadata missing for '${submoduleState.repoPath}'`,
             incidentKind: "merge_back_failed",
+            retryCount: 0,
           };
         }
 
@@ -429,6 +438,7 @@ export class GitWorktreeIsolationStrategy {
               submoduleState.worktreeCommit,
             ),
             incidentKind: INCIDENT_SUBMODULE_CONCURRENT_ADVANCE,
+            retryCount: 0,
           };
         }
 
@@ -438,6 +448,7 @@ export class GitWorktreeIsolationStrategy {
           primaryRepoPath: mounted.primaryRepoPath,
           worktreePath: mounted.worktreePath,
           branchName: mounted.branchName,
+          baseCommit: mounted.baseCommit,
           worktreeCommit: submoduleState.worktreeCommit,
           integratedCommit,
           preIntegrationHead,
@@ -446,6 +457,47 @@ export class GitWorktreeIsolationStrategy {
       }
 
       let hostWorktreeCommit = input.hostWorktreeCommit;
+      for (const submodule of integratedSubmodules) {
+        const dispatchTouchedPaths = await gitChangedFilesBetween(
+          submodule.worktreePath,
+          submodule.baseCommit,
+          submodule.worktreeCommit,
+        );
+        const publishResult = await this.publishCanonicalCommit({
+          repoPath: submodule.repoPath,
+          repoRoot: submodule.primaryRepoPath,
+          commit: submodule.integratedCommit,
+          baseCommit: submodule.baseCommit,
+          dispatchTouchedPaths,
+        });
+        if (publishResult.status === "blocked") {
+          await this.rollbackMergeTransaction({
+            detachedWorktrees,
+            integratedSubmodules,
+            hostIntegrated,
+            hostPreIntegrationHead,
+          });
+          return {
+            status: "blocked",
+            worktreeCommit: hostWorktreeCommit,
+            integratedCommit: null,
+            mountedSubmodules: integratedSubmodules.map((entry) => ({
+              repoPath: entry.repoPath,
+              worktreeCommit: entry.worktreeCommit,
+              integratedCommit: null,
+            })),
+            error: publishResult.error,
+            incidentKind: publishResult.incidentKind,
+            retryCount: publishResult.retryCount,
+          };
+        }
+
+        submodule.integratedCommit = publishResult.publishedCommit;
+        await runGit(submodule.worktreePath, ["checkout", "--detach", submodule.integratedCommit]);
+        detachedWorktrees.push(submodule);
+        await runGit(input.prepared.worktreePath, ["add", submodule.repoPath]);
+      }
+
       if (
         !hostWorktreeCommit
         || !(await this.canReuseHostWorktreeCommit(input.prepared.worktreePath, hostWorktreeCommit))
@@ -458,17 +510,27 @@ export class GitWorktreeIsolationStrategy {
       }
 
       if (!hostWorktreeCommit) {
+        await this.rollbackMergeTransaction({
+          detachedWorktrees,
+          integratedSubmodules,
+          hostIntegrated,
+          hostPreIntegrationHead,
+        });
         return {
-          status: "merged",
+          status: "blocked",
           worktreeCommit: null,
           integratedCommit: null,
           mountedSubmodules: integratedSubmodules.map((entry) => ({
             repoPath: entry.repoPath,
             worktreeCommit: entry.worktreeCommit,
-            integratedCommit: entry.integratedCommit,
+            integratedCommit: null,
           })),
-          error: null,
-          incidentKind: null,
+          error: formatRepoScopedInvariantError(
+            ".",
+            "host worktree produced no final commit after mounted submodule publication",
+          ),
+          incidentKind: INCIDENT_SUBMODULE_POINTER_INVARIANT_VIOLATION,
+          retryCount: 0,
         };
       }
 
@@ -492,6 +554,7 @@ export class GitWorktreeIsolationStrategy {
             hostWorktreeCommit,
           ),
           incidentKind: INCIDENT_TRACKED_PATH_CONFLICT,
+          retryCount: 0,
         };
       }
       hostIntegrated = true;
@@ -515,47 +578,23 @@ export class GitWorktreeIsolationStrategy {
           })),
           error: pointerVerification.error,
           incidentKind: INCIDENT_SUBMODULE_POINTER_INVARIANT_VIOLATION,
+          retryCount: 0,
         };
       }
 
-      for (const submodule of integratedSubmodules) {
-        await runGit(submodule.worktreePath, ["checkout", "--detach", submodule.integratedCommit]);
-        detachedWorktrees.push(submodule);
-      }
-
-      for (const submodule of integratedSubmodules) {
-        const publishResult = await this.publishCanonicalCommit({
-          repoPath: submodule.repoPath,
-          repoRoot: submodule.primaryRepoPath,
-          commit: submodule.integratedCommit,
-        });
-        if (publishResult.status === "blocked") {
-          await this.rollbackMergeTransaction({
-            detachedWorktrees,
-            integratedSubmodules,
-            hostIntegrated,
-            hostPreIntegrationHead,
-          });
-          return {
-            status: "blocked",
-            worktreeCommit: hostWorktreeCommit,
-            integratedCommit: null,
-            mountedSubmodules: integratedSubmodules.map((entry) => ({
-              repoPath: entry.repoPath,
-              worktreeCommit: entry.worktreeCommit,
-              integratedCommit: null,
-            })),
-            error: publishResult.error,
-            incidentKind: publishResult.incidentKind,
-          };
-        }
-      }
-
-      const hostIntegratedCommit = await gitHeadCommit(this.systemRoot);
+      let hostIntegratedCommit = await gitHeadCommit(this.systemRoot);
+      const hostDispatchTouchedPaths = await this.listHostDispatchTouchedPaths({
+        worktreePath: input.prepared.worktreePath,
+        baseCommit: input.prepared.baseCommit,
+        worktreeCommit: hostWorktreeCommit,
+        mountedSubmodules: input.prepared.mountedSubmodules,
+      });
       const hostPublishResult = await this.publishCanonicalCommit({
         repoPath: ".",
         repoRoot: this.systemRoot,
         commit: hostIntegratedCommit,
+        baseCommit: input.prepared.baseCommit,
+        dispatchTouchedPaths: hostDispatchTouchedPaths,
       });
       if (hostPublishResult.status === "blocked") {
         await this.rollbackMergeTransaction({
@@ -571,12 +610,15 @@ export class GitWorktreeIsolationStrategy {
           mountedSubmodules: integratedSubmodules.map((entry) => ({
             repoPath: entry.repoPath,
             worktreeCommit: entry.worktreeCommit,
-            integratedCommit: null,
-          })),
-          error: hostPublishResult.error,
-          incidentKind: hostPublishResult.incidentKind,
-        };
-      }
+              integratedCommit: null,
+            })),
+            error: hostPublishResult.error,
+            incidentKind: hostPublishResult.incidentKind,
+            retryCount: hostPublishResult.retryCount,
+          };
+        }
+
+      hostIntegratedCommit = hostPublishResult.publishedCommit;
 
       return {
         status: "merged",
@@ -589,6 +631,7 @@ export class GitWorktreeIsolationStrategy {
         })),
         error: null,
         incidentKind: null,
+        retryCount: 0,
       };
     } catch (error) {
       await this.restoreDetachedMountedWorktrees(detachedWorktrees);
@@ -606,6 +649,7 @@ export class GitWorktreeIsolationStrategy {
         ),
         error: error instanceof Error ? error.message : String(error),
         incidentKind: "merge_back_failed",
+        retryCount: 0,
       };
     }
   }
@@ -1053,6 +1097,11 @@ export class GitWorktreeIsolationStrategy {
   }
 
   private async readUnmergedSubmodulePaths(worktreePath: string): Promise<string[]> {
+    const conflicts = await this.readUnmergedPaths(worktreePath);
+    return conflicts.filter((path) => path.length > 0);
+  }
+
+  private async readUnmergedPaths(worktreePath: string): Promise<string[]> {
     const output = await runGit(worktreePath, ["ls-files", "-u"]);
     if (output.length === 0) {
       return [];
@@ -1064,7 +1113,7 @@ export class GitWorktreeIsolationStrategy {
       if (!path) continue;
       conflicts.add(normalizeRepoPath(path));
     }
-    return [...conflicts];
+    return [...conflicts].sort();
   }
 
   private async rollbackReconciledHostRefreshMerge(
@@ -1139,9 +1188,11 @@ export class GitWorktreeIsolationStrategy {
     repoPath: string;
     repoRoot: string;
     commit: string;
+    baseCommit: string;
+    dispatchTouchedPaths: ReadonlyArray<string>;
   }): Promise<
-    | { status: "ready" }
-    | { status: "blocked"; incidentKind: string; error: string }
+    | { status: "ready"; publishedCommit: string; retryCount: number }
+    | { status: "blocked"; incidentKind: string; error: string; retryCount: number }
   > {
     try {
       const target = await gitResolveCanonicalRefTarget(input.repoRoot);
@@ -1153,42 +1204,150 @@ export class GitWorktreeIsolationStrategy {
             input.repoPath,
             "canonical upstream ref is not configured on the integration checkout",
           ),
+          retryCount: 0,
         };
       }
 
-      const push = await gitPush(
-        input.repoRoot,
-        target.remoteName,
-        `${input.commit}:${target.fullRef}`,
-      );
-      if (push.exitCode !== 0) {
-        return {
-          status: "blocked",
-          incidentKind: INCIDENT_MERGE_BACK_PUBLISH_FAILED,
-          error: formatRepoScopedPublishError(
-            input.repoPath,
-            `${target.remoteName}/${target.branchName}`,
-            input.commit,
-            push.stderr.trim() || push.stdout.trim() || "Push failed",
-          ),
-        };
-      }
+      const targetName = `${target.remoteName}/${target.branchName}`;
+      const trackingRef = `refs/remotes/${target.remoteName}/${target.branchName}`;
+      let currentCommit = input.commit;
+      let retryCount = 0;
 
-      const remoteCommit = await gitRemoteRefCommit(input.repoRoot, target.remoteName, target.fullRef);
-      if (remoteCommit !== input.commit) {
-        return {
-          status: "blocked",
-          incidentKind: INCIDENT_CANONICAL_UPSTREAM_UNSYNCED,
-          error: formatRepoScopedRemoteMismatchError(
-            input.repoPath,
-            `${target.remoteName}/${target.branchName}`,
-            input.commit,
-            remoteCommit,
-          ),
-        };
-      }
+      while (true) {
+        const push = await gitPush(
+          input.repoRoot,
+          target.remoteName,
+          `${currentCommit}:${target.fullRef}`,
+        );
+        if (push.exitCode === 0) {
+          const remoteCommit = await gitRemoteRefCommit(input.repoRoot, target.remoteName, target.fullRef);
+          if (remoteCommit !== currentCommit) {
+            return {
+              status: "blocked",
+              incidentKind: INCIDENT_CANONICAL_UPSTREAM_UNSYNCED,
+              error: formatRepoScopedRemoteMismatchError(
+                input.repoPath,
+                targetName,
+                currentCommit,
+                remoteCommit,
+              ),
+              retryCount,
+            };
+          }
 
-      return { status: "ready" };
+          return {
+            status: "ready",
+            publishedCommit: currentCommit,
+            retryCount,
+          };
+        }
+
+        const pushMessage = push.stderr.trim() || push.stdout.trim() || "Push failed";
+        if (!isNonFastForwardPushFailure(pushMessage)) {
+          return {
+            status: "blocked",
+            incidentKind: INCIDENT_MERGE_BACK_PUBLISH_FAILED,
+            error: formatRepoScopedPublishError(
+              input.repoPath,
+              targetName,
+              currentCommit,
+              pushMessage,
+            ),
+            retryCount,
+          };
+        }
+
+        if (retryCount >= MAX_PUBLISH_REPLAY_ATTEMPTS) {
+          return {
+            status: "blocked",
+            incidentKind: INCIDENT_MERGE_BACK_PUBLISH_FAILED,
+            error: formatRepoScopedPublishError(
+              input.repoPath,
+              targetName,
+              currentCommit,
+              `non-fast-forward persisted after ${MAX_PUBLISH_REPLAY_ATTEMPTS} replay attempts: ${pushMessage}`,
+            ),
+            retryCount,
+          };
+        }
+
+        retryCount += 1;
+
+        const fetch = await gitFetchRef(
+          input.repoRoot,
+          target.remoteName,
+          target.fullRef,
+          trackingRef,
+        );
+        if (fetch.exitCode !== 0) {
+          return {
+            status: "blocked",
+            incidentKind: INCIDENT_MERGE_BACK_PUBLISH_FAILED,
+            error: formatRepoScopedPublishError(
+              input.repoPath,
+              targetName,
+              currentCommit,
+              `fetch failed before replay: ${fetch.stderr.trim() || fetch.stdout.trim() || "fetch failed"}`,
+            ),
+            retryCount,
+          };
+        }
+
+        const remoteCommit = await gitRevParse(input.repoRoot, trackingRef);
+        if (!(await gitIsAncestor(input.repoRoot, input.baseCommit, remoteCommit))) {
+          return {
+            status: "blocked",
+            incidentKind: INCIDENT_MERGE_BACK_PUBLISH_FAILED,
+            error: formatRepoScopedPublishError(
+              input.repoPath,
+              targetName,
+              currentCommit,
+              `canonical upstream moved below recorded base ${input.baseCommit} -> ${remoteCommit}; automatic replay requires an ancestor-preserving remote`,
+            ),
+            retryCount,
+          };
+        }
+
+        const remoteMovedPaths = await gitChangedFilesBetween(
+          input.repoRoot,
+          input.baseCommit,
+          remoteCommit,
+        );
+        const conflictingPaths = overlappingPaths(input.dispatchTouchedPaths, remoteMovedPaths);
+        if (conflictingPaths.length > 0) {
+          return {
+            status: "blocked",
+            incidentKind: INCIDENT_MERGE_BACK_PUBLISH_FAILED,
+            error: formatRepoScopedPublishConflictError(
+              input.repoPath,
+              targetName,
+              currentCommit,
+              conflictingPaths,
+            ),
+            retryCount,
+          };
+        }
+
+        const rebase = await gitRebase(input.repoRoot, trackingRef);
+        if (rebase.exitCode !== 0) {
+          const rebaseConflictPaths = await this.readUnmergedPaths(input.repoRoot);
+          await gitAbortRebase(input.repoRoot).catch(() => undefined);
+          return {
+            status: "blocked",
+            incidentKind: INCIDENT_MERGE_BACK_PUBLISH_FAILED,
+            error: formatRepoScopedPublishReplayError(
+              input.repoPath,
+              targetName,
+              currentCommit,
+              rebase.stderr.trim() || rebase.stdout.trim() || `rebase onto ${trackingRef} failed`,
+              rebaseConflictPaths,
+            ),
+            retryCount,
+          };
+        }
+
+        currentCommit = await gitHeadCommit(input.repoRoot);
+      }
     } catch (error) {
       return {
         status: "blocked",
@@ -1197,6 +1356,7 @@ export class GitWorktreeIsolationStrategy {
           input.repoPath,
           error instanceof Error ? error.message : String(error),
         ),
+        retryCount: 0,
       };
     }
   }
@@ -1340,6 +1500,38 @@ function formatRepoScopedPublishError(
   return `${scope} publish ${target} (${commit}) failed: ${message}`;
 }
 
+function formatRepoScopedPublishConflictError(
+  repoPath: string,
+  target: string,
+  commit: string,
+  conflictingPaths: ReadonlyArray<string>,
+): string {
+  return formatRepoScopedPublishError(
+    repoPath,
+    target,
+    commit,
+    `non-fast-forward replay blocked by overlapping paths: ${conflictingPaths.join(", ")}`,
+  );
+}
+
+function formatRepoScopedPublishReplayError(
+  repoPath: string,
+  target: string,
+  commit: string,
+  message: string,
+  conflictingPaths: ReadonlyArray<string>,
+): string {
+  const suffix = conflictingPaths.length > 0
+    ? ` Conflicting paths: ${conflictingPaths.join(", ")}`
+    : "";
+  return formatRepoScopedPublishError(
+    repoPath,
+    target,
+    commit,
+    `non-fast-forward replay failed: ${message}${suffix}`,
+  );
+}
+
 function formatRepoScopedPublishTargetError(repoPath: string, message: string): string {
   const scope = repoPath === "." ? "host repo" : `repo '${repoPath}'`;
   return `${scope} publish target resolution failed: ${message}`;
@@ -1381,9 +1573,26 @@ function sanitizePathSegment(value: string): string {
   return value.replace(/[^A-Za-z0-9._-]+/g, "-");
 }
 
-function pathsOverlap(left: ReadonlyArray<string>, right: ReadonlyArray<string>): boolean {
+function overlappingPaths(
+  left: ReadonlyArray<string>,
+  right: ReadonlyArray<string>,
+): string[] {
   const rightSet = new Set(right.map((value) => normalizeRepoPath(value)));
-  return left
-    .map((value) => normalizeRepoPath(value))
-    .some((value) => rightSet.has(value));
+  return [...new Set(
+    left
+      .map((value) => normalizeRepoPath(value))
+      .filter((value) => rightSet.has(value)),
+  )].sort();
+}
+
+function pathsOverlap(left: ReadonlyArray<string>, right: ReadonlyArray<string>): boolean {
+  return overlappingPaths(left, right).length > 0;
+}
+
+function isNonFastForwardPushFailure(message: string): boolean {
+  const normalized = message.toLowerCase();
+  return normalized.includes("non-fast-forward")
+    || normalized.includes("fetch first")
+    || normalized.includes("failed to push some refs")
+    || normalized.includes("contains work that you do not have locally");
 }

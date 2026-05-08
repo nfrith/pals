@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -24,6 +24,7 @@ const ENTRY: DispatchEntry = {
   resumable: false,
   transitions: [{ class: "advance", to: "in-review" }],
 };
+const PUBLISH_REPLAY_RETRY_LIMIT = 3;
 
 test("worktree isolation rewrites item paths into a per-dispatch workspace", async () => {
   await withWorktreeSandbox("rewrite", async ({ runtime, itemFile, worktreeRoot }) => {
@@ -166,6 +167,140 @@ test("runtime absorbs orthogonal host head movement and publishes the merged hos
   });
 });
 
+test("runtime auto-rebases host publication when origin moves on orthogonal paths", async () => {
+  await withWorktreeSandbox("host-publish-orthogonal", async ({
+    root,
+    runtime,
+    systemRoot,
+    hostOrigin,
+    itemFile,
+  }) => {
+    const prepared = await runtime.prepareDispatch("ALS-001", itemFile, ENTRY);
+    expect(prepared).not.toBeNull();
+
+    await replaceStatus(prepared!.isolatedItemFile, "in-review");
+    await mutateRemoteViaClone(root, hostOrigin, "host-publish-orthogonal-remote", async (cloneRoot) => {
+      await writeFile(join(cloneRoot, "operator-note.txt"), "publish-time remote note\n", "utf-8");
+      await gitCommit(cloneRoot, "operator: host publish-time remote note");
+    });
+
+    const result = await runtime.finalizeDispatch({
+      prepared: prepared!,
+      entry: ENTRY,
+      sessionId: "56565656-5656-4565-8565-565656565656",
+      durationMs: 2_250,
+      numTurns: 4,
+      costUsd: 0.13,
+      success: true,
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.blocked).toBe(false);
+    expect(result.mergeOutcome).toBe("merged");
+    expect(await readFrontmatterStatus(itemFile)).toBe("in-review");
+    expect(await readFile(join(systemRoot, "operator-note.txt"), "utf-8")).toBe(
+      "publish-time remote note\n",
+    );
+    expect(await runGit(hostOrigin, ["rev-parse", "refs/heads/main"])).toBe(
+      await runGit(systemRoot, ["rev-parse", "HEAD"]),
+    );
+    expect(existsSync(prepared!.worktreePath)).toBe(false);
+  });
+});
+
+test("runtime blocks host publication replay when origin moves on overlapping paths", async () => {
+  await withWorktreeSandbox("host-publish-conflict", async ({
+    root,
+    runtime,
+    bundleRoot,
+    systemRoot,
+    hostOrigin,
+    itemFile,
+  }) => {
+    const prepared = await runtime.prepareDispatch("ALS-001", itemFile, ENTRY);
+    expect(prepared).not.toBeNull();
+
+    const hostHeadBefore = await runGit(systemRoot, ["rev-parse", "HEAD"]);
+    await replaceStatus(prepared!.isolatedItemFile, "in-review");
+    await mutateRemoteViaClone(root, hostOrigin, "host-publish-conflict-remote", async (cloneRoot) => {
+      await appendBody(join(cloneRoot, "als-factory", "jobs", "ALS-001.md"), "Remote conflicting note.");
+      await gitCommit(cloneRoot, "operator: host publish-time conflicting note");
+    });
+
+    const result = await runtime.finalizeDispatch({
+      prepared: prepared!,
+      entry: ENTRY,
+      sessionId: "57575757-5757-4575-8575-575757575757",
+      durationMs: 2_400,
+      numTurns: 4,
+      costUsd: 0.14,
+      success: true,
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.blocked).toBe(true);
+    expect(result.mergeOutcome).toBe("blocked");
+    expect(result.incidentKind).toBe("merge_back_publish_failed");
+    expect(result.incidentMessage).toContain("als-factory/jobs/ALS-001.md");
+    expect(await runGit(systemRoot, ["rev-parse", "HEAD"])).toBe(hostHeadBefore);
+    expect(await readFrontmatterStatus(itemFile)).toBe("in-dev");
+    expect(existsSync(prepared!.worktreePath)).toBe(true);
+
+    const state = await readRuntimeState(bundleRoot);
+    expect(state.records[0]?.status).toBe("blocked");
+    expect(state.records[0]?.incident?.kind).toBe("merge_back_publish_failed");
+    expect(state.records[0]?.incident?.retry_count).toBe(1);
+  });
+});
+
+test("runtime caps host publication replay attempts when origin keeps moving", async () => {
+  await withWorktreeSandbox("host-publish-retry-limit", async ({
+    root,
+    runtime,
+    bundleRoot,
+    systemRoot,
+    hostOrigin,
+    itemFile,
+  }) => {
+    const prepared = await runtime.prepareDispatch("ALS-001", itemFile, ENTRY);
+    expect(prepared).not.toBeNull();
+
+    const hostHeadBefore = await runGit(systemRoot, ["rev-parse", "HEAD"]);
+    await replaceStatus(prepared!.isolatedItemFile, "in-review");
+    await installPrePushRemoteAdvanceHook({
+      repoRoot: systemRoot,
+      root,
+      remoteRoot: hostOrigin,
+      label: "host-publish-retry-limit",
+      attempts: PUBLISH_REPLAY_RETRY_LIMIT,
+    });
+
+    const result = await runtime.finalizeDispatch({
+      prepared: prepared!,
+      entry: ENTRY,
+      sessionId: "60606060-6060-4606-8606-606060606060",
+      durationMs: 2_700,
+      numTurns: 4,
+      costUsd: 0.15,
+      success: true,
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.blocked).toBe(true);
+    expect(result.mergeOutcome).toBe("blocked");
+    expect(result.incidentKind).toBe("merge_back_publish_failed");
+    expect(result.incidentMessage).toContain(`after ${PUBLISH_REPLAY_RETRY_LIMIT} replay attempts`);
+    expect(await runGit(systemRoot, ["rev-parse", "HEAD"])).toBe(hostHeadBefore);
+    expect(await readFrontmatterStatus(itemFile)).toBe("in-dev");
+    expect(existsSync(prepared!.worktreePath)).toBe(true);
+
+    const state = await readRuntimeState(bundleRoot);
+    expect(state.records[0]?.status).toBe("blocked");
+    expect(state.records[0]?.incident?.kind).toBe("merge_back_publish_failed");
+    expect(state.records[0]?.incident?.retry_count).toBe(PUBLISH_REPLAY_RETRY_LIMIT);
+  });
+});
+
 test("runtime mounts declared submodule worktrees and merges dual-repo dispatch edits", async () => {
   await withSubmoduleWorktreeSandbox("submodule-merge", async ({
     runtime,
@@ -224,6 +359,110 @@ test("runtime mounts declared submodule worktrees and merges dual-repo dispatch 
     expect(hostDispatchId).toBeDefined();
     expect(submoduleDispatchId).toBe(hostDispatchId);
     expect(existsSync(prepared!.worktreePath)).toBe(false);
+  });
+});
+
+test("runtime auto-rebases submodule publication before sealing the host gitlink", async () => {
+  await withSubmoduleWorktreeSandbox("submodule-publish-orthogonal", async ({
+    root,
+    runtime,
+    systemRoot,
+    hostOrigin,
+    itemFile,
+    primarySubmoduleRoot,
+    submoduleOrigin,
+  }) => {
+    const prepared = await runtime.prepareDispatch("ALS-001", itemFile, ENTRY);
+    expect(prepared).not.toBeNull();
+
+    const mounted = prepared!.mountedSubmodules[0]!;
+    await replaceStatus(prepared!.isolatedItemFile, "in-review");
+    await appendBody(join(mounted.worktreePath, "CHANGELOG.md"), "Mounted publish recovery note.");
+    await mutateRemoteViaClone(root, submoduleOrigin, "submodule-publish-orthogonal-remote", async (cloneRoot) => {
+      await writeFile(join(cloneRoot, "REMOTE-NOTE.md"), "submodule publish-time remote note\n", "utf-8");
+      await gitCommit(cloneRoot, "operator: submodule publish-time remote note");
+    });
+
+    const result = await runtime.finalizeDispatch({
+      prepared: prepared!,
+      entry: ENTRY,
+      sessionId: "58585858-5858-4585-8585-585858585858",
+      durationMs: 2_950,
+      numTurns: 5,
+      costUsd: 0.19,
+      success: true,
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.blocked).toBe(false);
+    expect(result.mergeOutcome).toBe("merged");
+    expect(await readFrontmatterStatus(itemFile)).toBe("in-review");
+    expect(await readFile(join(primarySubmoduleRoot, "CHANGELOG.md"), "utf-8")).toContain(
+      "Mounted publish recovery note.",
+    );
+    expect(await readFile(join(primarySubmoduleRoot, "REMOTE-NOTE.md"), "utf-8")).toBe(
+      "submodule publish-time remote note\n",
+    );
+    expect(await runGit(systemRoot, ["rev-parse", "HEAD:nfrith-repos/als"])).toBe(
+      await runGit(primarySubmoduleRoot, ["rev-parse", "HEAD"]),
+    );
+    expect(await runGit(submoduleOrigin, ["rev-parse", "refs/heads/main"])).toBe(
+      await runGit(primarySubmoduleRoot, ["rev-parse", "HEAD"]),
+    );
+    expect(await runGit(hostOrigin, ["rev-parse", "refs/heads/main"])).toBe(
+      await runGit(systemRoot, ["rev-parse", "HEAD"]),
+    );
+  });
+});
+
+test("runtime blocks submodule publication replay when the remote touches overlapping paths", async () => {
+  await withSubmoduleWorktreeSandbox("submodule-publish-conflict", async ({
+    root,
+    runtime,
+    bundleRoot,
+    systemRoot,
+    itemFile,
+    primarySubmoduleRoot,
+    submoduleOrigin,
+  }) => {
+    const prepared = await runtime.prepareDispatch("ALS-001", itemFile, ENTRY);
+    expect(prepared).not.toBeNull();
+
+    const mounted = prepared!.mountedSubmodules[0]!;
+    const hostHeadBefore = await runGit(systemRoot, ["rev-parse", "HEAD"]);
+    const submoduleHeadBefore = await runGit(primarySubmoduleRoot, ["rev-parse", "HEAD"]);
+    await replaceStatus(prepared!.isolatedItemFile, "in-review");
+    await appendBody(join(mounted.worktreePath, "CHANGELOG.md"), "Mounted conflicting publish note.");
+    await mutateRemoteViaClone(root, submoduleOrigin, "submodule-publish-conflict-remote", async (cloneRoot) => {
+      await appendBody(join(cloneRoot, "CHANGELOG.md"), "Remote conflicting publish note.");
+      await gitCommit(cloneRoot, "operator: submodule publish-time conflicting note");
+    });
+
+    const result = await runtime.finalizeDispatch({
+      prepared: prepared!,
+      entry: ENTRY,
+      sessionId: "59595959-5959-4595-8595-595959595959",
+      durationMs: 3_050,
+      numTurns: 5,
+      costUsd: 0.2,
+      success: true,
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.blocked).toBe(true);
+    expect(result.mergeOutcome).toBe("blocked");
+    expect(result.incidentKind).toBe("merge_back_publish_failed");
+    expect(result.incidentMessage).toContain("CHANGELOG.md");
+    expect(await runGit(systemRoot, ["rev-parse", "HEAD"])).toBe(hostHeadBefore);
+    expect(await runGit(primarySubmoduleRoot, ["rev-parse", "HEAD"])).toBe(submoduleHeadBefore);
+    expect(await readFrontmatterStatus(itemFile)).toBe("in-dev");
+    expect(existsSync(prepared!.worktreePath)).toBe(true);
+
+    const state = await readRuntimeState(bundleRoot);
+    expect(state.records[0]?.status).toBe("blocked");
+    expect(state.records[0]?.incident?.kind).toBe("merge_back_publish_failed");
+    expect(state.records[0]?.incident?.retry_count).toBe(1);
+    expect(state.records[0]?.mounted_submodules[0]?.integrated_commit).toBeNull();
   });
 });
 
@@ -1337,6 +1576,75 @@ async function gitCommit(cwd: string, message: string): Promise<void> {
       message,
     ],
   );
+}
+
+async function mutateRemoteViaClone(
+  root: string,
+  remoteRoot: string,
+  label: string,
+  mutate: (cloneRoot: string) => Promise<void>,
+): Promise<void> {
+  const cloneRoot = await mkdtemp(join(root, `${label}-`));
+  try {
+    await runGit(root, ["clone", remoteRoot, cloneRoot]);
+    await mutate(cloneRoot);
+    await runGit(cloneRoot, ["push", "origin", "main"]);
+  } finally {
+    await rm(cloneRoot, { recursive: true, force: true });
+  }
+}
+
+async function installPrePushRemoteAdvanceHook(input: {
+  repoRoot: string;
+  root: string;
+  remoteRoot: string;
+  label: string;
+  attempts: number;
+}): Promise<void> {
+  const hooksRoot = join(input.repoRoot, ".git", "hooks");
+  const hookPath = join(hooksRoot, "pre-push");
+  const counterPath = join(input.root, `${input.label}-pre-push-count.txt`);
+
+  await mkdir(hooksRoot, { recursive: true });
+  await writeFile(
+    hookPath,
+    [
+      "#!/bin/sh",
+      "set -eu",
+      `ROOT=${shellQuote(input.root)}`,
+      `REMOTE=${shellQuote(input.remoteRoot)}`,
+      `COUNTER=${shellQuote(counterPath)}`,
+      `LABEL=${shellQuote(input.label)}`,
+      `ATTEMPTS=${input.attempts}`,
+      'count=0',
+      'if [ -f "$COUNTER" ]; then',
+      '  count=$(cat "$COUNTER")',
+      "fi",
+      'if [ "$count" -ge "$ATTEMPTS" ]; then',
+      "  exit 0",
+      "fi",
+      'next=$((count + 1))',
+      'printf "%s" "$next" > "$COUNTER"',
+      'clone_root="$ROOT/$LABEL-hook-$next"',
+      'rm -rf "$clone_root"',
+      'git clone -q "$REMOTE" "$clone_root"',
+      'cd "$clone_root"',
+      'printf "hook advance %s\\n" "$next" > "$LABEL-hook-$next.txt"',
+      'git add .',
+      'git -c user.name=Fixture -c user.email=fixture@local commit -q --no-gpg-sign -m "hook: advance remote $next"',
+      'git push -q origin main',
+      'cd "$ROOT"',
+      'rm -rf "$clone_root"',
+      "exit 0",
+      "",
+    ].join("\n"),
+    "utf-8",
+  );
+  await chmod(hookPath, 0o755);
+}
+
+function shellQuote(value: string): string {
+  return `'${value.replace(/'/g, `'\"'\"'`)}'`;
 }
 
 async function captureConsole<T>(

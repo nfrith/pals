@@ -574,6 +574,7 @@ export class DispatcherRuntime {
             mountedSubmodules: refreshedMountedSubmodules,
             error: error instanceof Error ? error.message : String(error),
             incidentKind: "merge_back_failed",
+            retryCount: 0,
           };
         }
 
@@ -585,6 +586,7 @@ export class DispatcherRuntime {
             mountedSubmodules: refreshedMountedSubmodules,
             error: refreshResult.error,
             incidentKind: refreshResult.incidentKind,
+            retryCount: 0,
           };
         }
 
@@ -707,6 +709,7 @@ export class DispatcherRuntime {
       integratedCommit: string | null;
       error: string | null;
       incidentKind: string | null;
+      retryCount: number;
     };
     mountedSubmodules: RuntimeMountedSubmoduleRecord[];
     dirtyRetryCount: number;
@@ -716,6 +719,7 @@ export class DispatcherRuntime {
       input.mergeResult.incidentKind,
       input.mergeResult.error,
       input.dirtyRetryCount,
+      input.mergeResult.retryCount,
     );
 
     await this.registry.updateByItemId(input.itemId, (record) => ({
@@ -932,6 +936,7 @@ function buildBlockedIncident(
   incidentKind: string | null,
   incidentMessage: string | null,
   dirtyRetryCount: number,
+  incidentRetryCount: number,
 ): {
   kind: string;
   message: string;
@@ -959,7 +964,7 @@ function buildBlockedIncident(
   return {
     kind: incidentKind ?? "merge_blocked",
     message: incidentMessage ?? "Merge back blocked",
-    retry_count: 0,
+    retry_count: incidentRetryCount,
   };
 }
 

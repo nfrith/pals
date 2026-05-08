@@ -45,6 +45,8 @@ Merge-back success now has two explicit shapes:
 - **Plain-host systems** — success means the host integration commit lands locally and is published to the host repo's canonical upstream ref.
 - **Submodule-bearing systems** — success means the host integration commit lands locally, each mounted-submodule integrated head is published to that submodule's canonical upstream ref, and the host gitlink records that exact integrated mounted-submodule head.
 
+These merge-back semantics are anchored in [SDR 046](../../../sdr/046-delamain-dispatcher-merge-back-transaction-contract.md).
+
 The dispatcher is supported from deployed `.claude/delamains/<name>/` bundles. Authored module bundles do not carry dispatcher source in ALS v2+, and the operator-side installed source lives under `.als/constructs/delamain-dispatcher/<name>/`.
 
 ## Telemetry Files
@@ -98,7 +100,7 @@ Entry point. Handles:
 - **Runtime boot**: creates one `DispatcherRuntime`, runs orphan sweep at startup, and keeps the persisted dispatch registry as the source of truth for active, blocked, orphaned, and guarded ownership.
 - **Drain control plane**: acknowledges `dispatcher/control/drain-request.json` outside the heavy scan tick. Startup reconciliation checks for a pre-existing request before the first scan tick, `fs.watch` on the control directory provides the low-latency path, and a lightweight control poll (`CONTROL_POLL_MS`, default 250ms) re-checks the file and re-arms the watcher if the watch path drops.
 - **Poll loop**: scans items at a configurable interval (`POLL_MS`, default 30s). Reads committed `HEAD` state only, warns when a status transition exists in the checkout but not in `HEAD`, reconciles registry records against current item status, retries blocked `dirty_integration_checkout` merge-backs under the existing repo-mutation lease, suppresses redispatch for all other unresolved incidents, runs periodic orphan sweeping, and refreshes the heartbeat after dispatch completions. Drain acknowledgement is no longer phase-coupled to this loop.
-- **Blocked merge taxonomy**: keeps `dirty_integration_checkout` as the only automatic retry path. Other merge-back failures stay preserved and cause-specific, including `tracked_path_conflict`, `submodule_concurrent_advance`, `merge_back_publish_failed`, `canonical_upstream_unsynced`, and `submodule_pointer_invariant_violation`.
+- **Blocked merge taxonomy**: keeps `dirty_integration_checkout` as the only automatic retry path. Orthogonal publish-time non-fast-forward is absorbed inside the merge-back transaction with up to 3 replay attempts. Residual merge-back failures stay preserved and cause-specific, including `tracked_path_conflict`, `submodule_concurrent_advance`, terminal `merge_back_publish_failed`, `canonical_upstream_unsynced`, and `submodule_pointer_invariant_violation`.
 - **Runtime hardening**: keeps the event loop alive with an internal keepalive server, logs tick and process lifecycle events, and ignores stray `SIGTERM` so dispatcher children do not accidentally kill the parent runtime.
 
 ### `src/preflight.ts`
@@ -138,10 +140,10 @@ Git-backed isolation strategy.
 - Creates host worktrees under `~/.worktrees/delamain/<dispatcher>/<item>/<dispatch-id>/`
 - Mounts any declared `runtime-manifest.json.submodules` as nested git worktrees at the same repo-relative paths inside that host worktree
 - Rewrites bound item paths into the isolated workspace
-- Auto-commits isolated worktrees into provisional single-commit snapshots, refreshes mounted submodules before the host, absorbs orthogonal host-head movement by replaying the dispatch delta onto the new host `HEAD`, then integrates the refreshed result under one repo-mutation transaction
+- Auto-commits isolated worktrees into provisional single-commit snapshots, refreshes mounted submodules before the host, absorbs orthogonal host-head movement by replaying the dispatch delta onto the new host `HEAD`, and absorbs orthogonal canonical-upstream movement by replaying publish-time non-fast-forward before surfacing a blocked incident
 - Uses `git ls-files -u` to detect gitlink-only host conflicts and mechanically reconcile descendant-shaped mounted-submodule advances by merging the incoming submodule SHA inside the mounted checkout, staging the reconciled gitlink back into the host worktree, and sealing the outer merge with the dispatcher signature message
-- Verifies submodule-bearing success invariants before reporting success: each mounted primary fast-forwards to the integrated head, the host gitlink equals that exact integrated head, each mounted primary publishes to its canonical upstream ref, and the host repo publishes its integration commit to its canonical upstream ref
-- Blocks canonical-upstream push failures as `merge_back_publish_failed`, blocks post-push remote mismatches as `canonical_upstream_unsynced`, and blocks host/submodule pointer mismatches as `submodule_pointer_invariant_violation`
+- Verifies submodule-bearing success invariants before reporting success: each mounted primary fast-forwards to the integrated head, each mounted primary absorbs orthogonal publish-time remote movement before sealing success, the host gitlink equals that exact final published mounted-submodule head, and the host repo publishes its integration commit to its canonical upstream ref
+- Blocks only terminal canonical-upstream replay failures as `merge_back_publish_failed`, blocks post-push remote mismatches as `canonical_upstream_unsynced`, and blocks host/submodule pointer mismatches as `submodule_pointer_invariant_violation`
 - Treats true overlapping host-content conflicts as `tracked_path_conflict` and true submodule-concurrency conflicts as `submodule_concurrent_advance`
 - Treats dirty integration checkouts as a retryable wait condition; once the operator cleans the tree, the poll loop re-runs refresh + merge-back under the same lease and escalates long-lived waits to `primary_dirty_timeout`
 - Keeps `stale_base_conflict` for the narrower "recorded base is no longer an ancestor of current HEAD" case, preserving the host and mounted worktrees for operator or agent-assist follow-up

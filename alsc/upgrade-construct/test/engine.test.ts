@@ -103,7 +103,7 @@ test("canonical dispatcher bundle matches the current known vendor fingerprint",
   );
 
   expect(fingerprint).toEqual({
-    matched_version: 17,
+    matched_version: 18,
     customized: false,
   });
 });
