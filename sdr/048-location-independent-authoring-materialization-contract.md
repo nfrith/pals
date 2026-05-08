@@ -13,24 +13,26 @@ Proposed
 
 ## Decision
 
-- ALS v3 introduces one canonical tracked `.als/authoring.ts` facade for every system. That facade re-exports authoring helpers from `als:authoring` and compatibility contracts from `als:contracts`.
+- ALS v3 removes `.als/authoring.ts` from the steady-state authored surface. `.als/system.ts`, `module.ts`, and `delamain.ts` import authoring helpers directly from `als:authoring`, and files that need compatibility-class runtime values import them directly from `als:contracts`.
 - `als:authoring` and `als:contracts` are ALS-reserved virtual specifiers. They are resolved only by ALS-owned evaluation paths, which materialize them against the active plugin root before executing authored TypeScript.
 - ALS-owned authored-data consumers must use one shared materializer/evaluator contract. This includes compiler validation and projection, update preflight/execute, language-upgrade scripts that load authored data, and shipped hook helpers that currently `require()` `.als/system.ts` directly.
-- Legacy relative and absolute shims are accepted only as pre-v3 input. The `v2-to-v3` `language-upgrade-recipe` rewrites them to the canonical v3 facade. New installs, the in-bundle reference system, and foundry output emit only the v3 facade.
+- Legacy relative and absolute shims are accepted only as pre-v3 input. The `v2-to-v3` `language-upgrade-recipe` rewrites import lines in authored entrypoints to the direct reserved-specifier form and deletes the obsolete `.als/authoring.ts` file. New installs, the in-bundle reference system, and foundry output emit only the no-shim v3 shape.
 - ALS does not solve this contract by generating steady-state resolver artifacts in operator systems. Generated `node_modules` links, `package.json` `imports`, and `.als/alsc` symlinks are rejected as the canonical answer for v3.
 
 ## Normative Effect
 
 - Required:
-  - Every steady-state ALS system uses the same tracked `.als/authoring.ts` text.
-  - ALS-owned loaders bind the facade to the active plugin version at evaluation time without relying on child-process inheritance of `CLAUDE_PLUGIN_ROOT`.
-  - `/install`, `/update`, and language-upgrade flows converge systems onto the canonical facade automatically.
+  - Every steady-state ALS system imports `defineSystem`, `defineModule`, and `defineDelamain` directly from `als:authoring`.
+  - Authored files that need compatibility-class runtime values import them directly from `als:contracts`.
+  - ALS-owned loaders bind those reserved specifiers to the active plugin version at evaluation time without relying on child-process inheritance of `CLAUDE_PLUGIN_ROOT`.
+  - `/install`, `/update`, and language-upgrade flows converge systems onto the no-shim direct-import shape automatically.
 - Allowed:
   - ALS may normalize legacy shims in a disposable staging area or temp root solely to validate a pre-v3 system and reach the `v2-to-v3` hop.
   - Third-party tools may load ALS authored data if they call the shared ALS materializer/evaluator instead of ambient Bun module resolution.
 - Rejected:
-  - Filesystem-relative imports from `.als/authoring.ts` into the plugin tree.
+  - Filesystem-relative imports from authored entrypoints into `.als/authoring.ts` or into the plugin tree.
   - Absolute plugin-cache imports committed into authored source.
+  - Keeping `.als/authoring.ts` as a steady-state v3 compatibility shim.
   - Indefinite steady-state support for legacy shim shapes after the v3 hop.
   - Requiring operator systems to carry tracked machine-local resolver metadata so Bun can find authoring helpers.
 
@@ -43,9 +45,9 @@ Proposed
 
 ## Docs and Fixture Impact
 
-- `shape-language.md` must teach the canonical `.als/authoring.ts` facade and the supported authored-load boundary.
+- `shape-language.md` must teach the no-shim direct-import surface and the supported authored-load boundary.
 - `language-upgrades.md` must explain the `v2-to-v3` hop and the input-only status of legacy shims.
-- `/install` bootstrap templates, `reference-system/.als/authoring.ts`, foundry output, and retained language-upgrade fixtures must align to the new facade.
+- `/install` bootstrap templates, reference-system, foundry output, and retained language-upgrade fixtures must align to the no-shim v3 shape.
 - AAT preflight shim rewrite docs/scripts must be removed once external-root validation passes without local duct tape.
 
 ## Alternatives Considered
@@ -53,8 +55,3 @@ Proposed
 - Static authored DSL with no runtime TypeScript execution. Cleanest long-term boundary, but too broad for this bug because it widens the job into a larger language redesign before the existing break can close.
 - Generated resolver metadata in each system root (`node_modules`, `package.json` `imports`, or similar). Works with ambient Bun loading, but reintroduces machine-local refresh state and makes authoring correctness depend on install/update hygiene.
 - Productized `.als/alsc` symlink flow. Fastest patch, but it keeps the contract as filesystem ductwork inside authored source and risks committing machine-local plugin pointers.
-
-## Open Questions
-
-- Whether the final reserved specifier spellings stay `als:authoring` and `als:contracts` or use another `als:` pair with the same virtual-loader contract.
-- Whether hook direct-load replacement is best exposed as a reusable JS helper, a compiler CLI subcommand, or both.
