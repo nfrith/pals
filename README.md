@@ -74,9 +74,22 @@ Use only if you need the latest unreleased commits. Edgerunners should NOT use t
 
 Once installed, ALS skills (`/install`, `/new`, `/validate`, `/change`, `/migrate`, `/update`) are available inside Claude Code sessions.
 
-### Codex local plugin development
+### Codex marketplace install
 
-This repo includes `.codex-plugin/plugin.json`, `hooks/codex-hooks.json`, and `.agents/plugins/marketplace.json` for Codex. Codex skills are invoked as `$install`, `$new`, `$validate`, `$change`, `$migrate`, and `$update`. The Codex projection path is:
+This repo includes Codex plugin metadata for preview workflows. Codex plugin hooks require the Codex hooks feature flag:
+
+```toml
+[features]
+codex_hooks = true
+```
+
+Add the marketplace, restart Codex, then install **ALS** from `/plugins` under **ALS Local Marketplace**:
+
+```bash
+codex plugin marketplace add https://github.com/JC-Flanders/als.git
+```
+
+Codex skills are invoked as `$install`, `$new`, `$validate`, `$change`, `$migrate`, and `$update`. The Codex projection path is:
 
 ```bash
 bun alsc/compiler/src/cli.ts deploy codex <system-root>
@@ -267,7 +280,22 @@ This is a research preview, not a stability release.
 - ALS currently supports `als_version: 1` only.
 - ALS does not yet ship a language-version upgrade toolchain.
 - ALS does not yet ship a real warning or deprecation lifecycle.
-- Claude projection is the only harness projection surfaced in this preview.
+- Claude projection is the primary supported projection in this preview.
+
+### Harness Parity
+
+| Surface | Claude | Codex | Notes |
+|---------|--------|-------|-------|
+| Deploy | yes | yes | `alsc deploy <harness>` |
+| Validate hooks | yes | yes | Codex uses hook payload adapters |
+| SessionStart operator profile | yes | yes | Codex adapter exists |
+| Stop validation | yes | yes | Codex adapter exists |
+| SessionEnd dispatcher cleanup | yes | no | Codex has no equivalent lifecycle hook in this plugin |
+| Update transaction follow-through | yes | yes | `$update` uses `--harness codex` after local plugin source refresh |
+| Plugin self-update | yes | no | Claude marketplace only |
+| Dispatcher boot/reboot | yes | yes | Codex uses `.codex/delamains` and `ALS_PLUGIN_ROOT` |
+| Statusline | yes | no | Claude-specific settings/statusline surface |
+| Dashboard | yes | limited | Current dashboard lifecycle remains Claude-oriented |
 
 The longer-form preview contract lives in [RESEARCH-PREVIEW.md](RESEARCH-PREVIEW.md). Public docs intentionally stay compact: install from the stable marketplace, update with `/update`, and expect fix-forward recovery rather than rollback.
 
