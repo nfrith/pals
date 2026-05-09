@@ -4,8 +4,8 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
-  ALS_SYSTEM_CLAUDE_MD_CONTENTS,
-  ALS_SYSTEM_CODEX_AGENTS_MD_CONTENTS,
+  ALS_CLAUDE_SYSTEM_INSTRUCTION_CONTENTS,
+  ALS_CODEX_SYSTEM_INSTRUCTION_CONTENTS,
   deployClaudeSkillsFromConfig,
 } from "../src/harness-projection.ts";
 import { loadSystemValidationContext } from "../src/validate.ts";
@@ -88,7 +88,7 @@ test("deploy CLI projects active skills into .claude/skills and is idempotent", 
     }
 
     const firstSkillSnapshot = snapshotTree(join(root, ".claude/skills"));
-    expect(readFileSync(join(root, ".als/CLAUDE.md"), "utf-8")).toBe(ALS_SYSTEM_CLAUDE_MD_CONTENTS);
+    expect(readFileSync(join(root, ".als/CLAUDE.md"), "utf-8")).toBe(ALS_CLAUDE_SYSTEM_INSTRUCTION_CONTENTS);
     expect(firstSkillSnapshot["backlog-module/SKILL.md"]).toContain("name: backlog-module");
     expect(firstSkillSnapshot["people-module/SKILL.md"]).toContain("name: people-module");
     expect(firstSkillSnapshot["playbooks-module/SKILL.md"]).toContain("name: playbooks-module");
@@ -269,7 +269,7 @@ test("deploy CLI projects Codex skills, guidance, and Delamain runtime", { timeo
     expect(output.written_system_file_count).toBe(1);
     expect(output.written_skill_count).toBe(1);
     expect(output.written_delamain_count).toBe(1);
-    expect(readFileSync(join(root, ".als/AGENTS.md"), "utf-8")).toBe(ALS_SYSTEM_CODEX_AGENTS_MD_CONTENTS);
+    expect(readFileSync(join(root, ".als/AGENTS.md"), "utf-8")).toBe(ALS_CODEX_SYSTEM_INSTRUCTION_CONTENTS);
     const skill = readFileSync(join(root, ".agents/skills/factory-operate/SKILL.md"), "utf-8");
     expect(skill).toContain("name: factory-operate");
     expect(skill).not.toContain("CLAUDE_PLUGIN_ROOT");
@@ -312,7 +312,7 @@ test("deploy CLI can target a single module", { timeout: 180_000 }, async () => 
     ]);
     const snapshot = snapshotTree(join(root, ".claude/skills"));
     expect(Object.keys(snapshot)).toEqual(["backlog-module/SKILL.md"]);
-    expect(readFileSync(join(root, ".als/CLAUDE.md"), "utf-8")).toBe(ALS_SYSTEM_CLAUDE_MD_CONTENTS);
+    expect(readFileSync(join(root, ".als/CLAUDE.md"), "utf-8")).toBe(ALS_CLAUDE_SYSTEM_INSTRUCTION_CONTENTS);
   });
 });
 
@@ -328,7 +328,7 @@ test("deploy CLI overwrites existing system .als/CLAUDE.md with canonical conten
     });
 
     expect(process.exitCode).toBe(0);
-    expect(readFileSync(join(root, ".als/CLAUDE.md"), "utf-8")).toBe(ALS_SYSTEM_CLAUDE_MD_CONTENTS);
+    expect(readFileSync(join(root, ".als/CLAUDE.md"), "utf-8")).toBe(ALS_CLAUDE_SYSTEM_INSTRUCTION_CONTENTS);
   });
 });
 
@@ -436,7 +436,7 @@ test("deploy library projects skills when validation status is warn", { timeout:
     expect(output.written_skill_count).toBe(1);
     expect(output.planned_delamain_count).toBe(0);
     expect(output.written_delamain_count).toBe(0);
-    expect(readFileSync(join(root, ".als/CLAUDE.md"), "utf-8")).toBe(ALS_SYSTEM_CLAUDE_MD_CONTENTS);
+    expect(readFileSync(join(root, ".als/CLAUDE.md"), "utf-8")).toBe(ALS_CLAUDE_SYSTEM_INSTRUCTION_CONTENTS);
     expect(existsSync(join(root, ".claude/skills/backlog-module/SKILL.md"))).toBe(true);
   });
 });

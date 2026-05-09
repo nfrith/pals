@@ -108,7 +108,7 @@ test("dispatcher version check reads local and canonical VERSION files", async (
     await writeVersionPath(root, "plugin/delamain-dispatcher/VERSION", "1\n");
 
     const info = await loadDispatcherVersionInfo(bundleRoot, {
-      CLAUDE_PLUGIN_ROOT: pluginRoot,
+      ALS_PLUGIN_ROOT: pluginRoot,
     });
 
     expect(info.localVersion).toBe(1);
@@ -125,7 +125,7 @@ test("dispatcher version check rejects missing local VERSION", async () => {
     await writeVersionPath(root, "plugin/delamain-dispatcher/VERSION", "1\n");
 
     await expect(loadDispatcherVersionInfo(bundleRoot, {
-      CLAUDE_PLUGIN_ROOT: pluginRoot,
+      ALS_PLUGIN_ROOT: pluginRoot,
     })).rejects.toThrow("local dispatcher VERSION missing or unreadable");
   });
 });
@@ -139,7 +139,7 @@ test("dispatcher version check rejects malformed local VERSION", async () => {
     await writeVersionPath(root, "plugin/delamain-dispatcher/VERSION", "1\n");
 
     await expect(loadDispatcherVersionInfo(bundleRoot, {
-      CLAUDE_PLUGIN_ROOT: pluginRoot,
+      ALS_PLUGIN_ROOT: pluginRoot,
     })).rejects.toThrow("local dispatcher VERSION must be a positive integer");
   });
 });
@@ -181,7 +181,7 @@ test("dispatcher version check rejects missing canonical VERSION", async () => {
     await writeVersionPath(root, ".claude/delamains/version-check/dispatcher/VERSION", "1\n");
 
     await expect(loadDispatcherVersionInfo(bundleRoot, {
-      CLAUDE_PLUGIN_ROOT: pluginRoot,
+      ALS_PLUGIN_ROOT: pluginRoot,
     })).rejects.toThrow("canonical dispatcher VERSION missing or unreadable");
   });
 });
@@ -195,7 +195,7 @@ test("dispatcher version check rejects malformed canonical VERSION", async () =>
     await writeVersionPath(root, "plugin/delamain-dispatcher/VERSION", "v2\n");
 
     await expect(loadDispatcherVersionInfo(bundleRoot, {
-      CLAUDE_PLUGIN_ROOT: pluginRoot,
+      ALS_PLUGIN_ROOT: pluginRoot,
     })).rejects.toThrow("canonical dispatcher VERSION must be a positive integer");
   });
 });
@@ -209,7 +209,7 @@ test("dispatcher version check logs stale upgrade instruction without failing", 
     await writeVersionPath(root, "plugin/delamain-dispatcher/VERSION", "2\n");
 
     const info = await loadDispatcherVersionInfo(bundleRoot, {
-      CLAUDE_PLUGIN_ROOT: pluginRoot,
+      ALS_PLUGIN_ROOT: pluginRoot,
     });
 
     expect(formatDispatcherVersionLine(info)).toBe(
@@ -232,7 +232,7 @@ test("dispatcher version check ignores dispatcher package.json version", async (
     await writeVersionPath(root, "plugin/delamain-dispatcher/VERSION", "1\n");
 
     const info = await loadDispatcherVersionInfo(bundleRoot, {
-      CLAUDE_PLUGIN_ROOT: pluginRoot,
+      ALS_PLUGIN_ROOT: pluginRoot,
     });
 
     expect(info.localVersion).toBe(1);

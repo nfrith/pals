@@ -1,6 +1,6 @@
 # ALS Hooks
 
-All shared hooks resolve the compiler path via `${ALS_PLUGIN_ROOT}/alsc/compiler`, with `${CLAUDE_PLUGIN_ROOT}` accepted as a Claude compatibility alias.
+Shared hooks resolve the compiler path via `${ALS_PLUGIN_ROOT}/alsc/compiler`. Claude manifests may enter through `${CLAUDE_PLUGIN_ROOT}`, but hook bootstrap normalizes that value to `ALS_PLUGIN_ROOT` before shared work runs.
 
 ## Hook inventory
 
@@ -52,4 +52,4 @@ When set to `"1"`, `als-validate.sh` and `als-stop-gate.sh` skip all validation.
 
 - Bun must be installed and on `$PATH`.
 - jq must be installed and on `$PATH`.
-- The plugin must be loaded so `ALS_PLUGIN_ROOT` or `CLAUDE_PLUGIN_ROOT` resolves.
+- The plugin must be loaded so `ALS_PLUGIN_ROOT` resolves, either directly or via the Claude manifest bootstrap.

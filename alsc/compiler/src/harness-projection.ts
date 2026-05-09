@@ -20,18 +20,18 @@ import {
   type HarnessTarget,
 } from "../../shared/harnesses.ts";
 import type {
-  ClaudeDelamainNameConflict,
-  ClaudeDelamainProjectionCollision,
-  ClaudeDelamainProjectionPlan,
-  ClaudeSkillDeployOutput,
-  ClaudeSkillDeployWarning,
-  ClaudeSkillProjectionCollision,
-  ClaudeSkillProjectionPlan,
-  ClaudeSystemFilePlan,
+  HarnessDelamainNameConflict,
+  HarnessDelamainProjectionCollision,
+  HarnessDelamainProjectionPlan,
+  HarnessDeployOutput,
+  HarnessDeployWarning,
+  HarnessSkillProjectionCollision,
+  HarnessSkillProjectionPlan,
+  HarnessSystemInstructionPlan,
 } from "./types.ts";
 import { loadSystemValidationContext, validateLoadedSystem } from "./validate.ts";
 
-export interface ClaudeSkillDeployOptions {
+export interface HarnessDeployOptions {
   dry_run?: boolean;
   module_filter?: string;
   require_empty_targets?: boolean;
@@ -39,18 +39,18 @@ export interface ClaudeSkillDeployOptions {
 
 interface HarnessProjectionSpec extends HarnessRuntimeSpec {
   deploy_output_schema: string;
-  system_instruction_kind: ClaudeSystemFilePlan["kind"];
+  system_instruction_kind: HarnessSystemInstructionPlan["kind"];
   system_instruction_contents: string;
   target_collision_roots_label: string;
   transform_projected_skill_text?: (value: string) => string;
 }
 
-interface ClaudeSkillProjectionWorkPlan extends ClaudeSkillProjectionPlan {
+interface HarnessSkillProjectionWorkPlan extends HarnessSkillProjectionPlan {
   source_dir_abs: string;
   target_dir_abs: string;
 }
 
-interface ClaudeDelamainProjectionWorkPlan extends ClaudeDelamainProjectionPlan {
+interface HarnessDelamainProjectionWorkPlan extends HarnessDelamainProjectionPlan {
   harness: HarnessTarget;
   source_dir_abs: string;
   dispatcher_source_dir_abs: string;
@@ -67,12 +67,12 @@ interface ClaudeDelamainProjectionWorkPlan extends ClaudeDelamainProjectionPlan 
   rendered_delamain_yaml: string;
 }
 
-interface ClaudeSystemFileWorkPlan extends ClaudeSystemFilePlan {
+interface HarnessSystemInstructionWorkPlan extends HarnessSystemInstructionPlan {
   target_path_abs: string;
   contents: string;
 }
 
-type ClaudeSkillDeployProceedStatus = Exclude<ClaudeSkillDeployOutput["validation_status"], "fail">;
+type HarnessDeployProceedStatus = Exclude<HarnessDeployOutput["validation_status"], "fail">;
 
 type DelamainBindingSelection =
   | { kind: "none" }
@@ -109,7 +109,7 @@ const CANONICAL_DISPATCHER_TEMPLATE_DIR = resolve(
   "../../../delamain-dispatcher",
 );
 
-export const ALS_SYSTEM_CLAUDE_MD_CONTENTS = `# .als Directory
+export const ALS_CLAUDE_SYSTEM_INSTRUCTION_CONTENTS = `# .als Directory
 
 This directory is managed by ALS. Its contents are generated and maintained by ALS skills and the compiler.
 
@@ -122,7 +122,7 @@ The compiler reads from \`.als/\` and projects runtime assets into \`.claude/\`.
 Customize the system through ALS skills, not by editing \`.als/\` files directly.
 `;
 
-export const ALS_SYSTEM_CODEX_AGENTS_MD_CONTENTS = `# .als Directory
+export const ALS_CODEX_SYSTEM_INSTRUCTION_CONTENTS = `# .als Directory
 
 This directory is managed by ALS. Its contents are generated and maintained by ALS skills and the compiler.
 
@@ -140,32 +140,32 @@ const HARNESS_PROJECTION_SPECS: Record<HarnessTarget, HarnessProjectionSpec> = {
     ...getHarnessRuntimeSpec("claude"),
     deploy_output_schema: DEPLOY_OUTPUT_SCHEMA_LITERAL,
     system_instruction_kind: "generated_claude_guidance",
-    system_instruction_contents: ALS_SYSTEM_CLAUDE_MD_CONTENTS,
+    system_instruction_contents: ALS_CLAUDE_SYSTEM_INSTRUCTION_CONTENTS,
     target_collision_roots_label: ".claude/skills or .claude/delamains",
   },
   codex: {
     ...getHarnessRuntimeSpec("codex"),
     deploy_output_schema: "als-codex-deploy-output@1",
     system_instruction_kind: "generated_codex_guidance",
-    system_instruction_contents: ALS_SYSTEM_CODEX_AGENTS_MD_CONTENTS,
+    system_instruction_contents: ALS_CODEX_SYSTEM_INSTRUCTION_CONTENTS,
     target_collision_roots_label: ".agents/skills or .codex/delamains",
     transform_projected_skill_text: rewriteCodexProjectedSkillText,
   },
 };
 
-export function deployClaudeSkills(systemRootInput: string, options: ClaudeSkillDeployOptions = {}): ClaudeSkillDeployOutput {
+export function deployClaudeSkills(systemRootInput: string, options: HarnessDeployOptions = {}): HarnessDeployOutput {
   return deployHarnessProjection("claude", systemRootInput, options);
 }
 
-export function deployCodexSkills(systemRootInput: string, options: ClaudeSkillDeployOptions = {}): ClaudeSkillDeployOutput {
+export function deployCodexSkills(systemRootInput: string, options: HarnessDeployOptions = {}): HarnessDeployOutput {
   return deployHarnessProjection("codex", systemRootInput, options);
 }
 
 export function deployHarnessProjection(
   target: HarnessTarget,
   systemRootInput: string,
-  options: ClaudeSkillDeployOptions = {},
-): ClaudeSkillDeployOutput {
+  options: HarnessDeployOptions = {},
+): HarnessDeployOutput {
   const spec = HARNESS_PROJECTION_SPECS[target];
   const systemRootAbs = resolve(systemRootInput);
   const validationContext = loadSystemValidationContext(systemRootAbs);
@@ -218,18 +218,18 @@ export function deployHarnessProjection(
 export function deployClaudeSkillsFromConfig(
   systemRootInput: string,
   systemConfig: SystemConfig,
-  validationStatus: ClaudeSkillDeployProceedStatus,
-  options: ClaudeSkillDeployOptions = {},
-): ClaudeSkillDeployOutput {
+  validationStatus: HarnessDeployProceedStatus,
+  options: HarnessDeployOptions = {},
+): HarnessDeployOutput {
   return deployHarnessProjectionFromConfig("claude", systemRootInput, systemConfig, validationStatus, options);
 }
 
 export function deployCodexSkillsFromConfig(
   systemRootInput: string,
   systemConfig: SystemConfig,
-  validationStatus: ClaudeSkillDeployProceedStatus,
-  options: ClaudeSkillDeployOptions = {},
-): ClaudeSkillDeployOutput {
+  validationStatus: HarnessDeployProceedStatus,
+  options: HarnessDeployOptions = {},
+): HarnessDeployOutput {
   return deployHarnessProjectionFromConfig("codex", systemRootInput, systemConfig, validationStatus, options);
 }
 
@@ -237,9 +237,9 @@ export function deployHarnessProjectionFromConfig(
   target: HarnessTarget,
   systemRootInput: string,
   systemConfig: SystemConfig,
-  validationStatus: ClaudeSkillDeployProceedStatus,
-  options: ClaudeSkillDeployOptions = {},
-): ClaudeSkillDeployOutput {
+  validationStatus: HarnessDeployProceedStatus,
+  options: HarnessDeployOptions = {},
+): HarnessDeployOutput {
   const spec = HARNESS_PROJECTION_SPECS[target];
   const systemRootAbs = resolve(systemRootInput);
   const systemRootRel = toRepoRelative(systemRootAbs);
@@ -458,14 +458,14 @@ function buildProjectionPlans(
   moduleFilter: string | null,
   spec: HarnessProjectionSpec,
 ): {
-  skill_plans: ClaudeSkillProjectionWorkPlan[];
-  delamain_plans: ClaudeDelamainProjectionWorkPlan[];
-  delamain_name_conflicts: ClaudeDelamainNameConflict[];
+  skill_plans: HarnessSkillProjectionWorkPlan[];
+  delamain_plans: HarnessDelamainProjectionWorkPlan[];
+  delamain_name_conflicts: HarnessDelamainNameConflict[];
   error: string | null;
 } {
   const moduleIds = moduleFilter ? [moduleFilter] : Object.keys(systemConfig.modules).sort();
-  const skillPlans: ClaudeSkillProjectionWorkPlan[] = [];
-  const delamainPlans: ClaudeDelamainProjectionWorkPlan[] = [];
+  const skillPlans: HarnessSkillProjectionWorkPlan[] = [];
+  const delamainPlans: HarnessDelamainProjectionWorkPlan[] = [];
 
   for (const moduleId of moduleIds) {
     const moduleConfig = systemConfig.modules[moduleId];
@@ -586,7 +586,7 @@ function buildProjectionPlans(
   };
 }
 
-function buildSystemFilePlans(systemRootAbs: string, spec: HarnessProjectionSpec): ClaudeSystemFileWorkPlan[] {
+function buildSystemFilePlans(systemRootAbs: string, spec: HarnessProjectionSpec): HarnessSystemInstructionWorkPlan[] {
   const targetPathAbs = resolve(systemRootAbs, spec.system_instruction_path);
   return [
     {
@@ -800,8 +800,8 @@ function selectSingleDelamainBinding(fields: Record<string, FieldShape>): Delama
   };
 }
 
-function collectDelamainNameConflicts(plans: ClaudeDelamainProjectionWorkPlan[]): ClaudeDelamainNameConflict[] {
-  const grouped = new Map<string, ClaudeDelamainProjectionWorkPlan[]>();
+function collectDelamainNameConflicts(plans: HarnessDelamainProjectionWorkPlan[]): HarnessDelamainNameConflict[] {
+  const grouped = new Map<string, HarnessDelamainProjectionWorkPlan[]>();
 
   for (const plan of plans) {
     const existing = grouped.get(plan.delamain_name);
@@ -812,7 +812,7 @@ function collectDelamainNameConflicts(plans: ClaudeDelamainProjectionWorkPlan[])
     grouped.set(plan.delamain_name, [plan]);
   }
 
-  const conflicts: ClaudeDelamainNameConflict[] = [];
+  const conflicts: HarnessDelamainNameConflict[] = [];
 
   for (const [delamainName, conflictPlans] of grouped) {
     const distinctModules = [...new Set(conflictPlans.map((plan) => plan.module_id))].sort();
@@ -828,8 +828,8 @@ function collectDelamainNameConflicts(plans: ClaudeDelamainProjectionWorkPlan[])
   return conflicts.sort((left, right) => left.delamain_name.localeCompare(right.delamain_name));
 }
 
-function collectExistingSkillTargets(plans: ClaudeSkillProjectionWorkPlan[]): ClaudeSkillProjectionCollision[] {
-  const collisions: ClaudeSkillProjectionCollision[] = [];
+function collectExistingSkillTargets(plans: HarnessSkillProjectionWorkPlan[]): HarnessSkillProjectionCollision[] {
+  const collisions: HarnessSkillProjectionCollision[] = [];
 
   for (const plan of plans) {
     const stat = safeStat(plan.target_dir_abs);
@@ -847,8 +847,8 @@ function collectExistingSkillTargets(plans: ClaudeSkillProjectionWorkPlan[]): Cl
   return collisions;
 }
 
-function collectExistingDelamainTargets(plans: ClaudeDelamainProjectionWorkPlan[]): ClaudeDelamainProjectionCollision[] {
-  const collisions: ClaudeDelamainProjectionCollision[] = [];
+function collectExistingDelamainTargets(plans: HarnessDelamainProjectionWorkPlan[]): HarnessDelamainProjectionCollision[] {
+  const collisions: HarnessDelamainProjectionCollision[] = [];
 
   for (const plan of plans) {
     const stat = safeStat(plan.target_dir_abs);
@@ -866,8 +866,8 @@ function collectExistingDelamainTargets(plans: ClaudeDelamainProjectionWorkPlan[
   return collisions;
 }
 
-function collectDelamainProjectionWarnings(plans: ClaudeDelamainProjectionWorkPlan[]): ClaudeSkillDeployWarning[] {
-  const warnings: ClaudeSkillDeployWarning[] = [];
+function collectDelamainProjectionWarnings(plans: HarnessDelamainProjectionWorkPlan[]): HarnessDeployWarning[] {
+  const warnings: HarnessDeployWarning[] = [];
 
   for (const plan of plans) {
     const targetStat = safeStat(plan.target_dir_abs);
@@ -893,7 +893,7 @@ function collectDelamainProjectionWarnings(plans: ClaudeDelamainProjectionWorkPl
   return warnings;
 }
 
-function toSkillProjectionPlan(plan: ClaudeSkillProjectionWorkPlan): ClaudeSkillProjectionPlan {
+function toSkillProjectionPlan(plan: HarnessSkillProjectionWorkPlan): HarnessSkillProjectionPlan {
   return {
     module_id: plan.module_id,
     module_version: plan.module_version,
@@ -903,7 +903,7 @@ function toSkillProjectionPlan(plan: ClaudeSkillProjectionWorkPlan): ClaudeSkill
   };
 }
 
-function toDelamainProjectionPlan(plan: ClaudeDelamainProjectionWorkPlan): ClaudeDelamainProjectionPlan {
+function toDelamainProjectionPlan(plan: HarnessDelamainProjectionWorkPlan): HarnessDelamainProjectionPlan {
   return {
     module_id: plan.module_id,
     module_version: plan.module_version,
@@ -913,7 +913,7 @@ function toDelamainProjectionPlan(plan: ClaudeDelamainProjectionWorkPlan): Claud
   };
 }
 
-function toSystemFilePlan(plan: ClaudeSystemFileWorkPlan): ClaudeSystemFilePlan {
+function toSystemFilePlan(plan: HarnessSystemInstructionWorkPlan): HarnessSystemInstructionPlan {
   return {
     kind: plan.kind,
     target_path: plan.target_path,
@@ -1053,16 +1053,16 @@ function removeProjectionOnlyDelamainFiles(targetDirAbs: string): void {
   rmSync(resolve(targetDirAbs, DELAMAIN_RUNTIME_MANIFEST_CONFIG), { force: true });
 }
 
-function writeSystemFile(plan: ClaudeSystemFileWorkPlan): void {
+function writeSystemFile(plan: HarnessSystemInstructionWorkPlan): void {
   mkdirSync(dirname(plan.target_path_abs), { recursive: true });
   writeFileSync(plan.target_path_abs, plan.contents);
 }
 
-function writeProjectedDelamainDefinition(plan: ClaudeDelamainProjectionWorkPlan): void {
+function writeProjectedDelamainDefinition(plan: HarnessDelamainProjectionWorkPlan): void {
   writeFileSync(resolve(plan.target_dir_abs, "delamain.yaml"), plan.rendered_delamain_yaml);
 }
 
-function writeDelamainRuntimeManifest(plan: ClaudeDelamainProjectionWorkPlan): void {
+function writeDelamainRuntimeManifest(plan: HarnessDelamainProjectionWorkPlan): void {
   const manifest = {
     schema: DELAMAIN_RUNTIME_MANIFEST_SCHEMA,
     harness: plan.harness,
@@ -1310,13 +1310,13 @@ function formatError(error: unknown): string {
 
 function buildFailureOutput(
   systemRootRel: string,
-  validationStatus: ClaudeSkillDeployOutput["validation_status"],
+  validationStatus: HarnessDeployOutput["validation_status"],
   moduleFilter: string | null,
   dryRun: boolean,
   requireEmptyTargets: boolean,
   error: string,
   spec: HarnessProjectionSpec,
-): ClaudeSkillDeployOutput {
+): HarnessDeployOutput {
   return buildDeployOutput({
     spec,
     status: "fail",
@@ -1341,24 +1341,24 @@ function buildFailureOutput(
 
 function buildDeployOutput(params: {
   spec: HarnessProjectionSpec;
-  status: ClaudeSkillDeployOutput["status"];
+  status: HarnessDeployOutput["status"];
   systemRootRel: string;
-  validationStatus: ClaudeSkillDeployOutput["validation_status"];
+  validationStatus: HarnessDeployOutput["validation_status"];
   moduleFilter: string | null;
   dryRun: boolean;
   requireEmptyTargets: boolean;
-  systemFilePlans: ClaudeSystemFileWorkPlan[];
+  systemFilePlans: HarnessSystemInstructionWorkPlan[];
   writtenSystemFileCount: number;
-  skillPlans: ClaudeSkillProjectionWorkPlan[];
+  skillPlans: HarnessSkillProjectionWorkPlan[];
   writtenSkillCount: number;
-  existingSkillTargets: ClaudeSkillProjectionCollision[];
-  delamainPlans: ClaudeDelamainProjectionWorkPlan[];
+  existingSkillTargets: HarnessSkillProjectionCollision[];
+  delamainPlans: HarnessDelamainProjectionWorkPlan[];
   writtenDelamainCount: number;
-  existingDelamainTargets: ClaudeDelamainProjectionCollision[];
-  delamainNameConflicts: ClaudeDelamainNameConflict[];
-  warnings: ClaudeSkillDeployWarning[];
+  existingDelamainTargets: HarnessDelamainProjectionCollision[];
+  delamainNameConflicts: HarnessDelamainNameConflict[];
+  warnings: HarnessDeployWarning[];
   error: string | null;
-}): ClaudeSkillDeployOutput {
+}): HarnessDeployOutput {
   return {
     schema: params.spec.deploy_output_schema,
     status: params.status,

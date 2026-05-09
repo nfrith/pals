@@ -17,7 +17,7 @@ export function parseDispatcherVersion(raw: string, label: string): number {
 export function resolveCanonicalDispatcherVersionPath(
   env: Record<string, string | undefined> = process.env,
 ): string {
-  const pluginRoot = env["ALS_PLUGIN_ROOT"] ?? env["CLAUDE_PLUGIN_ROOT"];
+  const pluginRoot = env["ALS_PLUGIN_ROOT"];
   if (!pluginRoot) {
     throw new Error("ALS_PLUGIN_ROOT is not set; cannot read canonical dispatcher VERSION");
   }

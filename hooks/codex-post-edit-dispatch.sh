@@ -9,12 +9,11 @@ fi
 
 target_script="$1"
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-plugin_root="${ALS_PLUGIN_ROOT:-${CLAUDE_PLUGIN_ROOT:-}}"
+plugin_root="${ALS_PLUGIN_ROOT:-}"
 if [[ -z "$plugin_root" ]]; then
   plugin_root="$(cd "$script_dir/.." && pwd)"
 fi
 export ALS_PLUGIN_ROOT="$plugin_root"
-export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-$plugin_root}"
 
 command -v jq >/dev/null 2>&1 || exit 0
 [[ -f "$target_script" ]] || exit 0

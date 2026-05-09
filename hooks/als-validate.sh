@@ -9,7 +9,6 @@ set -euo pipefail
 PLUGIN_ROOT="${ALS_PLUGIN_ROOT:-${CLAUDE_PLUGIN_ROOT:-}}"
 [[ -n "$PLUGIN_ROOT" ]] || exit 0
 export ALS_PLUGIN_ROOT="$PLUGIN_ROOT"
-export CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-$PLUGIN_ROOT}"
 
 COMPILER="${PLUGIN_ROOT}/alsc/compiler"
 
