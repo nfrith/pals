@@ -2,6 +2,8 @@
 
 # ALS — Agent Language Specification
 
+**Build a personal agent system that subtracts your attention.**
+
 A model harness engineering SDK — built for Claude.
 
 **Beta Research Preview**
@@ -14,21 +16,126 @@ Install from the stable marketplace, update with `/update`, and expect fix-forwa
 
 ---
 
-## What ALS Is
+## The Premise
 
-ALS is a model harness engineering SDK that bridges the interface between agent and operator. Built for the Claude platforms — Claude Code CLI, Claude Cowork, Claude Code Desktop, Claude Code Web — with a vision towards wearables and ambient computing.
+A personal agent system is not about adding agents. It is about subtracting your attention.
 
-We started building this long before "model harness engineering" existed as a term. Before open-source alternatives appeared. The problem was clear from the start: agent systems need a strict contract between the human operator and the agents working alongside them. Who owns which state? What does the operator see? What do agents handle autonomously? How does the system follow the operator across devices?
+Every step you do manually is a loop running in your head — receive input, decide, act, repeat. ALS lets you encode those loops as files and skills that an agent runs in your place. You graduate from doing the work, to watching the loop do the work, to letting it run while you go up a layer.
 
-ALS answers these questions with a filesystem-backed specification language:
+```
+   Before                              After
 
-- `module.ts` defines what valid records look like
-- the compiler validates module shapes, records, refs, and body structure
-- skill bundles define the intended process surface for working with that data
-- delamain bundles define autonomous agent pipelines with operator-owned and agent-owned states
-- the cyber-brain orchestrates what the operator sees and does next
+   ┌─────────────┐                    ┌─────────────┐
+   │    HUMAN    │                    │    HUMAN    │   ← you, up a layer
+   │  does work  │                    │ sets intent │
+   └─────────────┘                    └─────────────┘
+                                             │
+                                             ▼
+                                      ┌─────────────┐
+                                      │    LOOP     │   ← orchestrates
+                                      └─────────────┘
+                                             │
+                                             ▼
+                                      ┌─────────────┐
+                                      │    LOOP     │   ← does work
+                                      └─────────────┘
+                                             │
+                                             ▼
+                                          [output]
+```
 
-The goal: a strict boundary between structure and workflow, between operator attention and agent execution, across every device the operator touches.
+The unit is the loop:
+
+```
+   ┌──────────────────────────────────────────────────┐
+   │     loop   =   ( prompt )   +   ( agent runner ) │
+   └──────────────────────────────────────────────────┘
+```
+
+The prompt declares the work. The runner can be anything that runs the prompt — a Claude Code session, a headless dispatcher, a scheduled cron. Swap the runner; the loop still runs.
+
+The hard part is making those loops trustworthy enough to leave alone. LLMs are non-deterministic; the files they produce do not have to be, and the lifecycle they move through does not have to be either. ALS is the language for *that* — the contract that lets you ascend.
+
+## The Schema Is the Truth
+
+<div align="center">
+<img src="assets/mark-cuban-tweet.png" alt="Mark Cuban on judgement, challenge, and domain knowledge in AI" width="440" />
+<br/>
+<sub><i>Agreed. Judgement, challenge, and domain knowledge — encoded into every write.</i></sub>
+</div>
+
+ALS pushes determinism to the boundaries the model writes against — at every layer where work happens.
+
+### At the file layer
+
+Every record is validated against its `module.ts` shape: frontmatter fields, types, nullability, refs, and the body sections each record must contain. A Stop hook runs the gate after every Write or Edit. If the file is dirty, the agent gets a structured diagnostic and rewrites. It cannot claim done until the gate is green.
+
+```
+   ┌─────────┐    ┌──────┐    ┌────────────────┐    ┌─────────┐
+   │  Write  │───▶│ hook │───▶│  schema check  │───▶│ ✓ pass  │
+   └─────────┘    └──────┘    └────────────────┘    └─────────┘
+        ▲                              │
+        │                              │ ✗  + diagnostic
+        │                              ▼
+        └──────── agent rewrites ──────┘
+```
+
+You do not verify the output. The gate does.
+
+### At the loop layer
+
+A `delamain` is the same kind of contract — but for the *motion* of an item through its lifecycle. States are declared with `actor: operator | agent`. Transitions are declared with `class: advance | rework | exit`. The compiler enforces graph invariants: reachability from the initial state, terminal states only at the end, no self-loops, no orphans, every non-terminal state with a path to terminal.
+
+```
+   ┌─────────┐   ┌──────────┐   ┌─────────┐   ┌─────────┐   ┌─────────┐
+   │  draft  │──▶│ planning │──▶│   dev   │──▶│ review  │──▶│ merged  │
+   │ (oper.) │   │ (agent)  │   │ (agent) │   │ (oper.) │   │ (term.) │
+   └─────────┘   └──────────┘   └─────────┘   └─────────┘   └─────────┘
+```
+
+The loop runs on rails the same way the file does. Items cannot drift into illegal states. Agents cannot choose transitions that do not exist.
+
+### Graduation is a schema edit
+
+This is what makes the layering composable. Promoting a step from human-in-the-loop to autonomous is a single declaration change:
+
+```yaml
+states:
+  - name: planning
+    actor: operator   # before — operator owns this step
+    # actor: agent    # after  — graduated, agent owns this step
+    path: planning.md
+```
+
+The boundary between operator attention and agent execution is encoded, not improvised. The same compiler that validates files validates the path the work takes through them.
+
+## What's Inside
+
+ALS is a filesystem-backed specification language with a compiler and a small set of agent skills.
+
+```
+   ┌──────────────────────────────────────────────────────────┐
+   │                       cyber-brain                        │  ← orchestrates what
+   │                (operator's attention layer)              │    the operator sees
+   └──────────────────────────────────────────────────────────┘
+   ┌──────────────────────────┐  ┌────────────────────────────┐
+   │          skills          │  │      delamain bundles      │  ← process surface  +
+   │    (process surface)     │  │   (autonomous pipelines)   │    autonomous loops
+   └──────────────────────────┘  └────────────────────────────┘
+   ┌──────────────────────────────────────────────────────────┐
+   │                        module.ts                         │  ← what valid records
+   │                    (record shapes)                       │    look like
+   └──────────────────────────────────────────────────────────┘
+   ┌──────────────────────────────────────────────────────────┐
+   │                         compiler                         │  ← validates module
+   │                                                          │    shapes, records,
+   │                                                          │    refs, body, graphs
+   └──────────────────────────────────────────────────────────┘
+```
+
+A strict contract: structure separates from workflow, operator attention separates from agent execution, across every device the operator touches.
+
+ALS targets the Claude platforms today — Claude Code CLI, Cowork, Desktop, Web — with a vision toward wearables and ambient computing.
 
 ## What Works Today
 
@@ -167,6 +274,7 @@ my-system/
 
 ## Why ALS
 
+- **Attention is the scarce resource.** ALS is built around managing operator attention, not maximizing agent throughput. Every primitive — modules, skills, delamains, the cyber-brain — exists to help you graduate work upward and out of your head.
 - **Single session.** You only ever need one Claude session open. ALS systems run inside the session you already have.
 - **Online-ready.** This means Claude Code online and cowork will work when they support full Claude primitives. No local-only lock-in.
 - **Future-proof.** ALS builds on Claude's native surface — skills, tools, markdown. Any future Anthropic product will support it. You never have to worry about upgrading.
@@ -287,6 +395,16 @@ Use GitHub issues for:
 - research feedback on what ALS should optimize for next
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for the expected issue detail.
+
+---
+
+<div align="center">
+
+> *Wherever you sit, the loop can sit there too. Then you go up a layer.*
+
+</div>
+
+---
 
 ## License
 
