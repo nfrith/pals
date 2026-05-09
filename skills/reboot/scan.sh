@@ -15,7 +15,33 @@ fi
 
 echo "SYSTEM_ROOT: $sys_root"
 
-if [[ ! -d "$sys_root/.claude/delamains" ]]; then
+harness="${ALS_HARNESS:-${1:-}}"
+case "$harness" in
+    claude)
+        delamains_root="$sys_root/.claude/delamains"
+        ;;
+    codex)
+        delamains_root="$sys_root/.codex/delamains"
+        ;;
+    "")
+        if [[ -d "$sys_root/.codex/delamains" && ! -d "$sys_root/.claude/delamains" ]]; then
+            harness="codex"
+            delamains_root="$sys_root/.codex/delamains"
+        else
+            harness="claude"
+            delamains_root="$sys_root/.claude/delamains"
+        fi
+        ;;
+    *)
+        echo "UNKNOWN_HARNESS: $harness"
+        exit 0
+        ;;
+esac
+
+echo "HARNESS: $harness"
+echo "DELAMAINS_ROOT: $delamains_root"
+
+if [[ ! -d "$delamains_root" ]]; then
     echo "NO_DELAMAINS"
     exit 0
 fi
@@ -23,7 +49,7 @@ fi
 offline_names=()
 running_names=()
 
-for dy in "$sys_root"/.claude/delamains/*/delamain.yaml; do
+for dy in "$delamains_root"/*/delamain.yaml; do
     [[ -f "$dy" ]] || continue
     d_dir=$(dirname "$dy")
     d_name=$(basename "$d_dir")
