@@ -553,6 +553,7 @@ function buildProjectionPlans(
           error: dispatcherSource.error,
         };
       }
+      const projectedDelamainShape = projectDelamainShapeForHarness(loadedDelamain.shape, spec.target);
 
       delamainPlans.push({
         harness: spec.target,
@@ -571,9 +572,9 @@ function buildProjectionPlans(
         discriminator_field: binding.discriminator_field,
         discriminator_value: binding.discriminator_value,
         submodules: runtimeManifestConfig.config.submodules,
-        state_providers: collectStateProviders(loadedDelamain.shape),
+        state_providers: collectStateProviders(projectedDelamainShape),
         limits: runtimeManifestConfig.config.limits,
-        rendered_delamain_yaml: stringifyYaml(loadedDelamain.shape),
+        rendered_delamain_yaml: stringifyYaml(projectedDelamainShape),
       });
     }
   }
@@ -1084,6 +1085,32 @@ function writeDelamainRuntimeManifest(plan: HarnessDelamainProjectionWorkPlan): 
     resolve(plan.target_dir_abs, "runtime-manifest.json"),
     JSON.stringify(manifest, null, 2) + "\n",
   );
+}
+
+function projectDelamainShapeForHarness(delamain: DelamainShape, target: HarnessTarget): DelamainShape {
+  if (target !== "codex") {
+    return delamain;
+  }
+
+  return {
+    ...delamain,
+    states: Object.fromEntries(
+      Object.entries(delamain.states).map(([stateName, state]) => {
+        if (state.actor !== "agent") {
+          return [stateName, state];
+        }
+
+        const { "sub-agent": _subAgent, ...projectedState } = state;
+        return [
+          stateName,
+          {
+            ...projectedState,
+            provider: "openai",
+          },
+        ];
+      }),
+    ),
+  };
 }
 
 function collectStateProviders(delamain: DelamainShape): Record<string, DelamainAgentProvider> {

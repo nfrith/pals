@@ -279,6 +279,13 @@ test("deploy CLI projects Codex skills, guidance, and Delamain runtime", { timeo
     );
     expect(manifest).toContain("\"harness\": \"codex\"");
     expect(manifest).toContain("\"delamain_name\": \"development-pipeline\"");
+    expect(manifest).toContain("\"state_providers\"");
+    expect(manifest).toContain("\"openai\"");
+    expect(manifest).not.toContain("\"anthropic\"");
+    const delamainYaml = readFileSync(join(root, ".codex/delamains/development-pipeline/delamain.yaml"), "utf-8");
+    expect(delamainYaml).toContain("provider: openai");
+    expect(delamainYaml).not.toContain("provider: anthropic");
+    expect(delamainYaml).not.toContain("sub-agent:");
     expect(existsSync(join(root, ".claude/skills/factory-operate"))).toBe(false);
   });
 });
