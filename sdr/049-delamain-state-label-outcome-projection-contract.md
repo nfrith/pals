@@ -8,7 +8,7 @@ Proposed
 
 - The dashboard journey view currently renders raw Delamain state ids such as `research-gate` and `change-impact-input`, which are meaningful to the architect but not readable enough for a generic human-facing status surface.
 - The dashboard already consumes deployed `.claude/delamains/{name}/delamain.yaml` artifacts per SDR 029, so human-readable state meaning needs to arrive through the compiled artifact instead of through dashboard-local translation tables.
-- `terminal: true` currently collapses shipped and stopped end states into one bucket even though status consumers need to distinguish successful completion from stopped outcomes.
+- `terminal: true` currently collapses successful completion, intentional stop, and errored termination into one bucket even though status consumers need to distinguish those cases.
 - Pass-1 operator review rejected the earlier opt-in `audience` gate. The approved direction is one universal Delamain contract: every state gets a label and every terminal state gets an outcome.
 - Making those fields mandatory in v4 means existing v3-authored Delamains need bootstrap content. The operator deliberately chose a content-generating `v3 -> v4` recipe step as the first scoped exercise of the framework's auto-placeholder pattern because this dashboard-oriented surface is low-stakes enough to test the pattern before it is needed in a higher-stakes migration.
 - The current compiler projects authored Delamain shape verbatim into deployed `delamain.yaml`, so there is no existing projection seam for compiler-owned per-state consumer metadata.
@@ -16,13 +16,14 @@ Proposed
 ## Decision
 
 - Every Delamain state declares `label: string`.
-- Every terminal Delamain state declares `outcome: "success" | "stopped"`.
+- Every terminal Delamain state declares `outcome: "success" | "stopped" | "errored"`.
 - Non-terminal states do not declare `outcome`.
 - Delamain root definitions do not declare `audience`. Labels and terminal outcomes are universal rather than opt-in.
 - The compiler projects a derived `customer_bucket` onto every deployed Delamain state. Authors do not declare `customer_bucket` in `delamain.ts`.
 - `customer_bucket` is derived by rule:
   - terminal plus `outcome: "success"` => `closed_success`
   - terminal plus `outcome: "stopped"` => `closed_stopped`
+  - terminal plus `outcome: "errored"` => `closed_errored`
   - non-terminal `actor: "operator"` => `waiting_for_user`
   - non-terminal `actor: "agent"` => `active`
 - The deployed Delamain artifact preserves authored `label` and authored `outcome` and adds derived `customer_bucket` during projection.
@@ -36,7 +37,8 @@ Proposed
   - encountering a terminal state id outside that allowlist fails the recipe closed rather than guessing
 - The allowlist used by the v3 inventory bootstrap is:
   - `success`: `done`, `completed`, `concluded`, `processed`, `closed`
-  - `stopped`: `shelved`, `cancelled`, `deferred`, `failed`, `rolled-back`, `superseded`
+  - `stopped`: `shelved`, `cancelled`, `deferred`, `superseded`
+  - `errored`: `failed`, `rolled-back`
 - Re-running the recipe is idempotent.
 - Authored values that differ from the generated placeholder are preserved and do not produce migration warnings solely because they differ from the default.
 - New machine-readable diagnostic `reason` values for the steady-state compiler contract live under `delamain.state.label.*` and `delamain.state.outcome.*` in line with SDR 012.
@@ -44,11 +46,11 @@ Proposed
 ## Normative Effect
 
 - Required: every state declares a non-empty `label`.
-- Required: every terminal state declares `outcome: "success" | "stopped"`.
+- Required: every terminal state declares `outcome: "success" | "stopped" | "errored"`.
 - Required: non-terminal states do not declare `outcome`.
 - Required: authored Delamain source does not declare `customer_bucket`.
 - Required: the compiler emits `customer_bucket` on every deployed Delamain state.
-- Required: deployed `customer_bucket` values follow the four-rule derivation contract recorded in this SDR.
+- Required: deployed `customer_bucket` values follow the five-way derivation contract recorded in this SDR.
 - Required: the steady-state v4 language contract has no `audience` field and no opt-in label coverage mode.
 - Required: the `v3 -> v4` recipe inserts missing labels and terminal outcomes only where fields are absent.
 - Required: the `v3 -> v4` recipe preserves any existing authored label or outcome exactly as written.
@@ -64,12 +66,12 @@ Proposed
 
 ## Compiler Impact
 
-- Extend Delamain authored schema and types to require state `label` and terminal `outcome` and to reject any root `audience` field.
+- Extend Delamain authored schema and types to require state `label` and terminal `outcome: "success" | "stopped" | "errored"` and to reject any root `audience` field.
 - Extend Delamain semantic validation to enforce missing-label, missing-terminal-outcome, and non-terminal-outcome rejection.
 - Add stable machine-readable diagnostic `reason` values for the new state-label and state-outcome validation failures so automation does not parse message text.
 - Introduce a compiler-owned Delamain projection seam for deployed `delamain.yaml` so emitted state shape can include derived `customer_bucket` without making that field authorable.
 - Bump supported ALS versions to include v4 and add a `v3-to-v4` language-upgrade recipe that mutates `.als/` Delamain source by inserting placeholder labels and terminal outcomes.
-- Add positive and negative tests for valid v4 Delamains, missing labels, missing terminal outcomes, non-terminal outcome rejection, deployed projection shape, idempotent recipe rerun, partially pre-authored v3 input, preserved conflicting authored labels, and fail-closed unknown terminal-id mapping.
+- Add positive and negative tests for valid v4 Delamains, missing labels, missing terminal outcomes, non-terminal outcome rejection, deployed projection shape, `closed_errored` projection, idempotent recipe rerun, partially pre-authored v3 input, preserved conflicting authored labels, and fail-closed unknown terminal-id mapping.
 
 ## Docs and Fixture Impact
 
@@ -80,6 +82,7 @@ Proposed
   - v4 Delamain missing a non-terminal `label`
   - v4 terminal state missing `outcome`
   - v4 non-terminal state declaring `outcome`
+  - v4 terminal state with `outcome: "errored"` projecting `customer_bucket: closed_errored`
   - `v3 -> v4` recipe on fully unlabeled input
   - `v3 -> v4` recipe on partially pre-authored input
   - idempotent recipe rerun
@@ -105,7 +108,7 @@ Proposed
 - Rejected because it duplicates semantics already implied by `terminal`, `actor`, and terminal `outcome`, and it invites authored drift between bucket and state meaning.
 
 - Validate `label` and `outcome` in the compiler but keep bucket derivation in each consumer.
-- Rejected because every consumer would need to re-implement the same closed-vs-waiting-vs-active mapping, recreating drift across the producer/consumer boundary.
+- Rejected because every consumer would need to re-implement the same active-vs-waiting-vs-closed-success-vs-closed-stopped-vs-closed-errored mapping, recreating drift across the producer/consumer boundary.
 
 - Introduce a broader localization or multi-copy surface now.
 - Rejected because this job needs one human-readable label and one terminal outcome classifier per state, not locale selection, pluralization, or audience-variant copy.
