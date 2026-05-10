@@ -4,6 +4,7 @@ import { dirname, join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { deployClaudeSkills } from "../../compiler/src/claude-skills.ts";
+import { inspectLanguageUpgradeRecipe } from "../../compiler/src/language-upgrade-recipe.ts";
 import { TRANSIENT_RUNTIME_GITIGNORE_PATTERNS } from "../../shared/transient-runtime.ts";
 import type { LanguageUpgradeRecipe } from "../../compiler/src/types.ts";
 import type { PlannedLanguageUpgradeHop } from "../../upgrade-language/src/plan-chain.ts";
@@ -20,6 +21,7 @@ const alsRepoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../../..")
 const referenceSystemRoot = resolve(alsRepoRoot, "reference-system");
 const dispatcherCurrentBundleRoot = resolve(alsRepoRoot, "delamain-dispatcher");
 const dispatcherV11FixtureRoot = resolve(alsRepoRoot, "alsc/upgrade-construct/test/fixtures/dispatcher-v11");
+const v3ToV4RecipeRoot = resolve(alsRepoRoot, "language-upgrades/recipes/v3-to-v4");
 
 async function withSystemRepo(
   label: string,
@@ -333,6 +335,10 @@ test("runPreparedUpdateTransaction commits once, runs lifecycle after writeback,
     if (prepared.status !== "ready") {
       return;
     }
+    const expectedAppliedVersions = {
+      statusline: prepared.constructs.statusline.target_version,
+      dashboard: prepared.constructs.dashboard.target_version,
+    };
 
     let sawCommittedRuntimeState = false;
     const result = await runPreparedUpdateTransaction({
@@ -346,8 +352,8 @@ test("runPreparedUpdateTransaction commits once, runs lifecycle after writeback,
           const parsed = JSON.parse(raw) as {
             constructs: Record<string, { applied_version: number }>;
           };
-          sawCommittedRuntimeState = parsed.constructs.statusline.applied_version === 1
-            && parsed.constructs.dashboard.applied_version === 1;
+          sawCommittedRuntimeState = parsed.constructs.statusline.applied_version === expectedAppliedVersions.statusline
+            && parsed.constructs.dashboard.applied_version === expectedAppliedVersions.dashboard;
           return {
             success: true,
             completed_action_count: manifest.actions.length,
@@ -427,6 +433,111 @@ test("runPreparedUpdateTransaction completes after transient runtime hygiene che
         trackedTransientPaths[0]!,
       ]),
     ).toBe("");
+  });
+});
+
+test("runPreparedUpdateTransaction ignores stale live language checkpoints and commits the real v3-to-v4 hop", async () => {
+  await withSystemRepo("v3-to-v4-truth", async ({ repo_root }) => {
+    const languagePlan = createShippedLanguagePlan(v3ToV4RecipeRoot, 3, 4);
+    await writeFixtureFile(
+      repo_root,
+      ".als/runtime/language-upgrades/state.json",
+      JSON.stringify({
+        schema: "als-language-upgrade-runtime-state@1",
+        system_root: repo_root,
+        target_als_version: 3,
+        current_hop_index: 2,
+        hops: [],
+        satisfied_checks: [],
+        telemetry: [],
+        updated_at: "2026-05-10T00:00:00.000Z",
+      }, null, 2) + "\n",
+    );
+    git(repo_root, ["add", ".als/runtime/language-upgrades/state.json"]);
+    git(repo_root, ["commit", "--no-gpg-sign", "-m", "Seed stale language checkpoint"]);
+
+    const prepared = await prepareUpdateTransaction({
+      repo_root,
+      plugin_root: alsRepoRoot,
+      language_plan: languagePlan,
+    });
+    expect(prepared.status).toBe("ready");
+    if (prepared.status !== "ready") {
+      return;
+    }
+
+    const result = await runPreparedUpdateTransaction({
+      prepared,
+    });
+
+    expect(result.status).toBe("completed");
+    if (result.status !== "completed" || !result.commit_oid) {
+      return;
+    }
+
+    expect(result.language_phase?.checkpoint_mode).toBe("fresh");
+    expect(result.language_phase?.hops.map((hop) => hop.hop_id)).toEqual(["v3-to-v4"]);
+    expect(result.commit_message).toContain("Language hops: v3-to-v4");
+
+    const commitPaths = git(repo_root, ["show", "--pretty=", "--name-only", result.commit_oid])
+      .split("\n")
+      .filter((entry) => entry.length > 0);
+    expect(commitPaths).toContain(".als/system.ts");
+    expect(commitPaths).not.toContain(".als/runtime/language-upgrades/state.json");
+    expect(commitPaths.some((entry) => entry.startsWith(".als/modules/") && entry.endsWith("/delamain.ts"))).toBe(true);
+    expect(commitPaths.some((entry) => entry.startsWith(".claude/delamains/") && entry.endsWith("/delamain.yaml"))).toBe(true);
+    expect((await readFile(join(repo_root, ".als", "system.ts"), "utf-8"))).toContain("\"als_version\": 4");
+  });
+});
+
+test("runPreparedUpdateTransaction fails closed when language execute dirties only .als/runtime", async () => {
+  await withSystemRepo("runtime-only-language-diff", async ({ repo_root, root }) => {
+    const bundleRoot = join(root, "bundle");
+    await writeFixtureFile(
+      bundleRoot,
+      "scripts/runtime-only.sh",
+      "#!/usr/bin/env bash\nmkdir -p .als/runtime/language-upgrades\nprintf 'runtime-only\\n' > .als/runtime/language-upgrades/runtime-only.txt\n",
+    );
+    const languagePlan = createLanguagePlan(bundleRoot, [
+      {
+        id: "runtime-only",
+        title: "Write runtime-only language state",
+        type: "script",
+        category: "must-run",
+        depends_on: [],
+        preconditions: [],
+        postconditions: [],
+        trigger: "auto",
+        path: "scripts/runtime-only.sh",
+        args: [],
+      },
+    ]);
+
+    const prepared = await prepareUpdateTransaction({
+      repo_root,
+      plugin_root: alsRepoRoot,
+      language_plan: languagePlan,
+    });
+    expect(prepared.status).toBe("ready");
+    if (prepared.status !== "ready") {
+      return;
+    }
+
+    const result = await runPreparedUpdateTransaction({
+      prepared,
+    });
+
+    expect(result.status).toBe("failed");
+    if (result.status !== "failed") {
+      return;
+    }
+
+    expect(result.failure_surface).toBe("validation-deploy-failed");
+    expect(result.diagnostic).toContain("non-runtime .als/ mutations");
+    expect(result.commit_oid).toBeNull();
+    expect(result.staging_worktree_path).not.toBeNull();
+    expect(await pathExists(result.staging_worktree_path!)).toBe(true);
+    expect(git(repo_root, ["rev-list", "--count", "HEAD"])).toBe("1");
   });
 });
 
@@ -537,6 +648,28 @@ function createLanguagePlan(
       recipe_path: join(bundleRoot, "recipe.yaml"),
       bundle_root: bundleRoot,
     } satisfies PlannedLanguageUpgradeHop],
+  };
+}
+
+function createShippedLanguagePlan(
+  recipeRoot: string,
+  currentAlsVersion: number,
+  targetAlsVersion: number,
+): UpdateTransactionLanguagePlan {
+  const inspection = inspectLanguageUpgradeRecipe(recipeRoot);
+  if (inspection.status !== "pass" || !inspection.recipe) {
+    throw new Error(`Could not inspect shipped language recipe at '${recipeRoot}'.`);
+  }
+
+  return {
+    current_als_version: currentAlsVersion,
+    target_als_version: targetAlsVersion,
+    hops: [{
+      hop_id: `v${currentAlsVersion}-to-v${targetAlsVersion}`,
+      recipe: inspection.recipe,
+      recipe_path: inspection.recipe_path,
+      bundle_root: inspection.bundle_root,
+    }],
   };
 }
 

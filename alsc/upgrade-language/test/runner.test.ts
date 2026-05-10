@@ -13,7 +13,11 @@ import type { LanguageUpgradeRecipe } from "../../compiler/src/types.ts";
 import { buildHopId, planLanguageUpgradeChain, type PlannedLanguageUpgradeHop } from "../src/plan-chain.ts";
 import { preflightLanguageUpgradeChain } from "../src/preflight.ts";
 import { executeLanguageUpgradeChain } from "../src/runner.ts";
-import { readLanguageUpgradeRuntimeState } from "../src/runtime-state.ts";
+import {
+  createLanguageUpgradeRuntimeState,
+  LANGUAGE_UPGRADE_RUNTIME_STATE_SCHEMA,
+  readLanguageUpgradeRuntimeState,
+} from "../src/runtime-state.ts";
 import { verifyLanguageUpgradeRecipe } from "../src/verify.ts";
 
 const alsRepoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
@@ -202,6 +206,7 @@ test("preflight surfaces operator prompts and execute consumes answers silently"
     });
     expect(missingAnswer.status).toBe("failed");
     expect(missingAnswer.error_code).toBe("operator_response_missing");
+    expect(missingAnswer.phase.checkpoint_mode).toBe("fresh");
     expect((await readFile(join(system_root, ".als", "version.txt"), "utf-8")).trim()).toBe("2");
 
     const persisted = await readLanguageUpgradeRuntimeState(state_path);
@@ -220,7 +225,129 @@ test("preflight surfaces operator prompts and execute consumes answers silently"
       },
     });
     expect(resumedRun.status).toBe("completed");
+    expect(resumedRun.phase.checkpoint_mode).toBe("resumed");
     expect(resumedRun.state.hops[0]?.steps.map((step) => step.status)).toEqual(["completed", "completed"]);
+  });
+});
+
+test("runner fails closed on a stale checkpoint fingerprint from an unrelated hop chain", async () => {
+  await withUpgradeHarness("checkpoint-mismatch", {
+    bundle_files: {
+      "scripts/rewrite.sh": "#!/usr/bin/env bash\nprintf '2\\n' > .als/version.txt\n",
+    },
+  }, async ({ bundle_root, state_path, system_root }) => {
+    const recipe = createRecipe([
+      {
+        id: "rewrite",
+        title: "Rewrite ALS version marker",
+        type: "script",
+        category: "must-run",
+        depends_on: [],
+        preconditions: [],
+        postconditions: [],
+        trigger: "auto",
+        path: "scripts/rewrite.sh",
+        args: [],
+      },
+    ]);
+    const hop = createHop(bundle_root, recipe);
+
+    await writeFile(state_path, JSON.stringify({
+      schema: "als-language-upgrade-runtime-state@1",
+      system_root,
+      target_als_version: 3,
+      current_hop_index: 2,
+      hops: [{
+        hop_id: "v1-to-v3",
+        recipe_path: join(bundle_root, "recipe.yaml"),
+        bundle_root,
+        from_als_version: 1,
+        to_als_version: 3,
+        summary: "Stale checkpoint from an older run.",
+        status: "completed",
+        steps: [{
+          step_id: "rewrite",
+          type: "script",
+          category: "must-run",
+          status: "completed",
+          attempt_count: 1,
+          started_at: "2026-05-10T00:00:00.000Z",
+          completed_at: "2026-05-10T00:00:01.000Z",
+          error_code: null,
+          diagnostic: null,
+          provided_checks: [],
+          skipped_reason: null,
+          operator_response: null,
+        }],
+      }],
+      satisfied_checks: [],
+      telemetry: [],
+      updated_at: "2026-05-10T00:00:01.000Z",
+    }, null, 2) + "\n", "utf-8");
+
+    const result = await executeLanguageUpgradeChain({
+      system_root,
+      hops: [hop],
+      target_als_version: 2,
+      services: createInspectableServices(),
+      options: {
+        state_path,
+      },
+    });
+
+    expect(result.status).toBe("failed");
+    expect(result.error_code).toBe("checkpoint-mismatch");
+    expect(result.phase.checkpoint_mode).toBe("mismatch");
+    expect(result.checkpoint_mismatch?.reasons.length).toBeGreaterThan(0);
+    expect((await readFile(join(system_root, ".als", "version.txt"), "utf-8")).trim()).toBe("1");
+  });
+});
+
+test("runner fails closed when a matching checkpoint overruns the requested hop chain", async () => {
+  await withUpgradeHarness("checkpoint-invalid", {
+    bundle_files: {
+      "scripts/rewrite.sh": "#!/usr/bin/env bash\nprintf '2\\n' > .als/version.txt\n",
+    },
+  }, async ({ bundle_root, state_path, system_root }) => {
+    const recipe = createRecipe([
+      {
+        id: "rewrite",
+        title: "Rewrite ALS version marker",
+        type: "script",
+        category: "must-run",
+        depends_on: [],
+        preconditions: [],
+        postconditions: [],
+        trigger: "auto",
+        path: "scripts/rewrite.sh",
+        args: [],
+      },
+    ]);
+    const hop = createHop(bundle_root, recipe);
+    const state = createLanguageUpgradeRuntimeState({
+      system_root,
+      target_als_version: 2,
+      hops: [hop],
+      run_owner: "upgrade-language",
+    });
+    state.schema = LANGUAGE_UPGRADE_RUNTIME_STATE_SCHEMA;
+    state.current_hop_index = 2;
+    await writeFile(state_path, JSON.stringify(state, null, 2) + "\n", "utf-8");
+
+    const result = await executeLanguageUpgradeChain({
+      system_root,
+      hops: [hop],
+      target_als_version: 2,
+      services: createInspectableServices(),
+      options: {
+        state_path,
+      },
+    });
+
+    expect(result.status).toBe("failed");
+    expect(result.error_code).toBe("checkpoint-invalid");
+    expect(result.phase.checkpoint_mode).toBe("invalid");
+    expect((await readFile(join(system_root, ".als", "version.txt"), "utf-8")).trim()).toBe("1");
   });
 });
 

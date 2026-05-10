@@ -8,7 +8,21 @@ import type {
 import type { LanguageUpgradeTelemetryEvent } from "./telemetry.ts";
 import type { PlannedLanguageUpgradeHop } from "./plan-chain.ts";
 
-export const LANGUAGE_UPGRADE_RUNTIME_STATE_SCHEMA = "als-language-upgrade-runtime-state@1";
+export const LEGACY_LANGUAGE_UPGRADE_RUNTIME_STATE_SCHEMA = "als-language-upgrade-runtime-state@1";
+export const LANGUAGE_UPGRADE_RUNTIME_STATE_SCHEMA = "als-language-upgrade-runtime-state@2";
+
+export interface LanguageUpgradeCheckpointFingerprintHop {
+  hop_id: string;
+  from_als_version: number;
+  to_als_version: number;
+  recipe_identity: string;
+}
+
+export interface LanguageUpgradeCheckpointFingerprint {
+  target_als_version: number;
+  run_owner: string;
+  hops: LanguageUpgradeCheckpointFingerprintHop[];
+}
 
 export type LanguageUpgradeRuntimeHopStatus =
   | "pending"
@@ -37,6 +51,7 @@ export interface LanguageUpgradeRuntimeStepRecord {
   provided_checks: LanguageUpgradeCheckName[];
   skipped_reason: string | null;
   operator_response: string | null;
+  mutated_paths: string[];
 }
 
 export interface LanguageUpgradeRuntimeHopRecord {
@@ -53,6 +68,7 @@ export interface LanguageUpgradeRuntimeHopRecord {
 export interface LanguageUpgradeRuntimeState {
   schema: typeof LANGUAGE_UPGRADE_RUNTIME_STATE_SCHEMA;
   system_root: string;
+  checkpoint_fingerprint: LanguageUpgradeCheckpointFingerprint | null;
   target_als_version: number;
   current_hop_index: number;
   hops: LanguageUpgradeRuntimeHopRecord[];
@@ -69,10 +85,16 @@ export function createLanguageUpgradeRuntimeState(input: {
   system_root: string;
   target_als_version: number;
   hops: PlannedLanguageUpgradeHop[];
+  run_owner: string;
 }): LanguageUpgradeRuntimeState {
   return {
     schema: LANGUAGE_UPGRADE_RUNTIME_STATE_SCHEMA,
     system_root: resolve(input.system_root),
+    checkpoint_fingerprint: createLanguageUpgradeCheckpointFingerprint({
+      target_als_version: input.target_als_version,
+      hops: input.hops,
+      run_owner: input.run_owner,
+    }),
     target_als_version: input.target_als_version,
     current_hop_index: 0,
     hops: input.hops.map((hop) => ({
@@ -96,11 +118,29 @@ export function createLanguageUpgradeRuntimeState(input: {
         provided_checks: [],
         skipped_reason: null,
         operator_response: null,
+        mutated_paths: [],
       })),
     })),
     satisfied_checks: [],
     telemetry: [],
     updated_at: new Date().toISOString(),
+  };
+}
+
+export function createLanguageUpgradeCheckpointFingerprint(input: {
+  target_als_version: number;
+  hops: PlannedLanguageUpgradeHop[];
+  run_owner: string;
+}): LanguageUpgradeCheckpointFingerprint {
+  return {
+    target_als_version: input.target_als_version,
+    run_owner: input.run_owner,
+    hops: input.hops.map((hop) => ({
+      hop_id: hop.hop_id,
+      from_als_version: hop.recipe.from.als_version,
+      to_als_version: hop.recipe.to.als_version,
+      recipe_identity: resolve(hop.recipe_path),
+    })),
   };
 }
 
@@ -117,8 +157,13 @@ export async function readLanguageUpgradeRuntimeState(
     throw error;
   }
 
-  const parsed = JSON.parse(raw) as Partial<LanguageUpgradeRuntimeState>;
-  if (parsed.schema !== LANGUAGE_UPGRADE_RUNTIME_STATE_SCHEMA) {
+  const parsed = JSON.parse(raw) as {
+    schema?: string;
+  } & Partial<LanguageUpgradeRuntimeState>;
+  if (
+    parsed.schema !== LANGUAGE_UPGRADE_RUNTIME_STATE_SCHEMA
+    && parsed.schema !== LEGACY_LANGUAGE_UPGRADE_RUNTIME_STATE_SCHEMA
+  ) {
     throw new Error(
       `Unsupported language upgrade runtime state schema '${parsed.schema ?? "<missing>"}'.`,
     );
@@ -144,11 +189,14 @@ export async function writeLanguageUpgradeRuntimeState(
 }
 
 function normalizeLanguageUpgradeRuntimeState(
-  input: Partial<LanguageUpgradeRuntimeState>,
+  input: {
+    schema?: string;
+  } & Partial<LanguageUpgradeRuntimeState>,
 ): LanguageUpgradeRuntimeState {
   return {
     schema: LANGUAGE_UPGRADE_RUNTIME_STATE_SCHEMA,
-    system_root: typeof input.system_root === "string" ? input.system_root : process.cwd(),
+    system_root: typeof input.system_root === "string" ? resolve(input.system_root) : process.cwd(),
+    checkpoint_fingerprint: normalizeCheckpointFingerprint(input.checkpoint_fingerprint),
     target_als_version: typeof input.target_als_version === "number" ? input.target_als_version : 0,
     current_hop_index: typeof input.current_hop_index === "number" ? input.current_hop_index : 0,
     hops: Array.isArray(input.hops) ? input.hops.map(normalizeHopRecord) : [],
@@ -193,6 +241,36 @@ function normalizeStepRecord(input: unknown): LanguageUpgradeRuntimeStepRecord {
       : [],
     skipped_reason: typeof value.skipped_reason === "string" ? value.skipped_reason : null,
     operator_response: typeof value.operator_response === "string" ? value.operator_response : null,
+    mutated_paths: Array.isArray(value.mutated_paths)
+      ? value.mutated_paths.filter((entry): entry is string => typeof entry === "string")
+      : [],
+  };
+}
+
+function normalizeCheckpointFingerprint(input: unknown): LanguageUpgradeCheckpointFingerprint | null {
+  if (!input || typeof input !== "object") {
+    return null;
+  }
+
+  const value = input as Partial<LanguageUpgradeCheckpointFingerprint>;
+  return {
+    target_als_version: typeof value.target_als_version === "number" ? value.target_als_version : 0,
+    run_owner: typeof value.run_owner === "string" ? value.run_owner : "",
+    hops: Array.isArray(value.hops)
+      ? value.hops.map(normalizeCheckpointFingerprintHop)
+      : [],
+  };
+}
+
+function normalizeCheckpointFingerprintHop(input: unknown): LanguageUpgradeCheckpointFingerprintHop {
+  const value = input && typeof input === "object"
+    ? input as Partial<LanguageUpgradeCheckpointFingerprintHop>
+    : {};
+  return {
+    hop_id: typeof value.hop_id === "string" ? value.hop_id : "unknown-hop",
+    from_als_version: typeof value.from_als_version === "number" ? value.from_als_version : 0,
+    to_als_version: typeof value.to_als_version === "number" ? value.to_als_version : 0,
+    recipe_identity: typeof value.recipe_identity === "string" ? value.recipe_identity : "",
   };
 }
 

@@ -15,15 +15,56 @@ import { runLanguageUpgradeCheck, type LanguageUpgradeSystemInspection } from ".
 import type { PlannedLanguageUpgradeHop } from "./plan-chain.ts";
 import type { LanguageUpgradeSelectionOptions } from "./preflight.ts";
 import {
+  createLanguageUpgradeCheckpointFingerprint,
   createLanguageUpgradeRuntimeState,
   readLanguageUpgradeRuntimeState,
   resolveLanguageUpgradeRuntimeStatePath,
+  type LanguageUpgradeCheckpointFingerprint,
   type LanguageUpgradeRuntimeHopRecord,
   type LanguageUpgradeRuntimeState,
   type LanguageUpgradeRuntimeStepRecord,
   writeLanguageUpgradeRuntimeState,
 } from "./runtime-state.ts";
 import { createTelemetryEvent } from "./telemetry.ts";
+
+const DEFAULT_LANGUAGE_UPGRADE_RUN_OWNER = "upgrade-language";
+
+export type LanguageUpgradeCheckpointMode = "fresh" | "resumed" | "mismatch" | "invalid";
+
+export interface LanguageUpgradePhaseStepTrace {
+  step_id: string;
+  type: LanguageUpgradeRecipeStep["type"];
+  category: LanguageUpgradeRecipeStep["category"];
+  status: LanguageUpgradeRuntimeStepRecord["status"];
+  skipped_reason: string | null;
+  error_code: string | null;
+  diagnostic: string | null;
+  mutated_paths: string[];
+}
+
+export interface LanguageUpgradePhaseHopTrace {
+  hop_id: string;
+  status: "pending" | "applied" | "failed" | "skipped";
+  from_als_version: number;
+  to_als_version: number;
+  mutated_paths: string[];
+  steps: LanguageUpgradePhaseStepTrace[];
+}
+
+export interface LanguageUpgradePhaseTrace {
+  status: "completed" | "failed";
+  checkpoint_mode: LanguageUpgradeCheckpointMode;
+  target_als_version: number;
+  hops: LanguageUpgradePhaseHopTrace[];
+}
+
+export interface LanguageUpgradeCheckpointMismatch {
+  expected_system_root: string;
+  actual_system_root: string | null;
+  expected_fingerprint: LanguageUpgradeCheckpointFingerprint;
+  actual_fingerprint: LanguageUpgradeCheckpointFingerprint | null;
+  reasons: string[];
+}
 
 export interface LanguageUpgradeExecutionResult {
   success: boolean;
@@ -52,13 +93,16 @@ export interface LanguageUpgradeRunnerServices {
 export interface LanguageUpgradeExecuteOptions extends LanguageUpgradeSelectionOptions {
   state_path?: string;
   operator_responses?: Record<string, string>;
+  run_owner?: string;
 }
 
 export interface LanguageUpgradeExecuteResult {
   status: "completed" | "failed";
   state: LanguageUpgradeRuntimeState;
+  phase: LanguageUpgradePhaseTrace;
   error_code: string | null;
   diagnostic: string | null;
+  checkpoint_mismatch: LanguageUpgradeCheckpointMismatch | null;
 }
 
 export interface LanguageUpgradeStepExecutionInput<TStep extends LanguageUpgradeRecipeStep> {
@@ -71,8 +115,9 @@ export interface LanguageUpgradeStepExecutionInput<TStep extends LanguageUpgrade
 interface RunnerContext {
   hops: PlannedLanguageUpgradeHop[];
   services: Required<LanguageUpgradeRunnerServices>;
-  options: Required<Omit<LanguageUpgradeExecuteOptions, "state_path">>;
+  options: Required<Omit<LanguageUpgradeExecuteOptions, "state_path" | "run_owner">>;
   state_path: string;
+  checkpoint_mode: Exclude<LanguageUpgradeCheckpointMode, "mismatch" | "invalid">;
   inspection_cache: LanguageUpgradeSystemInspection | null;
 }
 
@@ -86,13 +131,47 @@ export async function executeLanguageUpgradeChain(input: {
   validateSupportedRecipeSchemas(input.hops);
   validateExecutablePromptContract(input.hops);
 
-  const statePath = input.options?.state_path ?? resolveLanguageUpgradeRuntimeStatePath(input.system_root);
-  const existingState = await readLanguageUpgradeRuntimeState(statePath);
-  const state = existingState ?? createLanguageUpgradeRuntimeState({
-    system_root: input.system_root,
+  const systemRoot = resolve(input.system_root);
+  const runOwner = input.options?.run_owner ?? DEFAULT_LANGUAGE_UPGRADE_RUN_OWNER;
+  const statePath = input.options?.state_path ?? resolveLanguageUpgradeRuntimeStatePath(systemRoot);
+  const expectedFingerprint = createLanguageUpgradeCheckpointFingerprint({
     target_als_version: input.target_als_version,
     hops: input.hops,
+    run_owner: runOwner,
   });
+  const existingState = await readLanguageUpgradeRuntimeState(statePath);
+  if (existingState) {
+    const checkpointValidation = validateCheckpointState(existingState, {
+      system_root: systemRoot,
+      hops: input.hops,
+      expected_fingerprint: expectedFingerprint,
+    });
+    if (!checkpointValidation.ok) {
+      return {
+        status: "failed",
+        state: existingState,
+        phase: buildLanguagePhaseTrace(
+          existingState,
+          input.target_als_version,
+          "failed",
+          checkpointValidation.checkpoint_mode,
+        ),
+        error_code: checkpointValidation.error_code,
+        diagnostic: checkpointValidation.diagnostic,
+        checkpoint_mismatch: checkpointValidation.checkpoint_mismatch,
+      };
+    }
+  }
+
+  const state = existingState ?? createLanguageUpgradeRuntimeState({
+    system_root: systemRoot,
+    target_als_version: input.target_als_version,
+    hops: input.hops,
+    run_owner: runOwner,
+  });
+  state.system_root = systemRoot;
+  state.target_als_version = input.target_als_version;
+  state.checkpoint_fingerprint = expectedFingerprint;
 
   const context: RunnerContext = {
     hops: input.hops,
@@ -103,6 +182,7 @@ export async function executeLanguageUpgradeChain(input: {
       operator_responses: { ...(input.options?.operator_responses ?? {}) },
     },
     state_path: statePath,
+    checkpoint_mode: existingState ? "resumed" : "fresh",
     inspection_cache: null,
   };
 
@@ -169,23 +249,254 @@ export async function executeLanguageUpgradeChain(input: {
       if (!progress) {
         hopState.status = "failed";
         await checkpoint(state, context.state_path);
-      return {
-        status: "failed",
-        state,
-        error_code: "execution_blocked",
-        diagnostic: `No executable step remained in ${hopState.hop_id}. Check dependency wiring and optional-step policy.`,
-      };
+        return buildExecuteResult({
+          status: "failed",
+          state,
+          target_als_version: input.target_als_version,
+          checkpoint_mode: context.checkpoint_mode,
+          error_code: "execution_blocked",
+          diagnostic: `No executable step remained in ${hopState.hop_id}. Check dependency wiring and optional-step policy.`,
+          checkpoint_mismatch: null,
+        });
       }
     }
   }
 
   await checkpoint(state, context.state_path);
-  return {
+  return buildExecuteResult({
     status: "completed",
     state,
+    target_als_version: input.target_als_version,
+    checkpoint_mode: context.checkpoint_mode,
     error_code: null,
     diagnostic: null,
+    checkpoint_mismatch: null,
+  });
+}
+
+function buildExecuteResult(input: {
+  status: "completed" | "failed";
+  state: LanguageUpgradeRuntimeState;
+  target_als_version: number;
+  checkpoint_mode: LanguageUpgradeCheckpointMode;
+  error_code: string | null;
+  diagnostic: string | null;
+  checkpoint_mismatch: LanguageUpgradeCheckpointMismatch | null;
+}): LanguageUpgradeExecuteResult {
+  return {
+    status: input.status,
+    state: input.state,
+    phase: buildLanguagePhaseTrace(
+      input.state,
+      input.target_als_version,
+      input.status,
+      input.checkpoint_mode,
+    ),
+    error_code: input.error_code,
+    diagnostic: input.diagnostic,
+    checkpoint_mismatch: input.checkpoint_mismatch,
   };
+}
+
+function buildLanguagePhaseTrace(
+  state: LanguageUpgradeRuntimeState,
+  targetAlsVersion: number,
+  status: "completed" | "failed",
+  checkpointMode: LanguageUpgradeCheckpointMode,
+): LanguageUpgradePhaseTrace {
+  return {
+    status,
+    checkpoint_mode: checkpointMode,
+    target_als_version: targetAlsVersion,
+    hops: state.hops.map((hop) => {
+      const steps = hop.steps.map((step) => ({
+        step_id: step.step_id,
+        type: step.type,
+        category: step.category,
+        status: step.status,
+        skipped_reason: step.skipped_reason,
+        error_code: step.error_code,
+        diagnostic: step.diagnostic,
+        mutated_paths: [...step.mutated_paths],
+      }));
+      return {
+        hop_id: hop.hop_id,
+        status: deriveHopTraceStatus(hop),
+        from_als_version: hop.from_als_version,
+        to_als_version: hop.to_als_version,
+        mutated_paths: uniqueStrings(steps.flatMap((step) => step.mutated_paths)),
+        steps,
+      };
+    }),
+  };
+}
+
+function deriveHopTraceStatus(
+  hop: LanguageUpgradeRuntimeHopRecord,
+): LanguageUpgradePhaseHopTrace["status"] {
+  if (hop.status === "failed") {
+    return "failed";
+  }
+
+  const normalSteps = hop.steps.filter((step) => step.category !== "recovery");
+  if (
+    hop.status === "completed"
+    && normalSteps.length > 0
+    && normalSteps.every((step) => step.status === "skipped")
+  ) {
+    return "skipped";
+  }
+
+  if (hop.status === "completed") {
+    return "applied";
+  }
+
+  return "pending";
+}
+
+function validateCheckpointState(
+  state: LanguageUpgradeRuntimeState,
+  input: {
+    system_root: string;
+    hops: PlannedLanguageUpgradeHop[];
+    expected_fingerprint: LanguageUpgradeCheckpointFingerprint;
+  },
+):
+  | { ok: true }
+  | {
+    ok: false;
+    checkpoint_mode: "mismatch" | "invalid";
+    error_code: "checkpoint-mismatch" | "checkpoint-invalid";
+    diagnostic: string;
+    checkpoint_mismatch: LanguageUpgradeCheckpointMismatch | null;
+  } {
+  const mismatchReasons: string[] = [];
+  if (state.system_root !== input.system_root) {
+    mismatchReasons.push(
+      `state system root '${state.system_root}' does not match requested system root '${input.system_root}'`,
+    );
+  }
+
+  const actualFingerprint = state.checkpoint_fingerprint;
+  if (!actualFingerprint) {
+    mismatchReasons.push("checkpoint fingerprint is missing");
+  } else {
+    if (actualFingerprint.target_als_version !== input.expected_fingerprint.target_als_version) {
+      mismatchReasons.push(
+        `checkpoint target ALS version ${actualFingerprint.target_als_version} does not match requested ${input.expected_fingerprint.target_als_version}`,
+      );
+    }
+    if (actualFingerprint.run_owner !== input.expected_fingerprint.run_owner) {
+      mismatchReasons.push(
+        `checkpoint run owner '${actualFingerprint.run_owner}' does not match requested '${input.expected_fingerprint.run_owner}'`,
+      );
+    }
+    if (actualFingerprint.hops.length !== input.expected_fingerprint.hops.length) {
+      mismatchReasons.push(
+        `checkpoint hop count ${actualFingerprint.hops.length} does not match requested ${input.expected_fingerprint.hops.length}`,
+      );
+    } else {
+      for (let index = 0; index < actualFingerprint.hops.length; index += 1) {
+        const actualHop = actualFingerprint.hops[index]!;
+        const expectedHop = input.expected_fingerprint.hops[index]!;
+        if (actualHop.hop_id !== expectedHop.hop_id) {
+          mismatchReasons.push(
+            `checkpoint hop ${index} id '${actualHop.hop_id}' does not match requested '${expectedHop.hop_id}'`,
+          );
+        }
+        if (actualHop.from_als_version !== expectedHop.from_als_version) {
+          mismatchReasons.push(
+            `checkpoint hop ${actualHop.hop_id} from-version ${actualHop.from_als_version} does not match requested ${expectedHop.from_als_version}`,
+          );
+        }
+        if (actualHop.to_als_version !== expectedHop.to_als_version) {
+          mismatchReasons.push(
+            `checkpoint hop ${actualHop.hop_id} to-version ${actualHop.to_als_version} does not match requested ${expectedHop.to_als_version}`,
+          );
+        }
+        if (actualHop.recipe_identity !== expectedHop.recipe_identity) {
+          mismatchReasons.push(
+            `checkpoint hop ${actualHop.hop_id} recipe identity '${actualHop.recipe_identity}' does not match requested '${expectedHop.recipe_identity}'`,
+          );
+        }
+      }
+    }
+  }
+
+  if (mismatchReasons.length > 0) {
+    return {
+      ok: false,
+      checkpoint_mode: "mismatch",
+      error_code: "checkpoint-mismatch",
+      diagnostic: `Checkpoint fingerprint does not match requested target ALS version or hop chain: ${mismatchReasons.join("; ")}.`,
+      checkpoint_mismatch: {
+        expected_system_root: input.system_root,
+        actual_system_root: state.system_root,
+        expected_fingerprint: input.expected_fingerprint,
+        actual_fingerprint: actualFingerprint,
+        reasons: mismatchReasons,
+      },
+    };
+  }
+
+  if (!Number.isInteger(state.current_hop_index) || state.current_hop_index < 0 || state.current_hop_index > state.hops.length) {
+    return {
+      ok: false,
+      checkpoint_mode: "invalid",
+      error_code: "checkpoint-invalid",
+      diagnostic: `Checkpoint current_hop_index ${state.current_hop_index} is outside the valid range 0..${state.hops.length}.`,
+      checkpoint_mismatch: null,
+    };
+  }
+
+  if (state.hops.length !== input.hops.length) {
+    return {
+      ok: false,
+      checkpoint_mode: "invalid",
+      error_code: "checkpoint-invalid",
+      diagnostic: `Checkpoint hop record count ${state.hops.length} does not match requested ${input.hops.length}.`,
+      checkpoint_mismatch: null,
+    };
+  }
+
+  for (let hopIndex = 0; hopIndex < input.hops.length; hopIndex += 1) {
+    const hopPlan = input.hops[hopIndex]!;
+    const hopState = state.hops[hopIndex];
+    if (!hopState) {
+      return {
+        ok: false,
+        checkpoint_mode: "invalid",
+        error_code: "checkpoint-invalid",
+        diagnostic: `Checkpoint is missing runtime state for hop '${hopPlan.hop_id}'.`,
+        checkpoint_mismatch: null,
+      };
+    }
+
+    const expectedStepIds = hopPlan.recipe.steps.map((step) => step.id);
+    const actualStepIds = hopState.steps.map((step) => step.step_id);
+    if (expectedStepIds.length !== actualStepIds.length) {
+      return {
+        ok: false,
+        checkpoint_mode: "invalid",
+        error_code: "checkpoint-invalid",
+        diagnostic: `Checkpoint step count for hop '${hopPlan.hop_id}' does not match the requested recipe.`,
+        checkpoint_mismatch: null,
+      };
+    }
+    for (let stepIndex = 0; stepIndex < expectedStepIds.length; stepIndex += 1) {
+      if (expectedStepIds[stepIndex] !== actualStepIds[stepIndex]) {
+        return {
+          ok: false,
+          checkpoint_mode: "invalid",
+          error_code: "checkpoint-invalid",
+          diagnostic: `Checkpoint step order for hop '${hopPlan.hop_id}' does not match the requested recipe.`,
+          checkpoint_mismatch: null,
+        };
+      }
+    }
+  }
+
+  return { ok: true };
 }
 
 function validateSupportedRecipeSchemas(hops: PlannedLanguageUpgradeHop[]): void {
@@ -217,6 +528,7 @@ async function executeStep(
   stepRecord.error_code = null;
   stepRecord.diagnostic = null;
   stepRecord.skipped_reason = null;
+  stepRecord.mutated_paths = [];
   appendTelemetry(state, createTelemetryEvent("step_started", {
     hop_id: hopState.hop_id,
     step_id: step.id,
@@ -274,6 +586,7 @@ async function executeStep(
         diagnostic: boundary.diagnostic,
       });
     }
+    stepRecord.mutated_paths = boundary.mutated_paths;
     state.satisfied_checks = [];
     context.inspection_cache = null;
   }
@@ -352,10 +665,15 @@ async function handleFailedStep(
     return {
       status: "failed",
       result: {
-        status: "failed",
-        state,
-        error_code: stepRecord.error_code,
-        diagnostic: stepRecord.diagnostic,
+        ...buildExecuteResult({
+          status: "failed",
+          state,
+          target_als_version: state.target_als_version,
+          checkpoint_mode: context.checkpoint_mode,
+          error_code: stepRecord.error_code,
+          diagnostic: stepRecord.diagnostic,
+          checkpoint_mismatch: null,
+        }),
       },
     };
   }
@@ -374,10 +692,15 @@ async function handleFailedStep(
       return {
         status: "failed",
         result: {
-          status: "failed",
-          state,
-          error_code: "recovery_blocked",
-          diagnostic: `Recovery step '${recoveryStep.id}' is not dependency-ready.`,
+          ...buildExecuteResult({
+            status: "failed",
+            state,
+            target_als_version: state.target_als_version,
+            checkpoint_mode: context.checkpoint_mode,
+            error_code: "recovery_blocked",
+            diagnostic: `Recovery step '${recoveryStep.id}' is not dependency-ready.`,
+            checkpoint_mismatch: null,
+          }),
         },
       };
     }
@@ -549,12 +872,18 @@ async function enforceDotAlsMutationBoundary(
   systemRoot: string,
   beforePaths: Set<string>,
   services: Required<LanguageUpgradeRunnerServices>,
-): Promise<{ ok: true } | { ok: false; diagnostic: string }> {
-  const afterPaths = await services.list_mutated_paths(systemRoot);
+) : Promise<
+  | { ok: true; mutated_paths: string[] }
+  | { ok: false; diagnostic: string }
+> {
+  const afterPaths = uniqueStrings(await services.list_mutated_paths(systemRoot));
   const newPaths = afterPaths.filter((entry) => !beforePaths.has(entry));
   const invalidPath = newPaths.find((entry) => entry !== ".als" && !entry.startsWith(".als/"));
   if (!invalidPath) {
-    return { ok: true };
+    return {
+      ok: true,
+      mutated_paths: newPaths.filter((entry) => entry !== ".als").sort(),
+    };
   }
 
   return {
@@ -575,6 +904,10 @@ function appendTelemetry(
   event: ReturnType<typeof createTelemetryEvent>,
 ): void {
   state.telemetry.push(event);
+}
+
+function uniqueStrings(values: string[]): string[] {
+  return [...new Set(values)];
 }
 
 function withDefaultServices(

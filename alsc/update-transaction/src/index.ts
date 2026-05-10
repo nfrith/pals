@@ -29,10 +29,16 @@ import {
   type LanguageUpgradePreflightResult,
   type LanguageUpgradeSelectionOptions,
 } from "../../upgrade-language/src/preflight.ts";
-import { executeLanguageUpgradeChain } from "../../upgrade-language/src/runner.ts";
+import {
+  executeLanguageUpgradeChain,
+  type LanguageUpgradeCheckpointMismatch,
+  type LanguageUpgradePhaseHopTrace,
+  type LanguageUpgradePhaseTrace,
+} from "../../upgrade-language/src/runner.ts";
 import type { PlannedLanguageUpgradeHop } from "../../upgrade-language/src/plan-chain.ts";
 
 const UPDATE_STAGING_WORKTREE_PREFIX = ".als-update-staging-";
+const UPDATE_TRANSACTION_LANGUAGE_RUN_OWNER = "update-transaction";
 const TRANSIENT_RUNTIME_HYGIENE_CHECKPOINT_COMMIT_MESSAGE =
   "chore: checkpoint transient runtime hygiene before /update";
 const CONSTRUCT_ORDER = ["dispatcher", "statusline", "dashboard"] as const;
@@ -119,6 +125,10 @@ export interface UpdateTransactionCompletedResult {
   commit_message: string | null;
   action_count: number;
   manual_follow_up_note: string | null;
+  language_phase: LanguageUpgradePhaseTrace | null;
+  language_error_code: string | null;
+  language_checkpoint_mismatch: LanguageUpgradeCheckpointMismatch | null;
+  construct_phase: UpdateTransactionConstructPhaseTrace;
 }
 
 export interface UpdateTransactionFailedResult {
@@ -130,11 +140,20 @@ export interface UpdateTransactionFailedResult {
   lifecycle_failure_state: ConstructFailureState | null;
   precise_lifecycle_failure_state: Exclude<ConstructFailureState, "lifecycle-partial"> | null;
   manual_follow_up_note: string | null;
+  language_phase: LanguageUpgradePhaseTrace | null;
+  language_error_code: string | null;
+  language_checkpoint_mismatch: LanguageUpgradeCheckpointMismatch | null;
+  construct_phase: UpdateTransactionConstructPhaseTrace;
 }
 
 export type UpdateTransactionExecuteResult =
   | UpdateTransactionCompletedResult
   | UpdateTransactionFailedResult;
+
+export interface UpdateTransactionConstructPhaseTrace {
+  applied_constructs: string[];
+  deltas: string[];
+}
 
 export async function prepareUpdateTransaction(input: {
   repo_root: string;
@@ -227,6 +246,7 @@ export async function runPreparedUpdateTransaction(input: {
 }): Promise<UpdateTransactionExecuteResult> {
   const prepared = input.prepared;
   const services = withDefaultServices(input.services);
+  const emptyConstructPhase = buildConstructPhaseTrace([]);
   if (!prepared.requires_changes) {
     return {
       status: "completed",
@@ -234,6 +254,10 @@ export async function runPreparedUpdateTransaction(input: {
       commit_message: null,
       action_count: 0,
       manual_follow_up_note: prepared.manual_follow_up_note,
+      language_phase: null,
+      language_error_code: null,
+      language_checkpoint_mismatch: null,
+      construct_phase: emptyConstructPhase,
     };
   }
 
@@ -255,9 +279,18 @@ export async function runPreparedUpdateTransaction(input: {
   });
 
   const operatorAnswers = { ...(input.operator_answers ?? {}) };
+  let languagePhase: LanguageUpgradePhaseTrace | null = null;
+  let languageErrorCode: string | null = null;
+  let languageCheckpointMismatch: LanguageUpgradeCheckpointMismatch | null = null;
   const stagedConstructResults: ConstructUpgradeExecuteResult[] = [];
 
   if (prepared.language) {
+    const languageStatePath = join(
+      stagingRepoRoot,
+      ".als-update-transaction",
+      "language-upgrades",
+      "state.json",
+    );
     const executeResult = await executeLanguageUpgradeChain({
       system_root: stagingSystemRoot,
       hops: prepared.language.plan.hops,
@@ -273,9 +306,14 @@ export async function runPreparedUpdateTransaction(input: {
       },
       options: {
         ...(prepared.language.plan.options ?? {}),
+        run_owner: UPDATE_TRANSACTION_LANGUAGE_RUN_OWNER,
+        state_path: languageStatePath,
         operator_responses: operatorAnswers,
       },
     });
+    languagePhase = executeResult.phase;
+    languageErrorCode = executeResult.error_code;
+    languageCheckpointMismatch = executeResult.checkpoint_mismatch;
     if (executeResult.status !== "completed") {
       return buildFailureResult(
         "validation-deploy-failed",
@@ -283,6 +321,10 @@ export async function runPreparedUpdateTransaction(input: {
         stagingRepoRoot,
         null,
         prepared.manual_follow_up_note,
+        languagePhase,
+        languageErrorCode,
+        languageCheckpointMismatch,
+        buildConstructPhaseTrace(stagedConstructResults),
       );
     }
   }
@@ -321,6 +363,10 @@ export async function runPreparedUpdateTransaction(input: {
       stagingRepoRoot,
       null,
       prepared.manual_follow_up_note,
+      languagePhase,
+      languageErrorCode,
+      languageCheckpointMismatch,
+      buildConstructPhaseTrace(stagedConstructResults),
     );
   }
 
@@ -332,6 +378,10 @@ export async function runPreparedUpdateTransaction(input: {
       stagingRepoRoot,
       null,
       prepared.manual_follow_up_note,
+      languagePhase,
+      languageErrorCode,
+      languageCheckpointMismatch,
+      buildConstructPhaseTrace(stagedConstructResults),
     );
   }
 
@@ -343,13 +393,37 @@ export async function runPreparedUpdateTransaction(input: {
       stagingRepoRoot,
       null,
       prepared.manual_follow_up_note,
+      languagePhase,
+      languageErrorCode,
+      languageCheckpointMismatch,
+      buildConstructPhaseTrace(stagedConstructResults),
     );
   }
 
-  const commitMessage = buildCommitMessage(prepared, stagedConstructResults);
+  const constructPhase = buildConstructPhaseTrace(stagedConstructResults);
   try {
     runGit(stagingRepoRoot, ["add", "-A", "--", ".als", ".claude"]);
-    if (!hasCachedChanges(stagingRepoRoot)) {
+    const stagedPaths = readCachedChangedPaths(stagingRepoRoot);
+    const languageInvariantFailure = validateLanguageCommitTruth({
+      prepared,
+      language_phase: languagePhase,
+      staged_validation_als_version: stagedValidation.als_version,
+      staged_paths: stagedPaths,
+    });
+    if (languageInvariantFailure) {
+      return buildFailureResult(
+        "validation-deploy-failed",
+        languageInvariantFailure,
+        stagingRepoRoot,
+        null,
+        prepared.manual_follow_up_note,
+        languagePhase,
+        languageErrorCode,
+        languageCheckpointMismatch,
+        constructPhase,
+      );
+    }
+    if (stagedPaths.length === 0) {
       await removeWorktree(prepared.repo_root, stagingRepoRoot);
       return {
         status: "completed",
@@ -357,9 +431,92 @@ export async function runPreparedUpdateTransaction(input: {
         commit_message: null,
         action_count: 0,
         manual_follow_up_note: prepared.manual_follow_up_note,
+        language_phase: languagePhase,
+        language_error_code: languageErrorCode,
+        language_checkpoint_mismatch: languageCheckpointMismatch,
+        construct_phase: constructPhase,
       };
     }
+    const commitMessage = buildCommitMessage(languagePhase, constructPhase);
     runGit(stagingRepoRoot, ["commit", "--no-gpg-sign", "-m", commitMessage]);
+    const commitOid = runGit(stagingRepoRoot, ["rev-parse", "HEAD"]).stdout.trim();
+    try {
+      await services.before_writeback({
+        live_repo_root: prepared.repo_root,
+        staging_repo_root: stagingRepoRoot,
+        staging_system_root: stagingSystemRoot,
+        staging_commit_oid: commitOid,
+      });
+      runGit(prepared.repo_root, ["merge", "--ff-only", commitOid]);
+    } catch (error) {
+      return buildFailureResult(
+        "commit-failed",
+        formatError(error),
+        stagingRepoRoot,
+        commitOid,
+        prepared.manual_follow_up_note,
+        languagePhase,
+        languageErrorCode,
+        languageCheckpointMismatch,
+        constructPhase,
+      );
+    }
+
+    const actionManifest = combineActionManifests(stagedConstructResults);
+    if (actionManifest.actions.length > 0) {
+      try {
+        const lifecycle = await services.run_action_manifest(actionManifest, {
+          system_root: prepared.system_root,
+          plugin_root: prepared.plugin_root,
+        });
+        if (!lifecycle.success) {
+          await removeWorktree(prepared.repo_root, stagingRepoRoot);
+          return {
+            status: "failed",
+            failure_surface: "lifecycle-failed",
+            diagnostic: lifecycle.failure?.message ?? "Post-commit lifecycle execution failed.",
+            staging_worktree_path: null,
+            commit_oid: commitOid,
+            lifecycle_failure_state: lifecycle.failure?.overall_failure_state ?? null,
+            precise_lifecycle_failure_state: lifecycle.failure?.precise_failure_state ?? null,
+            manual_follow_up_note: prepared.manual_follow_up_note,
+            language_phase: languagePhase,
+            language_error_code: languageErrorCode,
+            language_checkpoint_mismatch: languageCheckpointMismatch,
+            construct_phase: constructPhase,
+          };
+        }
+      } catch (error) {
+        await removeWorktree(prepared.repo_root, stagingRepoRoot);
+        return {
+          status: "failed",
+          failure_surface: "lifecycle-failed",
+          diagnostic: formatError(error),
+          staging_worktree_path: null,
+          commit_oid: commitOid,
+          lifecycle_failure_state: null,
+          precise_lifecycle_failure_state: null,
+          manual_follow_up_note: prepared.manual_follow_up_note,
+          language_phase: languagePhase,
+          language_error_code: languageErrorCode,
+          language_checkpoint_mismatch: languageCheckpointMismatch,
+          construct_phase: constructPhase,
+        };
+      }
+    }
+
+    await removeWorktree(prepared.repo_root, stagingRepoRoot);
+    return {
+      status: "completed",
+      commit_oid: commitOid,
+      commit_message: commitMessage,
+      action_count: actionManifest.actions.length,
+      manual_follow_up_note: prepared.manual_follow_up_note,
+      language_phase: languagePhase,
+      language_error_code: languageErrorCode,
+      language_checkpoint_mismatch: languageCheckpointMismatch,
+      construct_phase: constructPhase,
+    };
   } catch (error) {
     return buildFailureResult(
       "commit-failed",
@@ -367,71 +524,12 @@ export async function runPreparedUpdateTransaction(input: {
       stagingRepoRoot,
       null,
       prepared.manual_follow_up_note,
+      languagePhase,
+      languageErrorCode,
+      languageCheckpointMismatch,
+      constructPhase,
     );
   }
-
-  const commitOid = runGit(stagingRepoRoot, ["rev-parse", "HEAD"]).stdout.trim();
-  try {
-    await services.before_writeback({
-      live_repo_root: prepared.repo_root,
-      staging_repo_root: stagingRepoRoot,
-      staging_system_root: stagingSystemRoot,
-      staging_commit_oid: commitOid,
-    });
-    runGit(prepared.repo_root, ["merge", "--ff-only", commitOid]);
-  } catch (error) {
-    return buildFailureResult(
-      "commit-failed",
-      formatError(error),
-      stagingRepoRoot,
-      commitOid,
-      prepared.manual_follow_up_note,
-    );
-  }
-
-  const actionManifest = combineActionManifests(stagedConstructResults);
-  if (actionManifest.actions.length > 0) {
-    try {
-      const lifecycle = await services.run_action_manifest(actionManifest, {
-        system_root: prepared.system_root,
-        plugin_root: prepared.plugin_root,
-      });
-      if (!lifecycle.success) {
-        await removeWorktree(prepared.repo_root, stagingRepoRoot);
-        return {
-          status: "failed",
-          failure_surface: "lifecycle-failed",
-          diagnostic: lifecycle.failure?.message ?? "Post-commit lifecycle execution failed.",
-          staging_worktree_path: null,
-          commit_oid: commitOid,
-          lifecycle_failure_state: lifecycle.failure?.overall_failure_state ?? null,
-          precise_lifecycle_failure_state: lifecycle.failure?.precise_failure_state ?? null,
-          manual_follow_up_note: prepared.manual_follow_up_note,
-        };
-      }
-    } catch (error) {
-      await removeWorktree(prepared.repo_root, stagingRepoRoot);
-      return {
-        status: "failed",
-        failure_surface: "lifecycle-failed",
-        diagnostic: formatError(error),
-        staging_worktree_path: null,
-        commit_oid: commitOid,
-        lifecycle_failure_state: null,
-        precise_lifecycle_failure_state: null,
-        manual_follow_up_note: prepared.manual_follow_up_note,
-      };
-    }
-  }
-
-  await removeWorktree(prepared.repo_root, stagingRepoRoot);
-  return {
-    status: "completed",
-    commit_oid: commitOid,
-    commit_message: commitMessage,
-    action_count: actionManifest.actions.length,
-    manual_follow_up_note: prepared.manual_follow_up_note,
-  };
 }
 
 async function preflightConstructs(
@@ -487,21 +585,21 @@ function toConstructPrompt(prompt: ConstructUpgradePrompt): UpdateTransactionPro
 }
 
 function buildCommitMessage(
-  prepared: PreparedUpdateTransaction,
-  constructResults: ConstructUpgradeExecuteResult[],
+  languagePhase: LanguageUpgradePhaseTrace | null,
+  constructPhase: UpdateTransactionConstructPhaseTrace,
 ): string {
   const lines: string[] = [];
-  if (prepared.language && prepared.language.plan.hops.length > 0) {
+  const appliedLanguageHops = (languagePhase?.hops ?? [])
+    .filter((hop) => hop.status === "applied")
+    .map((hop) => hop.hop_id);
+  if (appliedLanguageHops.length > 0) {
     lines.push(
-      `Language hops: ${prepared.language.plan.hops.map((hop) => hop.hop_id).join(", ")}`,
+      `Language hops: ${appliedLanguageHops.join(", ")}`,
     );
   }
 
-  const constructDeltas = constructResults
-    .filter((result) => result.needs_upgrade)
-    .map((result) => `${result.construct} ${result.current_version ?? 0} -> ${result.target_version}`);
-  if (constructDeltas.length > 0) {
-    lines.push(`Construct deltas: ${constructDeltas.join("; ")}`);
+  if (constructPhase.deltas.length > 0) {
+    lines.push(`Construct deltas: ${constructPhase.deltas.join("; ")}`);
   }
 
   if (lines.length === 0) {
@@ -522,6 +620,89 @@ function combineActionManifests(
     schema: "als-construct-action-manifest@1",
     actions: constructResults.flatMap((result) => result.action_manifest?.actions ?? []),
   };
+}
+
+function buildConstructPhaseTrace(
+  constructResults: ConstructUpgradeExecuteResult[],
+): UpdateTransactionConstructPhaseTrace {
+  const appliedConstructs = constructResults
+    .filter((result) => result.needs_upgrade)
+    .map((result) => result.construct);
+  const deltas = constructResults
+    .filter((result) => result.needs_upgrade)
+    .map((result) => `${result.construct} ${result.current_version ?? 0} -> ${result.target_version}`);
+  return {
+    applied_constructs: appliedConstructs,
+    deltas,
+  };
+}
+
+function validateLanguageCommitTruth(input: {
+  prepared: PreparedUpdateTransaction;
+  language_phase: LanguageUpgradePhaseTrace | null;
+  staged_validation_als_version: number | null | undefined;
+  staged_paths: string[];
+}): string | null {
+  const preparedLanguage = input.prepared.language;
+  if (!preparedLanguage || preparedLanguage.plan.hops.length === 0) {
+    return null;
+  }
+
+  if (input.staged_validation_als_version !== preparedLanguage.plan.target_als_version) {
+    return `Prepared language target ALS v${preparedLanguage.plan.target_als_version} did not land in staged validation; staged tree still reports v${input.staged_validation_als_version ?? "<missing>"}.`;
+  }
+
+  if (!input.language_phase) {
+    return "Prepared language hops were requested, but the execute result did not return a language phase trace.";
+  }
+
+  const appliedHops = input.language_phase.hops.filter((hop) => hop.status === "applied");
+  if (appliedHops.length === 0) {
+    return "Prepared language hops were requested, but the execute result did not report any applied language hop.";
+  }
+
+  const stagedLanguagePaths = input.staged_paths.filter(isNonRuntimeAlsPath);
+  if (stagedLanguagePaths.length === 0) {
+    return "Prepared language hop did not produce required staged non-runtime .als/ mutations.";
+  }
+
+  for (const hop of appliedHops) {
+    if (!hopRequiresMutatingProof(hop)) {
+      continue;
+    }
+
+    const hopProofPaths = hop.mutated_paths.filter(isNonRuntimeAlsPath);
+    if (hopProofPaths.length === 0) {
+      return `Applied language hop '${hop.hop_id}' did not report any non-runtime .als/ mutations.`;
+    }
+
+    const stagedHopProof = hopProofPaths.filter((path) => stagedLanguagePaths.includes(path));
+    if (stagedHopProof.length === 0) {
+      return `Applied language hop '${hop.hop_id}' reported mutations, but none are present in the staged commit diff.`;
+    }
+  }
+
+  const stagedClaudePaths = input.staged_paths.filter((path) => path === ".claude" || path.startsWith(".claude/"));
+  if (stagedClaudePaths.length === 0) {
+    return "Language-authored .als/ mutations landed, but the bundled .claude/ refresh is absent from the staged commit.";
+  }
+
+  return null;
+}
+
+function hopRequiresMutatingProof(hop: LanguageUpgradePhaseHopTrace): boolean {
+  return hop.steps.some((step) =>
+    step.category === "must-run"
+    && (step.type === "script" || step.type === "agent-task")
+    && (step.status === "completed" || step.status === "recovered"),
+  );
+}
+
+function isNonRuntimeAlsPath(path: string): boolean {
+  if (path === ".als" || path === ".als/runtime" || path.startsWith(".als/runtime/")) {
+    return false;
+  }
+  return path.startsWith(".als/");
 }
 
 function resolveGitRepoRoot(repoRoot: string): string {
@@ -557,9 +738,11 @@ function shouldCheckpointTransientRuntimePaths(dirtyPaths: string[]): boolean {
     && dirtyPaths.every((path) => path.startsWith(".claude/") && isTransientRuntimePath(path));
 }
 
-function hasCachedChanges(repoRoot: string): boolean {
-  const result = runGitAllowFailure(repoRoot, ["diff", "--cached", "--quiet"]);
-  return result.status === 1;
+function readCachedChangedPaths(repoRoot: string): string[] {
+  return runGit(repoRoot, ["diff", "--cached", "--name-only", "--", ".als", ".claude"]).stdout
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
 }
 
 async function pruneStaleUpdateWorktrees(repoRoot: string): Promise<void> {
@@ -640,6 +823,10 @@ function buildFailureResult(
   stagingWorktreePath: string | null,
   commitOid: string | null,
   manualFollowUpNote: string | null,
+  languagePhase: LanguageUpgradePhaseTrace | null,
+  languageErrorCode: string | null,
+  languageCheckpointMismatch: LanguageUpgradeCheckpointMismatch | null,
+  constructPhase: UpdateTransactionConstructPhaseTrace,
 ): UpdateTransactionFailedResult {
   return {
     status: "failed",
@@ -650,6 +837,10 @@ function buildFailureResult(
     lifecycle_failure_state: null,
     precise_lifecycle_failure_state: null,
     manual_follow_up_note: manualFollowUpNote,
+    language_phase: languagePhase,
+    language_error_code: languageErrorCode,
+    language_checkpoint_mismatch: languageCheckpointMismatch,
+    construct_phase: constructPhase,
   };
 }
 
