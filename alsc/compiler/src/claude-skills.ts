@@ -4,7 +4,7 @@ import { stringify as stringifyYaml } from "yaml";
 import { loadAuthoredSourceExport } from "./authored-load.ts";
 import { DEPLOY_OUTPUT_SCHEMA_LITERAL } from "./contracts.ts";
 import type { DelamainAgentProvider, DelamainShape } from "./delamain.ts";
-import { delamainShapeSchema } from "./delamain.ts";
+import { delamainShapeSchema, projectDelamainForDeploy } from "./delamain.ts";
 import type { FieldShape, ModuleShape, SystemConfig } from "./schema.ts";
 import { moduleShapeSchema } from "./schema.ts";
 import {
@@ -441,6 +441,17 @@ function buildProjectionPlans(
           error: loadedDelamain.error,
         };
       }
+      let projectedDelamain;
+      try {
+        projectedDelamain = projectDelamainForDeploy(loadedDelamain.shape, systemConfig.als_version);
+      } catch (error) {
+        return {
+          skill_plans: skillPlans,
+          delamain_plans: delamainPlans,
+          delamain_name_conflicts: collectDelamainNameConflicts(delamainPlans),
+          error: error instanceof Error ? error.message : String(error),
+        };
+      }
       const runtimeManifestConfig = loadDelamainRuntimeManifestConfig(systemRootAbs, sourceDirAbs);
       if (runtimeManifestConfig.error) {
         return {
@@ -482,7 +493,7 @@ function buildProjectionPlans(
         submodules: runtimeManifestConfig.config.submodules,
         state_providers: collectStateProviders(loadedDelamain.shape),
         limits: runtimeManifestConfig.config.limits,
-        rendered_delamain_yaml: stringifyYaml(loadedDelamain.shape),
+        rendered_delamain_yaml: stringifyYaml(projectedDelamain),
       });
     }
   }

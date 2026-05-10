@@ -268,7 +268,7 @@ for (const { label, value } of [
 test.concurrent("unsupported als_version stops validation before module loading", async () => {
   await withFixtureSandbox("system-als-version-unsupported", async ({ root }) => {
     await updateSystemYaml(root, (config) => {
-      config.als_version = 4;
+      config.als_version = 5;
     });
 
     const result = validateFixture(root);
@@ -276,7 +276,7 @@ test.concurrent("unsupported als_version stops validation before module loading"
     const diagnostic = expectSystemDiagnostic(result, codes.SYSTEM_ALS_VERSION_UNSUPPORTED, ".als/system.ts");
     expect(diagnostic.reason).toBe(reasons.SYSTEM_ALS_VERSION_UNSUPPORTED);
     expect(result.modules).toHaveLength(0);
-    expect(result.als_version).toBe(4);
+    expect(result.als_version).toBe(5);
   });
 });
 

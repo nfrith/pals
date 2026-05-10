@@ -584,7 +584,7 @@ function loadDelamainBundles(
       continue;
     }
 
-    for (const issue of validateDelamainDefinition(parsedDelamain.data)) {
+    for (const issue of validateDelamainDefinition(parsedDelamain.data, alsVersion)) {
       diagnostics.push(
         diag(
           codes.DELAMAIN_CONTRACT_INVALID,
@@ -595,6 +595,7 @@ function loadDelamainBundles(
           {
             module_id: moduleId,
             field: issue.path.join(".") || null,
+            reason: issue.reason,
           },
         ),
       );

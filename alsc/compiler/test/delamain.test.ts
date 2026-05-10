@@ -1,8 +1,9 @@
 import { expect, test } from "bun:test";
 import matter from "gray-matter";
-import { join } from "node:path";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { loadAuthoredSourceExport } from "../src/authored-load.ts";
-import { codes } from "../src/diagnostics.ts";
+import { codes, reasons } from "../src/diagnostics.ts";
 import {
   expectModuleDiagnostic,
   expectModuleDiagnosticContaining,
@@ -13,8 +14,11 @@ import {
   updateTextFile,
   validateFixture,
   withFixtureSandbox,
+  withFixtureSandboxFromSource,
   writePath,
 } from "./helpers/fixture.ts";
+
+const v4FixtureRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../../../language-upgrades/fixtures/v4");
 
 test.concurrent("plain entities reject multiple Delamain-bound fields in the same effective schema", async () => {
   await withFixtureSandbox("delamain-plain-conflict", async ({ root }) => {
@@ -255,6 +259,78 @@ test.concurrent("Delamain validation rejects terminal and operator-owned concurr
     const result = validateFixture(root);
     expect(result.status).toBe("fail");
     expectModuleDiagnostic(result, "factory", codes.DELAMAIN_CONTRACT_INVALID, "development-pipeline/delamain.ts");
+  });
+});
+
+test.concurrent("v4 Delamains fail compile when a state label is missing", async () => {
+  await withFixtureSandboxFromSource("delamain-v4-label-required", v4FixtureRoot, async ({ root }) => {
+    await updateYamlTextFile(
+      root,
+      ".als/modules/factory/v1/delamains/development-pipeline/delamain.ts",
+      (current) => {
+        const states = current.states as Record<string, Record<string, unknown>>;
+        delete states["in-review"]?.label;
+      },
+    );
+
+    const result = validateFixture(root);
+    expect(result.status).toBe("fail");
+    const diagnostic = expectModuleDiagnostic(
+      result,
+      "factory",
+      codes.DELAMAIN_CONTRACT_INVALID,
+      "development-pipeline/delamain.ts",
+    );
+    expect(diagnostic.reason).toBe(reasons.DELAMAIN_STATE_LABEL_REQUIRED);
+    expect(diagnostic.field).toBe("states.in-review.label");
+  });
+});
+
+test.concurrent("v4 Delamains fail compile when a terminal outcome is missing", async () => {
+  await withFixtureSandboxFromSource("delamain-v4-outcome-required", v4FixtureRoot, async ({ root }) => {
+    await updateYamlTextFile(
+      root,
+      ".als/modules/factory/v1/delamains/development-pipeline/delamain.ts",
+      (current) => {
+        const states = current.states as Record<string, Record<string, unknown>>;
+        delete states.completed?.outcome;
+      },
+    );
+
+    const result = validateFixture(root);
+    expect(result.status).toBe("fail");
+    const diagnostic = expectModuleDiagnostic(
+      result,
+      "factory",
+      codes.DELAMAIN_CONTRACT_INVALID,
+      "development-pipeline/delamain.ts",
+    );
+    expect(diagnostic.reason).toBe(reasons.DELAMAIN_STATE_OUTCOME_REQUIRED);
+    expect(diagnostic.field).toBe("states.completed.outcome");
+  });
+});
+
+test.concurrent("non-terminal outcomes are rejected under the v4 contract", async () => {
+  await withFixtureSandboxFromSource("delamain-v4-outcome-terminal-only", v4FixtureRoot, async ({ root }) => {
+    await updateYamlTextFile(
+      root,
+      ".als/modules/factory/v1/delamains/development-pipeline/delamain.ts",
+      (current) => {
+        const states = current.states as Record<string, Record<string, unknown>>;
+        states["in-review"]!.outcome = "success";
+      },
+    );
+
+    const result = validateFixture(root);
+    expect(result.status).toBe("fail");
+    const diagnostic = expectModuleDiagnostic(
+      result,
+      "factory",
+      codes.DELAMAIN_CONTRACT_INVALID,
+      "development-pipeline/delamain.ts",
+    );
+    expect(diagnostic.reason).toBe(reasons.DELAMAIN_STATE_OUTCOME_TERMINAL_ONLY);
+    expect(diagnostic.field).toBe("states.in-review.outcome");
   });
 });
 

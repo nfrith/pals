@@ -12,6 +12,7 @@ import {
 } from "./helpers/language-upgrade-fixture.ts";
 
 const alsRepoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
+const v3ToV4RecipeRoot = resolve(alsRepoRoot, "language-upgrades/recipes/v3-to-v4");
 
 function captureCli(args: string[]): { exitCode: number; stdout: string; stderr: string } {
   let stdout = "";
@@ -198,5 +199,24 @@ test("inspection accepts the shipped v1-to-v2 dispatcher relocation recipe", () 
     args: ["."],
     preconditions: ["als-version-matches-from", "validates-as-from-version"],
     postconditions: ["als-version-matches-from", "validates-as-from-version"],
+  }));
+});
+
+test("inspection accepts the shipped v3-to-v4 Delamain metadata recipe", () => {
+  const inspection = inspectLanguageUpgradeRecipe(v3ToV4RecipeRoot);
+
+  expect(inspection.status).toBe("pass");
+  expect(inspection.errors).toEqual([]);
+  expect(inspection.recipe?.from.als_version).toBe(3);
+  expect(inspection.recipe?.to.als_version).toBe(4);
+  expect(inspection.recipe?.steps.map((step) => step.id)).toEqual([
+    "generate-state-labels-and-outcomes",
+  ]);
+  expect(inspection.recipe?.steps[0]).toEqual(expect.objectContaining({
+    type: "script",
+    path: "scripts/generate-state-labels-and-outcomes.sh",
+    args: [],
+    preconditions: ["als-version-matches-from", "validates-as-from-version"],
+    postconditions: ["als-version-matches-to", "validates-as-to-version"],
   }));
 });

@@ -12,6 +12,7 @@ import {
 
 const compilerRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const v2FixtureRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../../../language-upgrades/fixtures/v2");
+const v4FixtureRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../../../language-upgrades/fixtures/v4");
 
 test.concurrent("merged reference fixture validates clean", async () => {
   await withFixtureSandbox("fixture-smoke", async ({ root }) => {
@@ -59,6 +60,7 @@ test.concurrent("merged reference fixture validates clean", async () => {
     expect(result.compiler_contract.supported_als_versions).toContain(1);
     expect(result.compiler_contract.supported_als_versions).toContain(2);
     expect(result.compiler_contract.supported_als_versions).toContain(3);
+    expect(result.compiler_contract.supported_als_versions).toContain(4);
     expect(result.status).toBe("pass");
     expect(result.module_filter).toBeNull();
     expect(result.summary.error_count).toBe(0);
@@ -73,6 +75,17 @@ test.concurrent("legacy v2 fixtures validate clean from an external root without
 
     expect(result.status).toBe("pass");
     expect(result.als_version).toBe(2);
+    expect(result.summary.error_count).toBe(0);
+    expect(result.modules).toHaveLength(18);
+  });
+});
+
+test.concurrent("frozen v4 fixtures validate clean from an external root", async () => {
+  await withFixtureSandboxFromSource("fixture-v4-external-root", v4FixtureRoot, async ({ root }) => {
+    const result = validateFixture(root);
+
+    expect(result.status).toBe("pass");
+    expect(result.als_version).toBe(4);
     expect(result.summary.error_count).toBe(0);
     expect(result.modules).toHaveLength(18);
   });

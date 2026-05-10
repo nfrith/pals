@@ -1,4 +1,6 @@
 import { z } from "zod";
+import { ALS_VERSION_V4 } from "./contracts.ts";
+import { reasons } from "./diagnostics.ts";
 import { fieldNameSchema, kebabNameSchema as delamainNameSchema, nonEmptyStringSchema as nonEmptyString } from "./naming.ts";
 
 const phasesSchema = z.array(delamainNameSchema).min(1).superRefine((value, ctx) => {
@@ -32,6 +34,17 @@ const transitionFromSchema = z.union([
   }),
 ]);
 
+export const DELAMAIN_TERMINAL_OUTCOMES = ["success", "stopped", "errored"] as const;
+export const DELAMAIN_CUSTOMER_BUCKETS = [
+  "active",
+  "waiting_for_user",
+  "closed_success",
+  "closed_stopped",
+  "closed_errored",
+] as const;
+
+const delamainTerminalOutcomeSchema = z.enum(DELAMAIN_TERMINAL_OUTCOMES);
+
 const delamainStateSchema = z.object({
   initial: z.boolean().optional(),
   terminal: z.boolean().optional(),
@@ -43,6 +56,8 @@ const delamainStateSchema = z.object({
   concurrency: z.number().int().positive().optional(),
   "session-field": fieldNameSchema.optional(),
   "sub-agent": nonEmptyString.optional(),
+  label: z.string().optional(),
+  outcome: delamainTerminalOutcomeSchema.optional(),
 }).strict().superRefine((value, ctx) => {
   const isTerminal = value.terminal === true;
 
@@ -178,10 +193,19 @@ export type DelamainConcurrencyPoolShape = z.infer<typeof delamainConcurrencyPoo
 export type DelamainTransitionShape = z.infer<typeof delamainTransitionSchema>;
 export type DelamainStateActor = NonNullable<DelamainStateShape["actor"]>;
 export type DelamainAgentProvider = NonNullable<DelamainStateShape["provider"]>;
+export type DelamainTerminalOutcome = (typeof DELAMAIN_TERMINAL_OUTCOMES)[number];
+export type DelamainCustomerBucket = (typeof DELAMAIN_CUSTOMER_BUCKETS)[number];
+export type DelamainProjectedStateShape = DelamainStateShape & {
+  customer_bucket?: DelamainCustomerBucket;
+};
+export type DelamainProjectedShape = Omit<DelamainShape, "states"> & {
+  states: Record<string, DelamainProjectedStateShape>;
+};
 
 export interface DelamainValidationIssue {
   path: Array<string | number>;
   message: string;
+  reason?: string;
 }
 
 interface EffectiveEdge {
@@ -205,7 +229,7 @@ export function collectDelamainSessionFields(delamain: DelamainShape): string[] 
   return sessionFields;
 }
 
-export function validateDelamainDefinition(delamain: DelamainShape): DelamainValidationIssue[] {
+export function validateDelamainDefinition(delamain: DelamainShape, alsVersion: number): DelamainValidationIssue[] {
   const issues: DelamainValidationIssue[] = [];
   const stateEntries = Object.entries(delamain.states);
   const stateNames = new Set(stateEntries.map(([stateName]) => stateName));
@@ -223,6 +247,38 @@ export function validateDelamainDefinition(delamain: DelamainShape): DelamainVal
 
   const phaseOccupancy = new Map(delamain.phases.map((phaseName) => [phaseName, 0]));
   for (const [stateName, state] of stateEntries) {
+    if (state.label !== undefined && state.label.trim().length === 0) {
+      issues.push({
+        path: ["states", stateName, "label"],
+        message: `state ${stateName} label must not be blank`,
+        reason: reasons.DELAMAIN_STATE_LABEL_EMPTY,
+      });
+    }
+
+    if (state.outcome !== undefined && state.terminal !== true) {
+      issues.push({
+        path: ["states", stateName, "outcome"],
+        message: `non-terminal state ${stateName} must not declare outcome`,
+        reason: reasons.DELAMAIN_STATE_OUTCOME_TERMINAL_ONLY,
+      });
+    }
+
+    if (alsVersion >= ALS_VERSION_V4 && state.label === undefined) {
+      issues.push({
+        path: ["states", stateName, "label"],
+        message: `state ${stateName} must declare label`,
+        reason: reasons.DELAMAIN_STATE_LABEL_REQUIRED,
+      });
+    }
+
+    if (alsVersion >= ALS_VERSION_V4 && state.terminal === true && state.outcome === undefined) {
+      issues.push({
+        path: ["states", stateName, "outcome"],
+        message: `terminal state ${stateName} must declare outcome`,
+        reason: reasons.DELAMAIN_STATE_OUTCOME_REQUIRED,
+      });
+    }
+
     if (!phaseIndex.has(state.phase)) {
       issues.push({
         path: ["states", stateName, "phase"],
@@ -528,4 +584,63 @@ export function validateDelamainDefinition(delamain: DelamainShape): DelamainVal
   }
 
   return issues;
+}
+
+export function projectDelamainForDeploy(
+  delamain: DelamainShape,
+  alsVersion: number,
+): DelamainProjectedShape {
+  if (alsVersion < ALS_VERSION_V4) {
+    return delamain;
+  }
+
+  const projectedStates = Object.fromEntries(
+    Object.entries(delamain.states).map(([stateName, state]) => {
+      const label = state.label;
+      if (label === undefined || label.trim().length === 0) {
+        throw new Error(`ALS v${alsVersion} Delamain state '${stateName}' is missing a valid label during projection.`);
+      }
+
+      return [
+        stateName,
+        {
+          ...state,
+          customer_bucket: deriveCustomerBucket(stateName, state),
+        },
+      ];
+    }),
+  );
+
+  return {
+    ...delamain,
+    states: projectedStates,
+  };
+}
+
+function deriveCustomerBucket(
+  stateName: string,
+  state: DelamainStateShape,
+): DelamainCustomerBucket {
+  if (state.terminal === true) {
+    switch (state.outcome) {
+      case "success":
+        return "closed_success";
+      case "stopped":
+        return "closed_stopped";
+      case "errored":
+        return "closed_errored";
+      default:
+        throw new Error(`Terminal state '${stateName}' is missing a valid outcome during projection.`);
+    }
+  }
+
+  if (state.actor === "operator") {
+    return "waiting_for_user";
+  }
+
+  if (state.actor === "agent") {
+    return "active";
+  }
+
+  throw new Error(`Non-terminal state '${stateName}' is missing actor during projection.`);
 }

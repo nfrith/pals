@@ -11,10 +11,12 @@ import {
   updateShapeYaml,
   updateSystemYaml,
   withFixtureSandbox,
+  withFixtureSandboxFromSource,
   writePath,
 } from "./helpers/fixture.ts";
 
 const compilerRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const v4FixtureRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../../../language-upgrades/fixtures/v4");
 
 test("deploy CLI projects active skills into .claude/skills and is idempotent", { timeout: 180_000 }, async () => {
   await withFixtureSandbox("deploy-cli-idempotent", async ({ root }) => {
@@ -128,6 +130,41 @@ test("deploy CLI projects active skills into .claude/skills and is idempotent", 
     const secondDelamainSnapshot = snapshotTree(join(root, ".claude/delamains"));
     expect(secondSkillSnapshot).toEqual(firstSkillSnapshot);
     expect(secondDelamainSnapshot).toEqual(firstDelamainSnapshot);
+  });
+});
+
+test("ALS v4 deploy projects label, outcome, and customer_bucket into delamain.yaml", { timeout: 180_000 }, async () => {
+  await withFixtureSandboxFromSource("deploy-cli-v4-buckets", v4FixtureRoot, async ({ root }) => {
+    await rm(join(root, ".claude/skills"), { recursive: true, force: true });
+    await rm(join(root, ".claude/delamains"), { recursive: true, force: true });
+
+    const process = Bun.spawnSync({
+      cmd: ["bun", "src/deploy.ts", root],
+      cwd: compilerRoot,
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    expect(process.exitCode).toBe(0);
+
+    const projected = readFileSync(
+      join(root, ".claude/delamains/development-pipeline/delamain.yaml"),
+      "utf-8",
+    );
+    const releaseProjected = readFileSync(
+      join(root, ".claude/delamains/release-lifecycle/delamain.yaml"),
+      "utf-8",
+    );
+    expect(projected).toContain("label: In review");
+    expect(projected).toContain("customer_bucket: active");
+    expect(projected).toContain("label: Completed");
+    expect(projected).toContain("outcome: success");
+    expect(projected).toContain("customer_bucket: closed_success");
+    expect(projected).toContain("label: Deferred");
+    expect(projected).toContain("outcome: stopped");
+    expect(projected).toContain("customer_bucket: closed_stopped");
+    expect(releaseProjected).toContain("label: Rolled back");
+    expect(releaseProjected).toContain("outcome: errored");
+    expect(releaseProjected).toContain("customer_bucket: closed_errored");
   });
 });
 

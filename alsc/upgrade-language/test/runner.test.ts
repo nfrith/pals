@@ -4,6 +4,7 @@ import { cp, mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
+import { loadAuthoredSourceExport } from "../../compiler/src/authored-load.ts";
 import { LANGUAGE_UPGRADE_RECIPE_SCHEMA_LITERAL } from "../../compiler/src/contracts.ts";
 import { inspectLanguageUpgradeRecipe } from "../../compiler/src/language-upgrade-recipe.ts";
 import { TRANSIENT_RUNTIME_GITIGNORE_PATTERNS } from "../../shared/transient-runtime.ts";
@@ -19,8 +20,10 @@ const alsRepoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../../..")
 const v1FixtureRoot = resolve(alsRepoRoot, "language-upgrades/fixtures/v1");
 const v2FixtureRoot = resolve(alsRepoRoot, "language-upgrades/fixtures/v2");
 const v3FixtureRoot = resolve(alsRepoRoot, "language-upgrades/fixtures/v3");
+const v4FixtureRoot = resolve(alsRepoRoot, "language-upgrades/fixtures/v4");
 const v1ToV2RecipeRoot = resolve(alsRepoRoot, "language-upgrades/recipes/v1-to-v2");
 const v2ToV3RecipeRoot = resolve(alsRepoRoot, "language-upgrades/recipes/v2-to-v3");
+const v3ToV4RecipeRoot = resolve(alsRepoRoot, "language-upgrades/recipes/v3-to-v4");
 
 interface UpgradeHarness {
   root: string;
@@ -631,6 +634,190 @@ test("shipped v2-to-v3 recipe verifies against the frozen fixtures", async () =>
   }
 });
 
+test("shipped v3-to-v4 recipe verifies against the frozen fixtures", async () => {
+  const inspection = inspectLanguageUpgradeRecipe(v3ToV4RecipeRoot);
+  expect(inspection.status).toBe("pass");
+  if (inspection.status !== "pass" || !inspection.recipe) {
+    return;
+  }
+
+  const workingRoot = await mkdtemp(join(tmpdir(), "als-upgrade-language-v3-to-v4-fixture-"));
+  const fromFixtureRoot = join(workingRoot, "from");
+  const expectedFixtureRoot = join(workingRoot, "expected");
+
+  try {
+    await prepareRunnableFixture(v3FixtureRoot, fromFixtureRoot);
+    await prepareRunnableFixture(v4FixtureRoot, expectedFixtureRoot);
+
+    const verification = await verifyLanguageUpgradeRecipe({
+      from_fixture_path: fromFixtureRoot,
+      expected_fixture_path: expectedFixtureRoot,
+      hop: {
+        hop_id: "v3-to-v4",
+        recipe: inspection.recipe,
+        recipe_path: inspection.recipe_path,
+        bundle_root: inspection.bundle_root,
+      },
+      services: {
+        inspect_system(systemRoot) {
+          const validation = validateSystem(systemRoot);
+          return {
+            als_version: validation.als_version,
+            status: validation.status,
+          };
+        },
+      },
+    });
+
+    expect(verification.status).toBe("pass");
+    expect(verification.mismatches).toEqual([]);
+    expect(verification.step_results.map((step) => step.status)).toEqual(["completed"]);
+  } finally {
+    await rm(workingRoot, { recursive: true, force: true });
+  }
+});
+
+test("v3-to-v4 recipe preserves pre-authored labels and outcomes", async () => {
+  const inspection = inspectLanguageUpgradeRecipe(v3ToV4RecipeRoot);
+  expect(inspection.status).toBe("pass");
+  if (inspection.status !== "pass" || !inspection.recipe) {
+    return;
+  }
+
+  const workingRoot = await mkdtemp(join(tmpdir(), "als-upgrade-language-v3-to-v4-preauthored-"));
+  const fromFixtureRoot = join(workingRoot, "from");
+  const expectedFixtureRoot = join(workingRoot, "expected");
+  const delamainPath = ".als/modules/factory/v1/delamains/development-pipeline/delamain.ts";
+
+  try {
+    await prepareRunnableFixture(v3FixtureRoot, fromFixtureRoot);
+    await prepareRunnableFixture(v4FixtureRoot, expectedFixtureRoot);
+
+    await updateAuthoredDelamain(fromFixtureRoot, delamainPath, (delamain) => {
+      const states = delamain.states as Record<string, Record<string, unknown>>;
+      states["in-review"]!.label = "Ready for review";
+      states.completed!.label = "Shipped to production";
+      states.completed!.outcome = "success";
+    });
+    await updateAuthoredDelamain(expectedFixtureRoot, delamainPath, (delamain) => {
+      const states = delamain.states as Record<string, Record<string, unknown>>;
+      states["in-review"]!.label = "Ready for review";
+      states.completed!.label = "Shipped to production";
+      states.completed!.outcome = "success";
+    });
+
+    const verification = await verifyLanguageUpgradeRecipe({
+      from_fixture_path: fromFixtureRoot,
+      expected_fixture_path: expectedFixtureRoot,
+      hop: {
+        hop_id: "v3-to-v4",
+        recipe: inspection.recipe,
+        recipe_path: inspection.recipe_path,
+        bundle_root: inspection.bundle_root,
+      },
+      services: {
+        inspect_system(systemRoot) {
+          const validation = validateSystem(systemRoot);
+          return {
+            als_version: validation.als_version,
+            status: validation.status,
+          };
+        },
+      },
+    });
+
+    expect(verification.status).toBe("pass");
+    expect(verification.mismatches).toEqual([]);
+    expect(verification.step_results.map((step) => step.status)).toEqual(["completed"]);
+  } finally {
+    await rm(workingRoot, { recursive: true, force: true });
+  }
+});
+
+test("v3-to-v4 rewrite is idempotent on already migrated trees", async () => {
+  const workingRoot = await mkdtemp(join(tmpdir(), "als-upgrade-language-v3-to-v4-idempotent-"));
+  const systemRoot = join(workingRoot, "system");
+  const scriptPath = join(v3ToV4RecipeRoot, "scripts/generate-state-labels-and-outcomes.sh");
+
+  try {
+    await prepareRunnableFixture(v4FixtureRoot, systemRoot);
+
+    const before = await snapshotDelamainUpgradeSurface(systemRoot);
+    const result = spawnSync("bash", [scriptPath], {
+      cwd: systemRoot,
+      encoding: "utf-8",
+    });
+    expect(result.status).toBe(0);
+
+    const after = await snapshotDelamainUpgradeSurface(systemRoot);
+    expect(after).toEqual(before);
+  } finally {
+    await rm(workingRoot, { recursive: true, force: true });
+  }
+});
+
+test("v3-to-v4 recipe fails closed on unknown terminal state ids", async () => {
+  const inspection = inspectLanguageUpgradeRecipe(v3ToV4RecipeRoot);
+  expect(inspection.status).toBe("pass");
+  if (inspection.status !== "pass" || !inspection.recipe) {
+    return;
+  }
+
+  const workingRoot = await mkdtemp(join(tmpdir(), "als-upgrade-language-v3-to-v4-unknown-terminal-"));
+  const systemRoot = join(workingRoot, "system");
+  const statePath = join(workingRoot, "runtime-state.json");
+  const delamainPath = ".als/modules/factory/v1/delamains/development-pipeline/delamain.ts";
+
+  try {
+    await prepareRunnableFixture(v3FixtureRoot, systemRoot);
+    await updateAuthoredDelamain(systemRoot, delamainPath, (delamain) => {
+      const states = delamain.states as Record<string, Record<string, unknown>>;
+      states["mystery-stop"] = {
+        ...states.completed!,
+      };
+      delete states.completed;
+
+      const transitions = delamain.transitions as Array<Record<string, unknown>>;
+      for (const transition of transitions) {
+        if (transition.to === "completed") {
+          transition.to = "mystery-stop";
+        }
+      }
+    });
+    initializeGitRepository(systemRoot);
+
+    const result = await executeLanguageUpgradeChain({
+      system_root: systemRoot,
+      hops: [{
+        hop_id: "v3-to-v4",
+        recipe: inspection.recipe,
+        recipe_path: inspection.recipe_path,
+        bundle_root: inspection.bundle_root,
+      }],
+      target_als_version: 4,
+      services: {
+        inspect_system(currentSystemRoot) {
+          const validation = validateSystem(currentSystemRoot);
+          return {
+            als_version: validation.als_version,
+            status: validation.status,
+          };
+        },
+      },
+      options: {
+        state_path: statePath,
+      },
+    });
+
+    expect(result.status).toBe("failed");
+    expect(result.error_code).toBe("script_failed");
+    expect(result.diagnostic).toContain("mystery-stop");
+    expect(result.diagnostic).toContain("no approved v3-to-v4 outcome mapping");
+  } finally {
+    await rm(workingRoot, { recursive: true, force: true });
+  }
+});
+
 async function writeFixtureFiles(root: string, files: Record<string, string>): Promise<void> {
   for (const [relativePath, contents] of Object.entries(files)) {
     const filePath = join(root, relativePath);
@@ -641,6 +828,68 @@ async function writeFixtureFiles(root: string, files: Record<string, string>): P
 
 async function prepareRunnableFixture(sourceRoot: string, targetRoot: string): Promise<void> {
   await cp(sourceRoot, targetRoot, { recursive: true });
+}
+
+async function updateAuthoredDelamain(
+  root: string,
+  relativePath: string,
+  transform: (current: Record<string, unknown>) => void,
+): Promise<void> {
+  const filePath = join(root, relativePath);
+  const loaded = loadAuthoredSourceExport(filePath, "delamain", "module_shape", "fixture", null);
+  if (!loaded.success || !isRecord(loaded.data)) {
+    throw new Error(`Expected authored Delamain object at '${relativePath}'`);
+  }
+
+  const next = structuredClone(loaded.data);
+  transform(next);
+  await writeFile(filePath, serializeAuthoredDelamain(next), "utf-8");
+}
+
+async function snapshotDelamainUpgradeSurface(root: string): Promise<Record<string, string>> {
+  const snapshot: Record<string, string> = {
+    ".als/system.ts": await readFile(join(root, ".als/system.ts"), "utf-8"),
+  };
+  const loadedSystem = loadAuthoredSourceExport(
+    join(root, ".als/system.ts"),
+    "system",
+    "system_config",
+    "fixture",
+    null,
+  );
+  if (!loadedSystem.success || !isRecord(loadedSystem.data) || !isRecord(loadedSystem.data.modules)) {
+    throw new Error("Could not load .als/system.ts while snapshotting the v3-to-v4 surface.");
+  }
+
+  for (const [moduleId, moduleConfig] of Object.entries(loadedSystem.data.modules)) {
+    if (!isRecord(moduleConfig) || typeof moduleConfig.version !== "number") {
+      continue;
+    }
+
+    const modulePath = join(root, ".als/modules", moduleId, `v${moduleConfig.version}`, "module.ts");
+    const loadedModule = loadAuthoredSourceExport(modulePath, "module", "module_shape", "fixture", null);
+    if (!loadedModule.success || !isRecord(loadedModule.data) || !isRecord(loadedModule.data.delamains)) {
+      continue;
+    }
+
+    for (const [delamainName, registryEntry] of Object.entries(loadedModule.data.delamains)) {
+      if (!isRecord(registryEntry) || typeof registryEntry.path !== "string") {
+        continue;
+      }
+      const relativeDelamainPath = join(".als/modules", moduleId, `v${moduleConfig.version}`, registryEntry.path);
+      snapshot[relativeDelamainPath] = await readFile(join(root, relativeDelamainPath), "utf-8");
+    }
+  }
+
+  return snapshot;
+}
+
+function serializeAuthoredDelamain(value: Record<string, unknown>): string {
+  return `import { defineDelamain } from "als:authoring";\n\nexport const delamain = defineDelamain(${JSON.stringify(value, null, 2)} as const);\n\nexport default delamain;\n`;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function initializeGitRepository(root: string): void {

@@ -1,0 +1,63 @@
+import { defineDelamain } from "als:authoring";
+
+export const delamain = defineDelamain({
+  "phases": [
+    "execution",
+    "closed"
+  ],
+  "states": {
+    "queued": {
+      "initial": true,
+      "phase": "execution",
+      "actor": "agent",
+      "provider": "anthropic",
+      "resumable": false,
+      "path": "agents/queued.md",
+      "label": "Queued"
+    },
+    "running": {
+      "phase": "execution",
+      "actor": "agent",
+      "provider": "anthropic",
+      "resumable": false,
+      "path": "agents/running.md",
+      "label": "Running"
+    },
+    "completed": {
+      "phase": "closed",
+      "terminal": true,
+      "label": "Completed",
+      "outcome": "success"
+    },
+    "failed": {
+      "phase": "closed",
+      "terminal": true,
+      "label": "Failed",
+      "outcome": "errored"
+    }
+  },
+  "transitions": [
+    {
+      "class": "advance",
+      "from": "queued",
+      "to": "running"
+    },
+    {
+      "class": "rework",
+      "from": "running",
+      "to": "queued"
+    },
+    {
+      "class": "exit",
+      "from": "running",
+      "to": "completed"
+    },
+    {
+      "class": "exit",
+      "from": "running",
+      "to": "failed"
+    }
+  ]
+} as const);
+
+export default delamain;
