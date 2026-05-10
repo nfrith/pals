@@ -45,7 +45,7 @@ Use `report-template.md` as the contract for `vN+1/migrations/REPORT.md`.
 - Completes or replaces the canonical migration script when the staged script is only a placeholder
 - Dry-runs rewrite migrations against a full disposable clone in `/tmp`
 - Executes the live migration and flips the module's active version and active `skills:` in `.als/system.ts`
-- Projects the new active Claude assets into `.claude/skills/` and `.claude/delamains/`
+- Projects the new active harness assets into `${SKILLS_ROOT}` and `${DELAMAINS_ROOT}`
 - Updates `MANIFEST.md` to `status: migrated`
 - Authors or updates `REPORT.md`
 - Commits the successful cutover
@@ -63,21 +63,29 @@ Use `report-template.md` as the contract for `vN+1/migrations/REPORT.md`.
 ### Phase 0 — Resolve Target And Preflight
 
 1. Find the system root. Use the same system-root rules as `validate`: prefer an explicit user path, then clear conversation context, then the current directory tree.
-2. Read `.als/system.ts`.
-3. Resolve the target module id from the operator request.
-4. Determine the active module version `vN` from `.als/system.ts`.
-5. Require `.als/modules/<module_id>/vN+1/` to exist.
-6. Require the target system root to be git-clean before live mutation work begins.
-   - Unrelated dirty files outside the target system root may remain.
-7. Run whole-system validation against the live system before doing any migration work.
+2. Initialize runtime variables:
 
 ```bash
-bun ${CLAUDE_PLUGIN_ROOT}/alsc/compiler/src/index.ts validate <system-root>
+bash {skill-dir}/../lib/runtime-env.sh <system-root>
 ```
 
-8. If the live system fails validation, stop. `migrate` does not cut over on top of a broken baseline.
-9. Read `.als/modules/<module_id>/vN+1/migrations/MANIFEST.md`.
-10. Validate the manifest contract:
+Extract `ALS_PLUGIN_ROOT`, `SYSTEM_ROOT`, `HARNESS`, `SKILLS_ROOT`, and `DELAMAINS_ROOT` from the output.
+
+3. Read `.als/system.ts`.
+4. Resolve the target module id from the operator request.
+5. Determine the active module version `vN` from `.als/system.ts`.
+6. Require `.als/modules/<module_id>/vN+1/` to exist.
+7. Require the target system root to be git-clean before live mutation work begins.
+   - Unrelated dirty files outside the target system root may remain.
+8. Run whole-system validation against the live system before doing any migration work.
+
+```bash
+bun ${ALS_PLUGIN_ROOT}/alsc/compiler/src/index.ts validate ${SYSTEM_ROOT}
+```
+
+9. If the live system fails validation, stop. `migrate` does not cut over on top of a broken baseline.
+10. Read `.als/modules/<module_id>/vN+1/migrations/MANIFEST.md`.
+11. Validate the manifest contract:
     - required frontmatter fields are present
     - `status` is `staged`
     - `from_version` matches live `vN`
@@ -85,7 +93,7 @@ bun ${CLAUDE_PLUGIN_ROOT}/alsc/compiler/src/index.ts validate <system-root>
     - `skill_paths` is present and every path points at a directory under `.als/modules/<module_id>/vN+1/skills/`
     - `primary_migration_script` exists and points at a file under `.als/modules/<module_id>/vN+1/migrations/`
     - required H2 sections exist in the exact declared order
-11. Read `REPORT.md` if it already exists; otherwise plan to create it from `references/report-template.md`.
+12. Read `REPORT.md` if it already exists; otherwise plan to create it from `references/report-template.md`.
 
 ### Phase 1 — Migration Understanding And Script Completion
 
@@ -122,10 +130,10 @@ This phase is required when `data_migration_required: true`.
 3. Run the primary migration script against the cloned system root while the clone still points at `vN`.
 4. Flip the cloned target module entry in `.als/system.ts` to `version: N+1` and `skills:` matching manifest `skill_paths`.
 5. Run whole-system validation against the clone.
-6. Project the cloned target module's active Claude assets into `.claude/`.
+6. Project the cloned target module's active harness assets.
 
 ```bash
-bun ${CLAUDE_PLUGIN_ROOT}/alsc/compiler/src/deploy.ts <clone-root> <module-id>
+bun ${ALS_PLUGIN_ROOT}/alsc/compiler/src/cli.ts deploy ${HARNESS} <clone-root> <module-id>
 ```
 
 7. Execute the manifest's `Behavior Test Plan`.
@@ -151,7 +159,7 @@ Never touch live data or `.als/system.ts` before a final operator approval.
 2. Require explicit fresh approval.
 3. Track every live file you mutate so rollback can be precise.
    - Track modified tracked files separately from newly created untracked files.
-   - Include `.claude/skills/` and `.claude/delamains/` changes in that tracking.
+   - Include `${SKILLS_ROOT}` and `${DELAMAINS_ROOT}` changes in that tracking.
 4. If `data_migration_required: true`, run the proven primary migration script against the live system root while `.als/system.ts` still points at `vN`.
 5. Flip the target module in live `.als/system.ts` to `version: N+1` and `skills:` matching manifest `skill_paths`.
 6. Run whole-system validation.
@@ -161,10 +169,10 @@ Never touch live data or `.als/system.ts` before a final operator approval.
    - keep `MANIFEST.md` at `status: staged`
    - keep the staged bundle's migration assets for inspection
    - stop and report the failure
-8. If validation passes, project the target module's active Claude assets into `.claude/`.
+8. If validation passes, project the target module's active harness assets.
 
 ```bash
-bun ${CLAUDE_PLUGIN_ROOT}/alsc/compiler/src/deploy.ts <system-root> <module-id>
+bun ${ALS_PLUGIN_ROOT}/alsc/compiler/src/cli.ts deploy ${HARNESS} ${SYSTEM_ROOT} <module-id>
 ```
 
    - Overwrite projected dirs for skills and Delamains in the new active set.
@@ -193,7 +201,7 @@ The successful cutover commit should include only:
 
 - live target-module record changes
 - the target module's version and `skills:` flip in `.als/system.ts`
-- `.claude/skills/` and `.claude/delamains/` changes for the target module's cutover
+- `${SKILLS_ROOT}` and `${DELAMAINS_ROOT}` changes for the target module's cutover
 - `vN+1/migrations/MANIFEST.md`
 - `vN+1/migrations/REPORT.md`
 - the finalized primary migration script and directly related migration assets in the target bundle

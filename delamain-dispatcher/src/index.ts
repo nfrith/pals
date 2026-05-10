@@ -19,6 +19,11 @@ import { formatDispatcherVersionLine, loadDispatcherVersionInfo } from "./dispat
 import { appendTelemetryEvent, DISPATCH_TELEMETRY_SCHEMA } from "./telemetry.js";
 import { createDrainControlPlane, type DrainControlPlane } from "./drain-control.js";
 import { scan } from "./watcher.js";
+import {
+  delamainRuntimeRootForHarness,
+  inferHarnessFromBundleRoot,
+  type HarnessTarget,
+} from "./harness-runtime.js";
 
 function findSystemRoot(start: string): string {
   let dir = start;
@@ -45,12 +50,14 @@ try {
 }
 
 const config = await resolve(BUNDLE_ROOT, SYSTEM_ROOT);
+const DELAMAINS_ROOT = resolveDelamainsRoot(BUNDLE_ROOT, config.harness);
 const runtime = new DispatcherRuntime({
   bundleRoot: BUNDLE_ROOT,
   systemRoot: SYSTEM_ROOT,
   delamainName: config.delamainName,
   statusField: config.statusField,
   pollMs: POLL_MS,
+  delamainsRoot: DELAMAINS_ROOT,
   submodules: config.submodules,
 });
 await runtime.ensurePrimaryCloneCommitGuards();
@@ -79,20 +86,36 @@ console.log(`[dispatcher] drain control poll every ${CONTROL_POLL_MS}ms`);
 
 const STATUS_FILE = join(
   SYSTEM_ROOT,
-  ".claude",
-  "delamains",
+  DELAMAINS_ROOT,
   config.delamainName,
   "status.json",
 );
 const DRAIN_REQUEST_FILE = join(
   SYSTEM_ROOT,
-  ".claude",
-  "delamains",
+  DELAMAINS_ROOT,
   config.delamainName,
   "dispatcher",
   "control",
   "drain-request.json",
 );
+
+function resolveDelamainsRoot(
+  bundleRoot: string,
+  harness: HarnessTarget | undefined,
+): string {
+  if (harness) {
+    return delamainRuntimeRootForHarness(harness);
+  }
+
+  const inferredHarness = inferHarnessFromBundleRoot(bundleRoot);
+  if (inferredHarness) {
+    return delamainRuntimeRootForHarness(inferredHarness);
+  }
+
+  throw new Error(
+    `Unable to resolve Delamain runtime root for bundle '${bundleRoot}': runtime-manifest.json must declare a registered harness`,
+  );
+}
 
 type DispatcherLifecycleMode = "running" | "draining";
 

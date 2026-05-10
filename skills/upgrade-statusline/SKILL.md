@@ -8,10 +8,18 @@ allowed-tools: AskUserQuestion, Bash, Read
 
 See [SDR 038](../../sdr/038-construct-upgrade-engine-contract.md) for the construct-upgrade semantics. This skill covers the statusline pulse process only.
 
+Before either mode, initialize runtime variables:
+
+```bash
+bash {skill-dir}/../lib/runtime-env.sh
+```
+
+Extract `ALS_PLUGIN_ROOT`, `SYSTEM_ROOT`, `HARNESS`, and `STATUSLINE_SUPPORTED` from the output. If the output is `NO_SYSTEM`, stop. If `STATUSLINE_SUPPORTED` is not `yes`, return a no-op result for this harness.
+
 ## Modes
 
 - `preflight`
-  - Read `${CLAUDE_PLUGIN_ROOT}/statusline/{VERSION,construct.json}`.
+  - Read `${ALS_PLUGIN_ROOT}/statusline/{VERSION,construct.json}`.
   - Read `.als/runtime/construct-upgrades/state.json` if present.
   - If the recorded applied version already matches the canonical statusline version, return a no-op result.
   - Otherwise return `needs_upgrade: true` with no operator prompts.

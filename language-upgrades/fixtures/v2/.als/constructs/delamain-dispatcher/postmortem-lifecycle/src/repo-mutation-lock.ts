@@ -27,12 +27,14 @@ interface RepoMutationLockOptions {
   pollMs?: number;
   staleMs?: number;
   timeoutMs?: number;
+  delamainsRoot?: string;
 }
 
 export class RepoMutationLock {
   private readonly pollMs: number;
   private readonly staleMs: number;
   private readonly timeoutMs: number;
+  private readonly delamainsRoot: string;
 
   constructor(
     private readonly systemRoot: string,
@@ -40,6 +42,7 @@ export class RepoMutationLock {
   ) {
     this.pollMs = options.pollMs ?? 250;
     this.staleMs = options.staleMs ?? 5 * 60_000;
+    this.delamainsRoot = options.delamainsRoot ?? ".claude/delamains";
     // The lease wait must outlive stale detection so metadata-less crash windows
     // can self-heal without a guaranteed timeout on the first waiter.
     this.timeoutMs = Math.max(options.timeoutMs ?? 2 * 60_000, this.staleMs + this.pollMs);
@@ -181,7 +184,7 @@ export class RepoMutationLock {
   }
 
   private lockDirectoryPath(): string {
-    return join(this.systemRoot, ".claude", "delamains", ".runtime", "repo-mutation.lock");
+    return join(this.systemRoot, this.delamainsRoot, ".runtime", "repo-mutation.lock");
   }
 
   private metadataFilePath(): string {

@@ -15,7 +15,15 @@ Before running the compiler, verify the runtime environment.
 2. Run `which jq` to check if jq is on PATH.
    - If not found, tell the operator: "ALS hooks require jq. Install it with your package manager (e.g. `! sudo apt-get install -y jq` or `! brew install jq`)." Do not proceed until jq is available.
 
-3. Run `cd ${CLAUDE_PLUGIN_ROOT}/alsc/compiler && bun install` to ensure compiler dependencies are installed. This is idempotent and fast when dependencies already exist.
+3. Initialize runtime variables:
+
+```bash
+bash {skill-dir}/../lib/runtime-env.sh <system-root-or-current-directory>
+```
+
+Extract `ALS_PLUGIN_ROOT` and `SYSTEM_ROOT` from the output. If the output is `NO_SYSTEM`, continue to [Determine the system root](#determine-the-system-root), ask the user when needed, then rerun initialization with the resolved path before proceeding.
+
+4. Run `cd ${ALS_PLUGIN_ROOT}/alsc/compiler && bun install` to ensure compiler dependencies are installed. This is idempotent and fast when dependencies already exist.
 
 You run the ALS compiler against a system to check that all authored `system.ts`/`module.ts` entrypoints, records, and references are valid.
 
@@ -23,10 +31,11 @@ You run the ALS compiler against a system to check that all authored `system.ts`
 
 The compiler needs the path to the system root — the directory that contains `.als/system.ts`.
 
-1. If the user provides a path, use it.
-2. If the conversation has context about which system is being worked on, use that path.
-3. Otherwise, check if the current working directory (or a parent) contains `.als/system.ts` and use that.
-4. If none of the above, ask the user.
+1. Use `${SYSTEM_ROOT}` when runtime initialization found it.
+2. If the user provides a path, use it.
+3. If the conversation has context about which system is being worked on, use that path.
+4. Otherwise, check if the current working directory (or a parent) contains `.als/system.ts` and use that.
+5. If none of the above, ask the user.
 
 ## Determine the module filter
 
@@ -39,7 +48,7 @@ The compiler can validate all modules or a single module.
 ## Run the compiler
 
 ```bash
-bun ${CLAUDE_PLUGIN_ROOT}/alsc/compiler/src/index.ts validate <system-root> [module-id]
+bun ${ALS_PLUGIN_ROOT}/alsc/compiler/src/index.ts validate ${SYSTEM_ROOT} [module-id]
 ```
 
 The compiler outputs JSON to stdout. Exit code 0 means pass, exit code 1 means fail.

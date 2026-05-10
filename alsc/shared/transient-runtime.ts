@@ -4,6 +4,7 @@ import { spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
 import { tmpdir } from "node:os";
+import { listHarnessRuntimeSpecs } from "./harnesses.ts";
 
 interface TransientRuntimeRule {
   id: string;
@@ -18,21 +19,31 @@ export interface AppliedTransientRuntimeCleanup {
   commit_message: string | null;
 }
 
-export const TRANSIENT_RUNTIME_TAXONOMY: readonly TransientRuntimeRule[] = Object.freeze([
+const DELAMAIN_TRANSIENT_TEMPLATES = Object.freeze([
   {
     id: "dispatcher-runtime",
-    gitignore_pattern: ".claude/delamains/*/runtime/",
-    matches(path) {
-      return /^\.claude\/delamains\/[^/]+\/runtime\/.+$/.test(path);
-    },
+    gitignore_suffix: "*/runtime/",
+    match_suffix: /[^/]+\/runtime\/.+$/,
   },
   {
     id: "dispatcher-status",
-    gitignore_pattern: ".claude/delamains/*/status.json",
-    matches(path) {
-      return /^\.claude\/delamains\/[^/]+\/status\.json$/.test(path);
-    },
+    gitignore_suffix: "*/status.json",
+    match_suffix: /[^/]+\/status\.json$/,
   },
+  {
+    id: "dispatcher-telemetry",
+    gitignore_suffix: "*/telemetry/events.jsonl",
+    match_suffix: /[^/]+\/telemetry\/events\.jsonl$/,
+  },
+  {
+    id: "dispatcher-drain-control",
+    gitignore_suffix: "*/dispatcher/control/drain-request.json",
+    match_suffix: /[^/]+\/dispatcher\/control\/drain-request\.json$/,
+  },
+]);
+
+export const TRANSIENT_RUNTIME_TAXONOMY: readonly TransientRuntimeRule[] = Object.freeze([
+  ...buildDelamainTransientRuntimeRules(),
   {
     id: "pulse-cache",
     gitignore_pattern: ".claude/scripts/.cache/pulse/*.json",
@@ -41,20 +52,26 @@ export const TRANSIENT_RUNTIME_TAXONOMY: readonly TransientRuntimeRule[] = Objec
     },
   },
   {
-    id: "dispatcher-telemetry",
-    gitignore_pattern: ".claude/delamains/*/telemetry/events.jsonl",
+    id: "codex-pulse-cache",
+    gitignore_pattern: ".codex/scripts/.cache/pulse/*.json",
     matches(path) {
-      return /^\.claude\/delamains\/[^/]+\/telemetry\/events\.jsonl$/.test(path);
-    },
-  },
-  {
-    id: "dispatcher-drain-control",
-    gitignore_pattern: ".claude/delamains/*/dispatcher/control/drain-request.json",
-    matches(path) {
-      return /^\.claude\/delamains\/[^/]+\/dispatcher\/control\/drain-request\.json$/.test(path);
+      return /^\.codex\/scripts\/\.cache\/pulse\/[^/]+\.json$/.test(path);
     },
   },
 ]);
+
+function buildDelamainTransientRuntimeRules(): TransientRuntimeRule[] {
+  return listHarnessRuntimeSpecs().flatMap((spec) =>
+    DELAMAIN_TRANSIENT_TEMPLATES.map((template) => ({
+      id: `${spec.target}-${template.id}`,
+      gitignore_pattern: `${spec.delamain_runtime_root}/${template.gitignore_suffix}`,
+      matches(path: string): boolean {
+        return path.startsWith(`${spec.delamain_runtime_root}/`)
+          && template.match_suffix.test(path.slice(spec.delamain_runtime_root.length + 1));
+      },
+    }))
+  );
+}
 
 export const TRANSIENT_RUNTIME_GITIGNORE_PATTERNS = Object.freeze(
   TRANSIENT_RUNTIME_TAXONOMY.map((rule) => rule.gitignore_pattern),
@@ -66,7 +83,12 @@ export function isTransientRuntimePath(path: string): boolean {
 }
 
 export function listTrackedTransientRuntimePaths(repoRoot: string): string[] {
-  return splitNullSeparated(runGit(repoRoot, ["ls-files", "-z", "--", ".claude"]).stdout)
+  const roots = Array.from(new Set([
+    ...listHarnessRuntimeSpecs().map((spec) => spec.delamain_runtime_root.split("/")[0]!),
+    ".claude",
+    ".codex",
+  ]));
+  return splitNullSeparated(runGit(repoRoot, ["ls-files", "-z", "--", ...roots]).stdout)
     .map(normalizeRepoPath)
     .filter((path) => path.length > 0 && isTransientRuntimePath(path))
     .sort();

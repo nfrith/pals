@@ -2,9 +2,16 @@ import { randomUUID } from "node:crypto";
 import { realpathSync } from "node:fs";
 import { readdir, rm, stat } from "node:fs/promises";
 import { basename, dirname, join, relative, resolve } from "node:path";
-import { deployClaudeSkills } from "../../compiler/src/claude-skills.ts";
+import { deployHarnessProjection } from "../../compiler/src/harness-projection.ts";
 import type { ConstructFailureState } from "../../compiler/src/construct-contracts.ts";
 import type { ConstructActionManifest } from "../../compiler/src/construct-upgrade.ts";
+import {
+  getHarnessRuntimeSpec,
+  type HarnessTarget,
+  type HarnessUpdateConstruct,
+  type HarnessUpdateConstructSupport,
+  type HarnessRuntimeSpec,
+} from "../../shared/harnesses.ts";
 import {
   applyTransientRuntimeCleanup,
   isTransientRuntimePath,
@@ -35,9 +42,10 @@ import type { PlannedLanguageUpgradeHop } from "../../upgrade-language/src/plan-
 const UPDATE_STAGING_WORKTREE_PREFIX = ".als-update-staging-";
 const TRANSIENT_RUNTIME_HYGIENE_CHECKPOINT_COMMIT_MESSAGE =
   "chore: checkpoint transient runtime hygiene before /update";
-const CONSTRUCT_ORDER = ["dispatcher", "statusline", "dashboard"] as const;
+const CONSTRUCT_ORDER: readonly HarnessUpdateConstruct[] = ["dispatcher", "statusline", "dashboard"];
 
-type ConstructName = (typeof CONSTRUCT_ORDER)[number];
+type ConstructName = HarnessUpdateConstruct;
+type ProcessConstructName = Exclude<ConstructName, "dispatcher">;
 
 export interface UpdateTransactionLanguagePlan {
   current_als_version: number;
@@ -76,6 +84,7 @@ export interface PreparedUpdateTransaction {
   repo_root: string;
   system_root: string;
   plugin_root: string;
+  harness: HarnessTarget;
   language: {
     plan: UpdateTransactionLanguagePlan;
     preflight: LanguageUpgradePreflightResult;
@@ -92,7 +101,10 @@ export type UpdateTransactionPrepareResult =
 
 export interface UpdateTransactionServices {
   validate_system?(systemRoot: string): ReturnType<typeof validateSystem>;
-  deploy_claude?(systemRoot: string): ReturnType<typeof deployClaudeSkills>;
+  deploy_harness_projection?(
+    target: HarnessTarget,
+    systemRoot: string,
+  ): ReturnType<typeof deployHarnessProjection>;
   run_action_manifest?(
     manifest: ConstructActionManifest,
     input: {
@@ -140,14 +152,16 @@ export async function prepareUpdateTransaction(input: {
   repo_root: string;
   system_root?: string;
   plugin_root: string;
+  harness?: HarnessTarget;
   language_plan?: UpdateTransactionLanguagePlan | null;
 }): Promise<UpdateTransactionPrepareResult> {
   const repoRoot = canonicalizeExistingPath(resolveGitRepoRoot(input.repo_root));
   const systemRoot = canonicalizeExistingPath(resolve(input.system_root ?? repoRoot));
   const pluginRoot = resolve(input.plugin_root);
+  const harness = input.harness ?? "claude";
   assertSystemRootWithinRepo(repoRoot, systemRoot);
 
-  const initialDirtyPaths = readTrackedDirtyPaths(repoRoot);
+  const initialDirtyPaths = readTrackedDirtyPaths(repoRoot, harness);
   if (shouldCheckpointTransientRuntimePaths(initialDirtyPaths)) {
     applyTransientRuntimeCleanup({
       system_root: systemRoot,
@@ -155,12 +169,13 @@ export async function prepareUpdateTransaction(input: {
     });
   }
 
-  const dirtyPaths = readTrackedDirtyPaths(repoRoot);
+  const dirtyPaths = readTrackedDirtyPaths(repoRoot, harness);
   if (dirtyPaths.length > 0) {
+    const rootList = formatRootList(trackedRootsForHarness(harness));
     return {
       status: "blocked",
       reason: "dirty-live-tree",
-      diagnostic: `Tracked changes under .als/ or .claude/ must be committed or discarded before /update starts: ${dirtyPaths.join(", ")}`,
+      diagnostic: `Tracked changes under ${rootList} must be committed or discarded before /update starts: ${dirtyPaths.join(", ")}`,
     };
   }
 
@@ -195,12 +210,10 @@ export async function prepareUpdateTransaction(input: {
       }),
     }
     : null;
-  const constructs = await preflightConstructs(systemRoot, pluginRoot);
+  const constructs = await preflightConstructs(systemRoot, pluginRoot, harness);
   const prompts = [
     ...(language?.preflight.prompts.map(toLanguagePrompt) ?? []),
-    ...constructs.dispatcher.prompts.map(toConstructPrompt),
-    ...constructs.statusline.prompts.map(toConstructPrompt),
-    ...constructs.dashboard.prompts.map(toConstructPrompt),
+    ...CONSTRUCT_ORDER.flatMap((name) => constructs[name].prompts.map(toConstructPrompt)),
   ];
   const requiresChanges = (language?.plan.hops.length ?? 0) > 0
     || CONSTRUCT_ORDER.some((name) => constructs[name].needs_upgrade);
@@ -210,13 +223,12 @@ export async function prepareUpdateTransaction(input: {
     repo_root: repoRoot,
     system_root: systemRoot,
     plugin_root: pluginRoot,
+    harness,
     language,
     constructs,
     prompts,
     requires_changes: requiresChanges,
-    manual_follow_up_note: constructs.statusline.needs_upgrade
-      ? "If statusline data goes stale, run `/bootup` or `/reboot`."
-      : null,
+    manual_follow_up_note: updateTransactionManualFollowUpNote(harness, constructs),
   };
 }
 
@@ -225,7 +237,10 @@ export async function runPreparedUpdateTransaction(input: {
   operator_answers?: Record<string, string>;
   services?: UpdateTransactionServices;
 }): Promise<UpdateTransactionExecuteResult> {
-  const prepared = input.prepared;
+  const prepared = {
+    ...input.prepared,
+    harness: input.prepared.harness ?? "claude",
+  };
   const services = withDefaultServices(input.services);
   if (!prepared.requires_changes) {
     return {
@@ -288,30 +303,27 @@ export async function runPreparedUpdateTransaction(input: {
   }
 
   try {
-    if (prepared.constructs.dispatcher.needs_upgrade) {
-      stagedConstructResults.push(await executeDelamainConstructUpgrade({
-        live_system_root: prepared.system_root,
-        staging_system_root: stagingSystemRoot,
-        plugin_root: prepared.plugin_root,
-        operator_answers: operatorAnswers,
-      }));
-    }
+    for (const construct of CONSTRUCT_ORDER) {
+      if (!prepared.constructs[construct].needs_upgrade) {
+        continue;
+      }
 
-    if (prepared.constructs.statusline.needs_upgrade) {
+      if (construct === "dispatcher") {
+        stagedConstructResults.push(await executeDelamainConstructUpgrade({
+          live_system_root: prepared.system_root,
+          staging_system_root: stagingSystemRoot,
+          plugin_root: prepared.plugin_root,
+          operator_answers: operatorAnswers,
+          harness: prepared.harness,
+        }));
+        continue;
+      }
+
       stagedConstructResults.push(await executeProcessConstructUpgrade({
         live_system_root: prepared.system_root,
         staging_system_root: stagingSystemRoot,
         plugin_root: prepared.plugin_root,
-        definition: createStatuslineProcessDefinition(prepared.plugin_root),
-      }));
-    }
-
-    if (prepared.constructs.dashboard.needs_upgrade) {
-      stagedConstructResults.push(await executeProcessConstructUpgrade({
-        live_system_root: prepared.system_root,
-        staging_system_root: stagingSystemRoot,
-        plugin_root: prepared.plugin_root,
-        definition: createDashboardProcessDefinition(prepared.plugin_root),
+        definition: createProcessDefinition(construct, prepared.plugin_root, prepared.harness),
       }));
     }
   } catch (error) {
@@ -335,7 +347,7 @@ export async function runPreparedUpdateTransaction(input: {
     );
   }
 
-  const deploy = services.deploy_claude(stagingSystemRoot);
+  const deploy = services.deploy_harness_projection(prepared.harness, stagingSystemRoot);
   if (deploy.status === "fail") {
     return buildFailureResult(
       "validation-deploy-failed",
@@ -348,7 +360,7 @@ export async function runPreparedUpdateTransaction(input: {
 
   const commitMessage = buildCommitMessage(prepared, stagedConstructResults);
   try {
-    runGit(stagingRepoRoot, ["add", "-A", "--", ".als", ".claude"]);
+    runGit(stagingRepoRoot, ["add", "-A", "--", ...trackedRootsForHarness(prepared.harness)]);
     if (!hasCachedChanges(stagingRepoRoot)) {
       await removeWorktree(prepared.repo_root, stagingRepoRoot);
       return {
@@ -437,23 +449,87 @@ export async function runPreparedUpdateTransaction(input: {
 async function preflightConstructs(
   systemRoot: string,
   pluginRoot: string,
+  harness: HarnessTarget,
 ): Promise<Record<ConstructName, ConstructUpgradePreflightResult>> {
+  const spec = getHarnessRuntimeSpec(harness);
+  const results = {} as Record<ConstructName, ConstructUpgradePreflightResult>;
+
+  for (const construct of CONSTRUCT_ORDER) {
+    const support = spec.update_constructs[construct];
+    if (support.status === "skipped") {
+      results[construct] = skippedConstruct(spec, construct, support);
+      continue;
+    }
+
+    results[construct] = construct === "dispatcher"
+      ? await preflightDelamainConstructUpgrade({
+        system_root: systemRoot,
+        plugin_root: pluginRoot,
+      })
+      : await preflightProcessConstructUpgrade({
+        system_root: systemRoot,
+        plugin_root: pluginRoot,
+        definition: createProcessDefinition(construct, pluginRoot, harness),
+      });
+  }
+
+  return results;
+}
+
+function skippedConstruct(
+  spec: HarnessRuntimeSpec,
+  construct: ConstructName,
+  support: Extract<HarnessUpdateConstructSupport, { status: "skipped" }>,
+): ConstructUpgradePreflightResult {
   return {
-    dispatcher: await preflightDelamainConstructUpgrade({
-      system_root: systemRoot,
-      plugin_root: pluginRoot,
-    }),
-    statusline: await preflightProcessConstructUpgrade({
-      system_root: systemRoot,
-      plugin_root: pluginRoot,
-      definition: createStatuslineProcessDefinition(pluginRoot),
-    }),
-    dashboard: await preflightProcessConstructUpgrade({
-      system_root: systemRoot,
-      plugin_root: pluginRoot,
-      definition: createDashboardProcessDefinition(pluginRoot),
-    }),
+    construct,
+    current_version: null,
+    target_version: 0,
+    needs_upgrade: false,
+    prompts: [],
+    validation: null,
+    telemetry: [
+      {
+        type: "preflight_skipped",
+        timestamp: new Date().toISOString(),
+        construct,
+        message: `${construct} construct lifecycle is not managed for the ${spec.display_name} harness.`,
+        data: {
+          harness: spec.target,
+          required_for_feature_parity: support.required_for_feature_parity,
+          reason: support.reason,
+        },
+      },
+    ],
   };
+}
+
+function createProcessDefinition(
+  construct: ProcessConstructName,
+  pluginRoot: string,
+  harness: HarnessTarget,
+) {
+  return construct === "statusline"
+    ? createStatuslineProcessDefinition(pluginRoot, harness)
+    : createDashboardProcessDefinition(pluginRoot, harness);
+}
+
+function updateTransactionManualFollowUpNote(
+  harness: HarnessTarget,
+  constructs: Record<ConstructName, ConstructUpgradePreflightResult>,
+): string | null {
+  const spec = getHarnessRuntimeSpec(harness);
+  const skippedRequiredConstructs = CONSTRUCT_ORDER.filter((construct) => {
+    const support = spec.update_constructs[construct];
+    return support.status === "skipped" && support.required_for_feature_parity;
+  });
+  if (skippedRequiredConstructs.length > 0) {
+    return `${spec.display_name} update follow-through skipped required ALS construct lifecycle actions: ${skippedRequiredConstructs.join(", ")}.`;
+  }
+
+  return spec.update_constructs.statusline.status === "managed" && constructs.statusline.needs_upgrade
+    ? "If statusline data goes stale, run `/bootup` or `/reboot`."
+    : null;
 }
 
 function toLanguagePrompt(prompt: LanguageUpgradePreflightPrompt): UpdateTransactionPrompt {
@@ -543,8 +619,14 @@ function assertSystemRootWithinRepo(repoRoot: string, systemRoot: string): void 
   }
 }
 
-function readTrackedDirtyPaths(repoRoot: string): string[] {
-  const output = runGit(repoRoot, ["status", "--porcelain", "--untracked-files=no", "--", ".als", ".claude"]).stdout;
+function readTrackedDirtyPaths(repoRoot: string, harness: HarnessTarget): string[] {
+  const output = runGit(repoRoot, [
+    "status",
+    "--porcelain",
+    "--untracked-files=no",
+    "--",
+    ...trackedRootsForHarness(harness),
+  ]).stdout;
   return output
     .split("\n")
     .map((line) => line.trimEnd())
@@ -554,7 +636,22 @@ function readTrackedDirtyPaths(repoRoot: string): string[] {
 
 function shouldCheckpointTransientRuntimePaths(dirtyPaths: string[]): boolean {
   return dirtyPaths.length > 0
-    && dirtyPaths.every((path) => path.startsWith(".claude/") && isTransientRuntimePath(path));
+    && dirtyPaths.every((path) => isTransientRuntimePath(path));
+}
+
+function trackedRootsForHarness(harness: HarnessTarget): string[] {
+  const spec = getHarnessRuntimeSpec(harness);
+  return [...spec.transaction_roots];
+}
+
+function formatRootList(roots: string[]): string {
+  if (roots.length === 1) {
+    return roots[0]!;
+  }
+  if (roots.length === 2) {
+    return `${roots[0]} or ${roots[1]}`;
+  }
+  return `${roots.slice(0, -1).join(", ")}, or ${roots[roots.length - 1]}`;
 }
 
 function hasCachedChanges(repoRoot: string): boolean {
@@ -624,7 +721,7 @@ function withDefaultServices(
 ): Required<UpdateTransactionServices> {
   return {
     validate_system: services?.validate_system ?? validateSystem,
-    deploy_claude: services?.deploy_claude ?? deployClaudeSkills,
+    deploy_harness_projection: services?.deploy_harness_projection ?? deployHarnessProjection,
     run_action_manifest: services?.run_action_manifest ?? ((manifest, input) => runConstructActionManifest(manifest, {
       system_root: input.system_root,
       plugin_root: input.plugin_root,

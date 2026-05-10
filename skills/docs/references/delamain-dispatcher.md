@@ -10,15 +10,15 @@ ALS Developer, ALS Architect, Claude.
 
 ## Overview
 
-The canonical dispatcher bundle lives at `${CLAUDE_PLUGIN_ROOT}/delamain-dispatcher/`. In `als_version >= 2`, each operator system carries one installed dispatcher source tree per deployed Delamain at `.als/constructs/delamain-dispatcher/<name>/`.
+The canonical dispatcher bundle lives at `${ALS_PLUGIN_ROOT}/delamain-dispatcher/`. In `als_version >= 2`, each operator system carries one installed dispatcher source tree per deployed Delamain at `.als/constructs/delamain-dispatcher/<name>/`.
 
-The canonical template exposes its latest template version in `${CLAUDE_PLUGIN_ROOT}/delamain-dispatcher/VERSION`. Every installed or deployed dispatcher bundle carries a local `dispatcher/VERSION` file. Startup reads both files, logs `[dispatcher] version: X (latest: Y)`, and appends `run /update to update` when the local version is stale. Missing or malformed local or canonical `VERSION` files are hard startup errors.
+The canonical template exposes its latest template version in `${ALS_PLUGIN_ROOT}/delamain-dispatcher/VERSION`. Every installed or deployed dispatcher bundle carries a local `dispatcher/VERSION` file. Startup reads both files, logs `[dispatcher] version: X (latest: Y)`, and appends `run /update to update` when the local version is stale. Missing or malformed local or canonical `VERSION` files are hard startup errors.
 
 Every dispatcher entrypoint begins with `import "./preflight.js";`. That sibling module deletes `process.env.ANTHROPIC_API_KEY` before the Anthropic SDK loads, which keeps plain `bun run src/index.ts` on Max-subscription routing instead of cached API-key billing. OpenAI-provider dispatches continue to use `CODEX_API_KEY`.
 
-When a Delamain bundle is deployed to `.claude/delamains/<name>/`, later `alsc deploy claude` runs refresh `dispatcher/` from the installed construct root at `.als/constructs/delamain-dispatcher/<name>/` while preserving an existing `dispatcher/node_modules/` directory. Deploy itself does not install packages. If dependencies have never been installed in the deployed target, deploy warns and leaves installation as an explicit `bun install` step.
+When a Delamain bundle is deployed to `${DELAMAINS_ROOT}/<name>/`, later `alsc deploy ${HARNESS}` runs refresh `dispatcher/` from the installed construct root at `.als/constructs/delamain-dispatcher/<name>/` while preserving an existing `dispatcher/node_modules/` directory. Deploy itself does not install packages. If dependencies have never been installed in the deployed target, deploy warns and leaves installation as an explicit `bun install` step.
 
-Dispatcher runtime fixes in the canonical template are not live until construct-upgrade refreshes the installed root and `alsc deploy claude` refreshes the deployed bundle copy.
+Dispatcher runtime fixes in the canonical template are not live until construct-upgrade refreshes the installed root and `alsc deploy ${HARNESS}` refreshes the deployed bundle copy.
 
 The deployed bundle root also receives `runtime-manifest.json`. That manifest is the authoritative binding contract for the runtime:
 
@@ -55,7 +55,7 @@ ALS-090 adds a second, repo-local follow-through contract after canonical public
 
 The release-side rationale and dirty-worktree trade are documented in [`als-factory/docs/release-model/update-mechanics/primary-clone-convergence.md`](../../../../als-factory/docs/release-model/update-mechanics/primary-clone-convergence.md).
 
-The dispatcher is supported from deployed `.claude/delamains/<name>/` bundles. Authored module bundles do not carry dispatcher source in ALS v2+, and the operator-side installed source lives under `.als/constructs/delamain-dispatcher/<name>/`.
+The dispatcher is supported from deployed harness delamain bundles under `${DELAMAINS_ROOT}/<name>/`. Authored module bundles do not carry dispatcher source in ALS v2+, and the operator-side installed source lives under `.als/constructs/delamain-dispatcher/<name>/`.
 
 ## Telemetry Files
 
@@ -102,7 +102,7 @@ Entry point. Handles:
 
 - **Auth preflight**: imports `src/preflight.ts` as the literal first line so the Anthropic SDK never sees `ANTHROPIC_API_KEY` during module evaluation.
 - **System root discovery**: walks up directories from its own location looking for `.als/system.ts`. Also respects the `SYSTEM_ROOT` environment variable.
-- **Template version check**: reads local `dispatcher/VERSION` and canonical `${CLAUDE_PLUGIN_ROOT}/delamain-dispatcher/VERSION`, logs the current/latest versions, and fails before polling when either source is missing or malformed.
+- **Template version check**: reads local `dispatcher/VERSION` and canonical `${ALS_PLUGIN_ROOT}/delamain-dispatcher/VERSION`, logs the current/latest versions, and fails before polling when either source is missing or malformed.
 - **Startup**: calls `resolve()` once to load `runtime-manifest.json`, local `delamain.yaml`, and state-agent files, then enters the poll loop.
 - **Effective limits**: resolves `runtime-manifest.json.limits` once at startup, applies `maxBudgetUsdByProvider[provider] ?? maxBudgetUsd ?? providerDefault`, falls back to canonical defaults `anthropic: 20` / `openai: 50` when absent, and logs `maxTurns` plus the active per-provider budget map before polling.
 - **Runtime boot**: creates one `DispatcherRuntime`, runs orphan sweep at startup, and keeps the persisted dispatch registry as the source of truth for active, blocked, orphaned, and guarded ownership.
@@ -215,7 +215,7 @@ Runtime manifest loader and validator.
 Dispatcher template version loader and formatter.
 
 - Reads local `dispatcher/VERSION` from the deployed bundle root
-- Reads canonical latest version from `${CLAUDE_PLUGIN_ROOT}/delamain-dispatcher/VERSION`
+- Reads canonical latest version from `${ALS_PLUGIN_ROOT}/delamain-dispatcher/VERSION`
 - Accepts positive integers only
 - Formats the startup version line and stale-version upgrade instruction
 
@@ -276,9 +276,9 @@ The dispatcher reads one generated runtime manifest plus the local Delamain bund
 | Session handling | State `resumable` + `provider` + `session-field` |
 | Sub-agents | State `sub-agent` path |
 | Local dispatcher template version | `dispatcher/VERSION` |
-| Latest dispatcher template version | `${CLAUDE_PLUGIN_ROOT}/delamain-dispatcher/VERSION` |
+| Latest dispatcher template version | `${ALS_PLUGIN_ROOT}/delamain-dispatcher/VERSION` |
 
-Hosts generate `runtime-manifest.json` during Claude projection. One deployed Delamain bundle owns exactly one effective binding. Reusing the same Delamain name across multiple effective bindings is a deploy-planning error.
+Deploy generates `runtime-manifest.json` during harness projection. One deployed Delamain bundle owns exactly one effective binding. Reusing the same Delamain name across multiple effective bindings is a deploy-planning error.
 
 This ship does not add any operator-local limit override layer. Limit changes are authored in module source and take effect on the next deploy plus dispatcher restart.
 
@@ -317,7 +317,7 @@ Scope boundary:
 
 Agent paths in `delamain.yaml` resolve relative to the directory containing the Delamain primary definition file (the deployed bundle root), not relative to the module bundle root.
 
-The `findSystemRoot` walk-up in `index.ts` makes the dispatcher work at any nesting depth under a deployed `.claude/delamains/<name>/` bundle.
+The `findSystemRoot` walk-up in `index.ts` makes the dispatcher work at any nesting depth under a deployed harness delamain bundle.
 
 ## Dashboard Contract
 
@@ -374,9 +374,9 @@ Environment variables:
 - `SYSTEM_ROOT` — override the system root (optional; auto-detected by default)
 - `POLL_MS` — polling interval in milliseconds (default: 30000)
 - `CONTROL_POLL_MS` — drain-control fallback poll interval in milliseconds (default: 250)
-- `CLAUDE_PLUGIN_ROOT` — installed ALS plugin root used to read the canonical dispatcher `VERSION` file (required)
+- `ALS_PLUGIN_ROOT` — installed ALS plugin root used to read the canonical dispatcher `VERSION` file (required)
 
-If `dispatcher/VERSION`, `CLAUDE_PLUGIN_ROOT`, the canonical dispatcher `VERSION`, or `runtime-manifest.json` is missing or invalid, the dispatcher fails closed before polling. Stale but readable dispatcher versions continue running and instruct the operator to run `/update`.
+If `dispatcher/VERSION`, `ALS_PLUGIN_ROOT`, the canonical dispatcher `VERSION`, or `runtime-manifest.json` is missing or invalid, the dispatcher fails closed before polling. Stale but readable dispatcher versions continue running and instruct the operator to run `/update`.
 
 ## Heartbeat Shape
 

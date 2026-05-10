@@ -78,13 +78,14 @@ The dispatcher only reads committed `HEAD` state. Unstaged or staged status edit
 
 "Review" means presenting the full entity record to the operator for reading before they make a decision.
 
-The pattern is **platform-aware**: every console skill must detect the operator's platform via `$CLAUDE_CODE_ENTRYPOINT` (see [`platforms.md`](platforms.md)) and route to a platform-appropriate viewer. The console decides *how* to present; the contract is that the operator can always read the entity before acting.
+The pattern is **platform-aware**: every console skill must detect the operator's platform through `skills/lib/runtime-env.sh` and `ALS_PLATFORM_CODE` first, then fall back to harness-specific live signals such as `$CODEX_THREAD_ID` or `$CLAUDE_CODE_ENTRYPOINT` (see [`platforms.md`](platforms.md)). The console decides *how* to present; the contract is that the operator can always read the entity before acting.
 
-| Platform | Entrypoint | Viewer pattern |
-|----------|------------|----------------|
-| [`ALS-PLAT-CCLI`](platforms.md) | `cli` | Terminal-native: tmux popup, `$PAGER`, or inline Read |
-| [`ALS-PLAT-CDSK`](platforms.md) | `claude-desktop` | Ask the operator (via AskUserQuestion) whether they want to review in a browser. If yes, open the entity using whichever browser/preview MCP the operator has connected (e.g. Claude Preview, Claude in Chrome, or any successor). If no, present inline via Read. |
-| [`ALS-PLAT-CWEB`](platforms.md) | `remote` | Ask as with CDSK; fall back to inline Read |
+| Platform | Runtime signal | Viewer pattern |
+|----------|----------------|----------------|
+| [`ALS-PLAT-CCLI`](platforms.md) | `HARNESS=claude`, `CLAUDE_CODE_ENTRYPOINT=cli` | Terminal-native: tmux popup, `$PAGER`, or inline Read |
+| [`ALS-PLAT-CXCLI`](platforms.md) | `HARNESS=codex`, `CODEX_THREAD_ID` | Terminal-native: tmux popup, `$PAGER`, or inline Read |
+| [`ALS-PLAT-CDSK`](platforms.md) | `HARNESS=claude`, `CLAUDE_CODE_ENTRYPOINT=claude-desktop` | Ask the operator (via AskUserQuestion) whether they want to review in a browser. If yes, open the entity using whichever browser/preview MCP the operator has connected (e.g. Claude Preview, Claude in Chrome, or any successor). If no, present inline via Read. |
+| [`ALS-PLAT-CWEB`](platforms.md) | `HARNESS=claude`, `CLAUDE_CODE_ENTRYPOINT=remote` | Ask as with CDSK; fall back to inline Read |
 | [`ALS-PLAT-CCWK`](platforms.md) | *(unknown)* | Cowork-native viewer when implementation lands; fall back to inline Read until then |
 
 When a preference question is appropriate (CDSK, CWEB), only ask once per review — if the operator already answered earlier in the same action flow, respect that choice for the rest of the flow.

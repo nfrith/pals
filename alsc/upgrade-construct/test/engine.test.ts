@@ -5,6 +5,7 @@ import { dirname, join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import {
+  createDashboardProcessDefinition,
   createStatuslineProcessDefinition,
   executeDelamainConstructUpgrade,
   executeProcessConstructUpgrade,
@@ -158,6 +159,11 @@ test("delamain construct preflight and execute stage the fleet upgrade without m
       "drain-then-restart",
       "kill-then-restart",
     ]);
+    expect(execute.action_manifest?.actions[0]?.start.command).toEqual([
+      "bun",
+      "run",
+      "$ALS_SYSTEM_ROOT/.claude/delamains/factory-jobs/dispatcher/src/index.ts",
+    ]);
 
     expect(await readFile(join(dispatcherA, "VERSION"), "utf-8")).toBe("11\n");
     expect(await readFile(join(
@@ -169,6 +175,44 @@ test("delamain construct preflight and execute stage the fleet upgrade without m
       "VERSION",
     ), "utf-8")).toBe("19\n");
     expect(execute.validation?.requires_claude_deploy).toBe(true);
+  });
+});
+
+test("delamain construct execute can emit Codex dispatcher lifecycle actions", async () => {
+  await withTempDir("dispatcher-codex-stage", async (root) => {
+    const liveSystemRoot = join(root, "live");
+    const stagingSystemRoot = join(root, "staging");
+    const dispatcherRoot = join(
+      liveSystemRoot,
+      ".als",
+      "constructs",
+      "delamain-dispatcher",
+      "factory-jobs",
+    );
+
+    await mkdir(dispatcherRoot, { recursive: true });
+    await cp(dispatcherV11FixtureRoot, dispatcherRoot, { recursive: true });
+    await cp(liveSystemRoot, stagingSystemRoot, { recursive: true });
+
+    const execute = await executeDelamainConstructUpgrade({
+      live_system_root: liveSystemRoot,
+      staging_system_root: stagingSystemRoot,
+      plugin_root: alsRepoRoot,
+      harness: "codex",
+      operator_answers: {
+        "dispatcher-lifecycle:factory-jobs": "drain",
+      },
+    });
+
+    expect(execute.needs_upgrade).toBe(true);
+    expect(execute.action_manifest?.actions[0]?.start.command).toEqual([
+      "bun",
+      "run",
+      "$ALS_SYSTEM_ROOT/.codex/delamains/factory-jobs/dispatcher/src/index.ts",
+    ]);
+    expect(execute.action_manifest?.actions[0]?.process_locator?.path).toBe(
+      "$ALS_SYSTEM_ROOT/.codex/delamains/factory-jobs/status.json",
+    );
   });
 });
 
@@ -189,6 +233,12 @@ test("process construct execute records the applied version and emits start-only
 
     expect(execute.needs_upgrade).toBe(true);
     expect(execute.action_manifest?.actions[0]?.kind).toBe("start-only");
+    expect(execute.action_manifest?.actions[0]?.start.command).toEqual([
+      "bun",
+      "run",
+      "$ALS_PLUGIN_ROOT/statusline/pulse.ts",
+      "$ALS_SYSTEM_ROOT",
+    ]);
     const state = JSON.parse(await readFile(
       join(stagingSystemRoot, ".als", "runtime", "construct-upgrades", "state.json"),
       "utf-8",
@@ -197,6 +247,18 @@ test("process construct execute records the applied version and emits start-only
     };
     expect(state.constructs.statusline.applied_version).toBe(1);
   });
+});
+
+test("dashboard process definition scopes lifecycle lookup to the selected harness", () => {
+  const definition = createDashboardProcessDefinition(alsRepoRoot, "codex");
+
+  expect(definition.start.command).toContain("--harness");
+  expect(definition.start.command).toContain("codex");
+  expect(definition.process_locator.kind).toBe("argv-substring");
+  if (definition.process_locator.kind === "argv-substring") {
+    expect(definition.process_locator.argv_contains).toContain("--harness");
+    expect(definition.process_locator.argv_contains).toContain("codex");
+  }
 });
 
 test("argv-substring locator parses process-table output deterministically", async () => {

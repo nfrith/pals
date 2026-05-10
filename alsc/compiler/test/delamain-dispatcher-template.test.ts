@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { deployClaudeSkillsFromConfig } from "../src/claude-skills.ts";
+import { deployClaudeSkillsFromConfig } from "../src/harness-projection.ts";
 import { loadSystemValidationContext } from "../src/validate.ts";
 import {
   formatDispatcherVersionLine,
@@ -108,7 +108,7 @@ test("dispatcher version check reads local and canonical VERSION files", async (
     await writeVersionPath(root, "plugin/delamain-dispatcher/VERSION", "1\n");
 
     const info = await loadDispatcherVersionInfo(bundleRoot, {
-      CLAUDE_PLUGIN_ROOT: pluginRoot,
+      ALS_PLUGIN_ROOT: pluginRoot,
     });
 
     expect(info.localVersion).toBe(1);
@@ -125,7 +125,7 @@ test("dispatcher version check rejects missing local VERSION", async () => {
     await writeVersionPath(root, "plugin/delamain-dispatcher/VERSION", "1\n");
 
     await expect(loadDispatcherVersionInfo(bundleRoot, {
-      CLAUDE_PLUGIN_ROOT: pluginRoot,
+      ALS_PLUGIN_ROOT: pluginRoot,
     })).rejects.toThrow("local dispatcher VERSION missing or unreadable");
   });
 });
@@ -139,20 +139,37 @@ test("dispatcher version check rejects malformed local VERSION", async () => {
     await writeVersionPath(root, "plugin/delamain-dispatcher/VERSION", "1\n");
 
     await expect(loadDispatcherVersionInfo(bundleRoot, {
-      CLAUDE_PLUGIN_ROOT: pluginRoot,
+      ALS_PLUGIN_ROOT: pluginRoot,
     })).rejects.toThrow("local dispatcher VERSION must be a positive integer");
   });
 });
 
-test("dispatcher version check rejects missing CLAUDE_PLUGIN_ROOT", async () => {
+test("dispatcher version check rejects missing ALS plugin root", async () => {
   await withVersionSandbox("missing-plugin-root", async ({ root }) => {
     const bundleRoot = join(root, ".claude/delamains/version-check");
 
     await writeVersionPath(root, ".claude/delamains/version-check/dispatcher/VERSION", "1\n");
 
     await expect(loadDispatcherVersionInfo(bundleRoot, {})).rejects.toThrow(
-      "CLAUDE_PLUGIN_ROOT is not set; cannot read canonical dispatcher VERSION",
+      "ALS_PLUGIN_ROOT is not set; cannot read canonical dispatcher VERSION",
     );
+  });
+});
+
+test("dispatcher version check accepts ALS_PLUGIN_ROOT", async () => {
+  await withVersionSandbox("als-plugin-root", async ({ root }) => {
+    const bundleRoot = join(root, ".codex/delamains/version-check");
+    const pluginRoot = join(root, "plugin");
+
+    await writeVersionPath(root, ".codex/delamains/version-check/dispatcher/VERSION", "1\n");
+    await writeVersionPath(root, "plugin/delamain-dispatcher/VERSION", "2\n");
+
+    const info = await loadDispatcherVersionInfo(bundleRoot, {
+      ALS_PLUGIN_ROOT: pluginRoot,
+    });
+
+    expect(info.localVersion).toBe(1);
+    expect(info.latestVersion).toBe(2);
   });
 });
 
@@ -164,7 +181,7 @@ test("dispatcher version check rejects missing canonical VERSION", async () => {
     await writeVersionPath(root, ".claude/delamains/version-check/dispatcher/VERSION", "1\n");
 
     await expect(loadDispatcherVersionInfo(bundleRoot, {
-      CLAUDE_PLUGIN_ROOT: pluginRoot,
+      ALS_PLUGIN_ROOT: pluginRoot,
     })).rejects.toThrow("canonical dispatcher VERSION missing or unreadable");
   });
 });
@@ -178,7 +195,7 @@ test("dispatcher version check rejects malformed canonical VERSION", async () =>
     await writeVersionPath(root, "plugin/delamain-dispatcher/VERSION", "v2\n");
 
     await expect(loadDispatcherVersionInfo(bundleRoot, {
-      CLAUDE_PLUGIN_ROOT: pluginRoot,
+      ALS_PLUGIN_ROOT: pluginRoot,
     })).rejects.toThrow("canonical dispatcher VERSION must be a positive integer");
   });
 });
@@ -192,7 +209,7 @@ test("dispatcher version check logs stale upgrade instruction without failing", 
     await writeVersionPath(root, "plugin/delamain-dispatcher/VERSION", "2\n");
 
     const info = await loadDispatcherVersionInfo(bundleRoot, {
-      CLAUDE_PLUGIN_ROOT: pluginRoot,
+      ALS_PLUGIN_ROOT: pluginRoot,
     });
 
     expect(formatDispatcherVersionLine(info)).toBe(
@@ -215,7 +232,7 @@ test("dispatcher version check ignores dispatcher package.json version", async (
     await writeVersionPath(root, "plugin/delamain-dispatcher/VERSION", "1\n");
 
     const info = await loadDispatcherVersionInfo(bundleRoot, {
-      CLAUDE_PLUGIN_ROOT: pluginRoot,
+      ALS_PLUGIN_ROOT: pluginRoot,
     });
 
     expect(info.localVersion).toBe(1);
@@ -249,6 +266,44 @@ test("dispatcher resolve fails closed when runtime manifest is missing", async (
       "Missing runtime-manifest.json",
     );
   });
+});
+
+test("dispatcher resolve rejects unregistered runtime manifest harness", async () => {
+  const root = await mkdtemp(join(tmpdir(), "als-dispatcher-manifest-invalid-harness-"));
+  try {
+    const bundleRoot = join(root, ".opencode/delamains/development-pipeline");
+    await mkdir(bundleRoot, { recursive: true });
+    await writeFile(
+      join(bundleRoot, "runtime-manifest.json"),
+      JSON.stringify(
+        {
+          schema: "als-delamain-runtime-manifest@1",
+          harness: "opencode",
+          delamain_name: "development-pipeline",
+          module_id: "factory",
+          module_version: 1,
+          module_mount_path: "workspace/factory",
+          entity_name: "work-item",
+          entity_path: "items/{id}.md",
+          status_field: "status",
+          discriminator_field: null,
+          discriminator_value: null,
+          submodules: [],
+          state_providers: {
+            dev: "openai",
+          },
+        },
+        null,
+        2,
+      ) + "\n",
+    );
+
+    await expect(loadRuntimeManifest(bundleRoot)).rejects.toThrow(
+      "'harness' must be one of 'claude' or 'codex'",
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });
 
 test("dispatcher resolve rejects unsupported per-provider deployed runtime manifest limits", async () => {
@@ -525,7 +580,7 @@ test("dispatcher scan discovers nested entity paths from runtime manifest bindin
     expect(items.map((item) => item.id).sort()).toEqual(["RUN-0001", "RUN-0002", "RUN-0003"]);
     expect(byId.get("RUN-0001")?.status).toBe("completed");
     expect(byId.get("RUN-0002")?.status).toBe("completed");
-    expect(byId.get("RUN-0003")?.status).toBe("running");
+    expect(byId.get("RUN-0003")?.status).toBe("completed");
     expect(byId.get("RUN-0003")?.filePath).toContain(
       "workspace/experiments/programs/PRG-0001/experiments/EXP-0001/runs/RUN-0003.md",
     );

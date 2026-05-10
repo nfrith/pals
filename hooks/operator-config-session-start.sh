@@ -6,7 +6,11 @@ set -euo pipefail
 
 command -v bun >/dev/null 2>&1 || exit 0
 
-compiler_cli="${CLAUDE_PLUGIN_ROOT}/alsc/compiler/src/cli.ts"
+PLUGIN_ROOT="${ALS_PLUGIN_ROOT:-${CLAUDE_PLUGIN_ROOT:-}}"
+[[ -n "$PLUGIN_ROOT" ]] || exit 0
+export ALS_PLUGIN_ROOT="$PLUGIN_ROOT"
+
+compiler_cli="${PLUGIN_ROOT}/alsc/compiler/src/cli.ts"
 [[ -f "$compiler_cli" ]] || exit 0
 
 input=$(cat)

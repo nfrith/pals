@@ -16,6 +16,7 @@ import type { AgentProvider } from "./provider.js";
 import { buildSessionRuntimeState, shouldPersistDispatcherSession } from "./session-runtime.js";
 import { recoverFreshDispatchAfterMissingResumeSession } from "./resume-recovery.js";
 import { loadRuntimeManifest } from "./runtime-manifest.js";
+import type { HarnessTarget } from "./harness-runtime.js";
 import {
   appendTelemetryEvent,
   DISPATCH_TELEMETRY_SCHEMA,
@@ -73,6 +74,7 @@ export interface DispatchEntry {
 
 export interface ResolvedConfig {
   systemRoot: string;
+  harness?: HarnessTarget;
   moduleId: string;
   moduleRoot: string;
   entityName: string;
@@ -145,6 +147,10 @@ export async function resolve(
       }
       if (typeof meta["network-enabled"] === "boolean") {
         def.networkEnabled = meta["network-enabled"];
+      }
+      const hooks = normalizeCodexHooks(meta["hooks"], agentPath);
+      if (hooks) {
+        def.hooks = hooks;
       }
 
       agents[agentKey] = def;
@@ -219,6 +225,7 @@ export async function resolve(
 
   return {
     systemRoot,
+    harness: manifest.harness,
     moduleId: manifest.module_id,
     moduleRoot,
     entityName: manifest.entity_name,
@@ -235,6 +242,49 @@ export async function resolve(
     concurrencyPools,
     dispatchTable,
   };
+}
+
+function normalizeCodexHooks(value: unknown, agentPath: string): Record<string, unknown> | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error(`hooks frontmatter in '${agentPath}' must be an object`);
+  }
+
+  const hooks = value as Record<string, unknown>;
+  for (const [eventName, groups] of Object.entries(hooks)) {
+    if (eventName !== "PostToolUse" && eventName !== "Stop") {
+      throw new Error(
+        `hooks frontmatter in '${agentPath}' only supports PostToolUse and Stop in Codex v1`,
+      );
+    }
+    if (!Array.isArray(groups)) {
+      throw new Error(`hooks.${eventName} in '${agentPath}' must be an array`);
+    }
+    for (const group of groups) {
+      if (!group || typeof group !== "object" || Array.isArray(group)) {
+        throw new Error(`hooks.${eventName} entries in '${agentPath}' must be objects`);
+      }
+      const handlers = (group as Record<string, unknown>)["hooks"];
+      if (!Array.isArray(handlers)) {
+        throw new Error(`hooks.${eventName} entries in '${agentPath}' must define hooks[]`);
+      }
+      for (const handler of handlers) {
+        if (!handler || typeof handler !== "object" || Array.isArray(handler)) {
+          throw new Error(`hooks.${eventName}.hooks entries in '${agentPath}' must be objects`);
+        }
+        const commandHook = handler as Record<string, unknown>;
+        if (commandHook["type"] !== "command" || typeof commandHook["command"] !== "string") {
+          throw new Error(
+            `hooks.${eventName}.hooks entries in '${agentPath}' must be command handlers`,
+          );
+        }
+      }
+    }
+  }
+
+  return hooks;
 }
 
 const sdkEnv: Record<string, string | undefined> = { ...process.env };

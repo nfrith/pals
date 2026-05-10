@@ -17,9 +17,9 @@ export function parseDispatcherVersion(raw: string, label: string): number {
 export function resolveCanonicalDispatcherVersionPath(
   env: Record<string, string | undefined> = process.env,
 ): string {
-  const pluginRoot = env["CLAUDE_PLUGIN_ROOT"];
+  const pluginRoot = env["ALS_PLUGIN_ROOT"];
   if (!pluginRoot) {
-    throw new Error("CLAUDE_PLUGIN_ROOT is not set; cannot read canonical dispatcher VERSION");
+    throw new Error("ALS_PLUGIN_ROOT is not set; cannot read canonical dispatcher VERSION");
   }
   return join(pluginRoot, "delamain-dispatcher", "VERSION");
 }

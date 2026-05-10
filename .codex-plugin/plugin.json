@@ -1,0 +1,25 @@
+{
+  "name": "als",
+  "version": "0.12.0",
+  "description": "ALS tools and skills - create modules, validate systems, and prepare schema changes",
+  "author": {
+    "name": "Nicholas Frith"
+  },
+  "license": "Elastic-2.0",
+  "keywords": ["agents", "als", "validation", "markdown"],
+  "skills": "./skills/",
+  "hooks": "./hooks/codex-hooks.json",
+  "interface": {
+    "displayName": "ALS",
+    "shortDescription": "Validate and evolve ALS systems",
+    "longDescription": "Agent Language Specification tools for creating modules, validating systems, and projecting Codex-native runtime assets.",
+    "developerName": "Nicholas Frith",
+    "category": "Productivity",
+    "capabilities": ["Read", "Write"],
+    "brandColor": "#10A37F",
+    "defaultPrompt": [
+      "Use ALS to install a new system in this repository.",
+      "Use ALS to validate this system."
+    ]
+  }
+}

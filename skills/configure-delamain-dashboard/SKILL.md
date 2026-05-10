@@ -10,7 +10,19 @@ Install the Delamain dashboard launchers into the operator's project. The dashbo
 
 ## Procedure
 
-### 1. Ask for permission
+### 1. Resolve runtime support
+
+Initialize runtime variables:
+
+```bash
+bash {skill-dir}/../lib/runtime-env.sh
+```
+
+Extract `ALS_PLUGIN_ROOT` and `HARNESS` from the output. If the output is `NO_SYSTEM`, tell the operator: "This project isn't an ALS system yet. Run `/install` first to bootstrap." Stop.
+
+This skill installs Claude project launchers under `.claude/scripts`. If `HARNESS` is not `claude`, tell the operator: "Dashboard launchers are only implemented for the Claude projection today. On Codex, `/bootup` starts the dashboard service directly." Stop.
+
+### 2. Ask for permission
 
 Use AskUserQuestion to ask the operator:
 
@@ -22,17 +34,17 @@ Use AskUserQuestion to ask the operator:
 
 If the operator says no, acknowledge and stop.
 
-### 2. Resolve the ALS repo root
+### 3. Resolve the ALS repo root
 
-Determine the absolute ALS plugin root from `CLAUDE_PLUGIN_ROOT`. The dashboard app lives at:
+Use the runtime helper's `ALS_PLUGIN_ROOT`. The dashboard app lives at:
 
 ```bash
-dashboard_root="${CLAUDE_PLUGIN_ROOT}/delamain-dashboard"
+dashboard_root="${ALS_PLUGIN_ROOT}/delamain-dashboard"
 ```
 
-If `CLAUDE_PLUGIN_ROOT` is missing, stop and tell the operator you cannot install the launchers without the ALS plugin root.
+If `ALS_PLUGIN_ROOT` is missing, stop and tell the operator you cannot install the launchers without the ALS plugin root.
 
-### 3. Backup existing launchers
+### 4. Backup existing launchers
 
 If either launcher already exists, back it up before replacing it:
 
@@ -46,7 +58,7 @@ for script in .claude/scripts/delamain-dashboard-service.sh .claude/scripts/dela
 done
 ```
 
-### 4. Install project-local launchers
+### 5. Install project-local launchers
 
 Write `.claude/scripts/delamain-dashboard-service.sh`:
 
@@ -76,7 +88,7 @@ bun run src/index.ts tui --service-url "$SERVICE_URL" "${@:2}"
 
 Replace `__ALS_DASHBOARD_ROOT__` with the resolved absolute `dashboard_root`, then mark both scripts executable.
 
-### 5. Report
+### 6. Report
 
 Tell the operator:
 

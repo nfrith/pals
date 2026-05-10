@@ -64,6 +64,7 @@ export interface LoadedAgentPrompt {
   description: string;
   prompt: string;
   tools?: string[];
+  hooks?: Record<string, unknown>;
   model?: string;
   reasoningEffort?: "low" | "medium" | "high" | "xhigh";
   sandboxMode?: "read-only" | "workspace-write" | "danger-full-access";
@@ -218,15 +219,10 @@ const providers: Record<AgentProvider, AgentProviderAdapter> = {
       const startedAt = Date.now();
       let sessionId = input.resumeSessionId;
       let numTurns = 0;
-      let totalCostUsd = 0;
       let failureSubtype = "success";
       let resumeRecovery: ProviderDispatchResult["resumeRecovery"];
       const model = input.agent.model ?? "gpt-5.4";
-      if (!resolveOpenAIModelPricing(model)) {
-        throw new Error(
-          `OpenAI dispatcher cost accounting does not recognize model '${model}'. Add pricing before using it in Delamain prompts.`,
-        );
-      }
+      let totalCostUsd: number | null = resolveOpenAIModelPricing(model) ? 0 : null;
 
       const commonDir = await gitCommonDir(input.cwd);
       const additionalDirectories = [normalizeAdditionalDirectory(input.cwd, commonDir)];
@@ -276,14 +272,19 @@ const providers: Record<AgentProvider, AgentProviderAdapter> = {
               failureSubtype = "error";
               throw new Error(`OpenAI turn.completed event omitted usage for ${input.itemId}`);
             }
-            totalCostUsd += estimateOpenAITurnCostUsd(model, usage) ?? 0;
+            const estimatedCost = estimateOpenAITurnCostUsd(model, usage);
+            if (totalCostUsd !== null && estimatedCost !== null) {
+              totalCostUsd += estimatedCost;
+            } else {
+              totalCostUsd = null;
+            }
             if (numTurns > input.maxTurns) {
               failureSubtype = "max_turns_exceeded";
               throw new Error(
                 `OpenAI dispatch exceeded maxTurns (${input.maxTurns}) for ${input.itemId}`,
               );
             }
-            if (totalCostUsd > input.maxBudgetUsd) {
+            if (totalCostUsd !== null && totalCostUsd > input.maxBudgetUsd) {
               failureSubtype = "max_budget_exceeded";
               throw new Error(
                 `OpenAI dispatch exceeded provider maxBudgetUsd (provider=openai, maxBudgetUsd=${input.maxBudgetUsd}) for ${input.itemId}`,
@@ -399,14 +400,21 @@ function normalizeAdditionalDirectory(cwd: string, value: string): string {
 
 function buildOpenAICodexConfig(
   agent: LoadedAgentPrompt,
-): Record<string, string> | undefined {
-  if (agent.approvalsReviewer !== "auto_review") {
-    return undefined;
+): Record<string, unknown> | undefined {
+  const config: Record<string, unknown> = {};
+
+  if (agent.approvalsReviewer === "auto_review") {
+    config.approvals_reviewer = "auto_review";
   }
 
-  return {
-    approvals_reviewer: "auto_review",
-  };
+  if (agent.hooks) {
+    config.features = {
+      codex_hooks: true,
+    };
+    config.hooks = agent.hooks;
+  }
+
+  return Object.keys(config).length > 0 ? config : undefined;
 }
 
 async function loadCodexSdk(): Promise<{ Codex: new (options: Record<string, unknown>) => any }> {

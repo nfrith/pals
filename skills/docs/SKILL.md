@@ -61,10 +61,10 @@ Read this when:
 
 [`references/platforms.md`](references/platforms.md)
 
-The canonical mapping between ALS platform codes and Claude runtime entrypoints. This is the source of truth for platform-aware skill behavior.
+The canonical mapping between ALS platform codes, harnesses, and runtime signals. This is the source of truth for platform-aware skill behavior.
 
 Read this when:
-- Branching on `$CLAUDE_CODE_ENTRYPOINT`
+- Branching on `ALS_PLATFORM_CODE`, `$CODEX_THREAD_ID`, or `$CLAUDE_CODE_ENTRYPOINT`
 - Referencing `ALS-PLAT-XXXX` codes in docs or skills
 - Checking current platform support status
 - Avoiding ad hoc platform detection logic
@@ -137,7 +137,7 @@ How delamains connect to the rest of the module surface. Skill naming convention
 Read this when:
 - Wiring a delamain into an existing module
 - Naming a pipeline console skill
-- Understanding how `alsc deploy claude` projects assets
+- Understanding how `alsc deploy ${HARNESS}` projects assets
 - Setting up system.ts and module.ts for a delamain
 
 ### Architect Notes

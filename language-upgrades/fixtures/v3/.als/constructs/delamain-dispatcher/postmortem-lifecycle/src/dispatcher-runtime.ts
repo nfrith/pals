@@ -22,6 +22,7 @@ export interface DispatcherRuntimeConfig {
   delamainName: string;
   statusField: string;
   pollMs: number;
+  delamainsRoot?: string;
   worktreeRoot?: string;
   submodules?: string[];
 }
@@ -148,6 +149,7 @@ export class DispatcherRuntime {
     });
     this.repoMutationLock = new RepoMutationLock(config.systemRoot, {
       staleMs: Math.max(config.pollMs * 4, 60_000),
+      delamainsRoot: config.delamainsRoot,
     });
     this.orphanSweeper = new OrphanSweeper(
       this.registry,

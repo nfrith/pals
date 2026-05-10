@@ -13,6 +13,10 @@ export function resolveRuntimePlaceholderPath(
     return resolve(roots.system_root, `.${value.slice("$ALS_SYSTEM_ROOT".length)}`);
   }
 
+  if (value.startsWith("$ALS_PLUGIN_ROOT")) {
+    return resolve(roots.plugin_root, `.${value.slice("$ALS_PLUGIN_ROOT".length)}`);
+  }
+
   if (value.startsWith("$CLAUDE_PLUGIN_ROOT")) {
     return resolve(roots.plugin_root, `.${value.slice("$CLAUDE_PLUGIN_ROOT".length)}`);
   }

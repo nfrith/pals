@@ -7,6 +7,10 @@ import type {
   ConstructManifest,
 } from "../../compiler/src/construct-upgrade.ts";
 import { inspectConstructManifest } from "../../compiler/src/construct-upgrade.ts";
+import {
+  getHarnessRuntimeSpec,
+  type HarnessTarget,
+} from "../../shared/harnesses.ts";
 import { locateProcessPid } from "./action-runner.ts";
 import { detectKnownConstructFingerprint } from "./customization.ts";
 import { DISPATCHER_KNOWN_VENDOR_FINGERPRINTS } from "./known-fingerprints.ts";
@@ -141,7 +145,9 @@ export async function executeDelamainConstructUpgrade(input: {
   staging_system_root: string;
   plugin_root: string;
   operator_answers: Record<string, string>;
+  harness?: HarnessTarget;
 }): Promise<ConstructUpgradeExecuteResult> {
+  const harness = input.harness ?? "claude";
   const preflight = await preflightDelamainConstructUpgrade({
     system_root: input.live_system_root,
     plugin_root: input.plugin_root,
@@ -220,9 +226,9 @@ export async function executeDelamainConstructUpgrade(input: {
       instance_id: instance.instance_id,
       display_name: instance.display_name,
       choice: lifecycleChoice,
-      start: buildDispatcherStartContract(instance.instance_id),
-      process_locator: buildDispatcherProcessLocator(instance.instance_id),
-      drain_signal: buildDispatcherDrainSignal(instance.instance_id),
+      start: buildDispatcherStartContract(instance.instance_id, harness),
+      process_locator: buildDispatcherProcessLocator(instance.instance_id, harness),
+      drain_signal: buildDispatcherDrainSignal(instance.instance_id, harness),
     });
     if (action) {
       actions.push(action);
@@ -365,23 +371,36 @@ export async function executeProcessConstructUpgrade(input: {
   };
 }
 
-export function createStatuslineProcessDefinition(pluginRoot: string): ProcessConstructDefinition {
+export function createStatuslineProcessDefinition(
+  pluginRoot: string,
+  harness: HarnessTarget = "claude",
+): ProcessConstructDefinition {
+  const spec = getHarnessRuntimeSpec(harness);
+  const cacheRoot = spec.statusline_cache_root;
+  if (!cacheRoot) {
+    throw new Error(`${spec.display_name} does not declare an ALS statusline cache root.`);
+  }
+
   return {
     construct: "statusline",
     bundle_root: join(pluginRoot, "statusline"),
     start: {
-      command: ["bun", "run", "$CLAUDE_PLUGIN_ROOT/statusline/pulse.ts", "$ALS_SYSTEM_ROOT"],
+      command: ["bun", "run", "$ALS_PLUGIN_ROOT/statusline/pulse.ts", "$ALS_SYSTEM_ROOT"],
       cwd: "$ALS_SYSTEM_ROOT",
     },
     process_locator: {
       kind: "json-file-pid",
-      path: "$ALS_SYSTEM_ROOT/.claude/scripts/.cache/pulse/meta.json",
+      path: `$ALS_SYSTEM_ROOT/${cacheRoot}/meta.json`,
       pid_field: "pid",
     },
   };
 }
 
-export function createDashboardProcessDefinition(pluginRoot: string): ProcessConstructDefinition {
+export function createDashboardProcessDefinition(
+  pluginRoot: string,
+  harness?: HarnessTarget,
+): ProcessConstructDefinition {
+  const harnessArgs = harness ? ["--harness", harness] : [];
   return {
     construct: "dashboard",
     bundle_root: join(pluginRoot, "delamain-dashboard"),
@@ -389,18 +408,20 @@ export function createDashboardProcessDefinition(pluginRoot: string): ProcessCon
       command: [
         "bun",
         "run",
-        "$CLAUDE_PLUGIN_ROOT/delamain-dashboard/src/index.ts",
+        "$ALS_PLUGIN_ROOT/delamain-dashboard/src/index.ts",
         "service",
         "--system-root",
         "$ALS_SYSTEM_ROOT",
+        ...harnessArgs,
       ],
-      cwd: "$CLAUDE_PLUGIN_ROOT/delamain-dashboard",
+      cwd: "$ALS_PLUGIN_ROOT/delamain-dashboard",
     },
     process_locator: {
       kind: "argv-substring",
       argv_contains: [
         "delamain-dashboard/src/index.ts",
         "service",
+        ...harnessArgs,
       ],
     },
   };
@@ -428,25 +449,37 @@ export async function discoverDelamainDispatcherInstances(
   return instances;
 }
 
-function buildDispatcherStartContract(instanceId: string): ConstructActionStartContract {
+function buildDispatcherStartContract(
+  instanceId: string,
+  harness: HarnessTarget,
+): ConstructActionStartContract {
+  const spec = getHarnessRuntimeSpec(harness);
   return {
-    command: ["bun", "run", `$ALS_SYSTEM_ROOT/.claude/delamains/${instanceId}/dispatcher/src/index.ts`],
+    command: ["bun", "run", `$ALS_SYSTEM_ROOT/${spec.delamain_runtime_root}/${instanceId}/dispatcher/src/index.ts`],
     cwd: "$ALS_SYSTEM_ROOT",
   };
 }
 
-function buildDispatcherProcessLocator(instanceId: string): ConstructActionProcessLocator {
+function buildDispatcherProcessLocator(
+  instanceId: string,
+  harness: HarnessTarget,
+): ConstructActionProcessLocator {
+  const spec = getHarnessRuntimeSpec(harness);
   return {
     kind: "json-file-pid",
-    path: `$ALS_SYSTEM_ROOT/.claude/delamains/${instanceId}/status.json`,
+    path: `$ALS_SYSTEM_ROOT/${spec.delamain_runtime_root}/${instanceId}/status.json`,
     pid_field: "pid",
   };
 }
 
-function buildDispatcherDrainSignal(instanceId: string) {
+function buildDispatcherDrainSignal(
+  instanceId: string,
+  harness: HarnessTarget,
+) {
+  const spec = getHarnessRuntimeSpec(harness);
   return {
     kind: "json-file-write" as const,
-    path: `$ALS_SYSTEM_ROOT/.claude/delamains/${instanceId}/dispatcher/control/drain-request.json`,
+    path: `$ALS_SYSTEM_ROOT/${spec.delamain_runtime_root}/${instanceId}/dispatcher/control/drain-request.json`,
     payload: {
       requested_at: new Date().toISOString(),
       reason: "construct-upgrade",

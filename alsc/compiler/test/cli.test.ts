@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
-import { existsSync, rmSync } from "node:fs";
+import { existsSync, readFileSync, rmSync } from "node:fs";
 import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { tmpdir } from "node:os";
@@ -20,6 +20,8 @@ const compilerRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const alsRepoRoot = resolve(compilerRoot, "../..");
 const postValidateHookPath = resolve(alsRepoRoot, "hooks/als-validate.sh");
 const stopHookPath = resolve(alsRepoRoot, "hooks/als-stop-gate.sh");
+const codexPostBreadcrumbHookPath = resolve(alsRepoRoot, "hooks/codex-post-edit-breadcrumb.sh");
+const codexPostValidateHookPath = resolve(alsRepoRoot, "hooks/codex-post-edit-validate.sh");
 
 beforeAll(() => {
   acquireSyntheticDeprecationFixture();
@@ -77,6 +79,7 @@ function runHook(
     env: {
       ...process.env,
       ...env,
+      ALS_PLUGIN_ROOT: alsRepoRoot,
       CLAUDE_PLUGIN_ROOT: alsRepoRoot,
     },
     stdin: new TextEncoder().encode(JSON.stringify(payload)),
@@ -256,6 +259,94 @@ test("als stop hook surfaces a final warn-only reminder without blocking", async
   });
 });
 
+test("codex post-edit breadcrumb hook extracts apply_patch paths", async () => {
+  await withFixtureSandbox("cli-codex-hook-breadcrumb-apply-patch", async ({ root }) => {
+    const sessionId = `als-codex-${randomUUID()}`;
+    const breadcrumbPath = `/tmp/als-touched-${sessionId}`;
+
+    try {
+      const process = runHook(codexPostBreadcrumbHookPath, {
+        session_id: sessionId,
+        cwd: root,
+        hook_event_name: "PostToolUse",
+        tool_name: "apply_patch",
+        tool_input: {
+          command: [
+            "*** Begin Patch",
+            "*** Update File: workspace/backlog/items/ITEM-0001.md",
+            "@@",
+            " title: Example",
+            "*** End Patch",
+          ].join("\n"),
+        },
+      });
+
+      expect(process.exitCode).toBe(0);
+      expect(process.stdout).toBe("");
+      expect(readFileSync(breadcrumbPath, "utf-8")).toContain(`${root}:backlog`);
+    } finally {
+      if (existsSync(breadcrumbPath)) {
+        rmSync(breadcrumbPath, { force: true });
+      }
+    }
+  });
+});
+
+test("codex post-edit validation hook blocks invalid ALS edits", async () => {
+  await withFixtureSandbox("cli-codex-hook-validation-fail", async ({ root }) => {
+    await updateRecord(root, "workspace/backlog/items/ITEM-0001.md", (record) => {
+      delete record.data.title;
+    });
+
+    const process = runHook(codexPostValidateHookPath, {
+      session_id: `als-codex-${randomUUID()}`,
+      cwd: root,
+      hook_event_name: "PostToolUse",
+      tool_name: "apply_patch",
+      tool_input: {
+        command: [
+          "*** Begin Patch",
+          "*** Update File: workspace/backlog/items/ITEM-0001.md",
+          "@@",
+          "-title: Old",
+          "+title: New",
+          "*** End Patch",
+        ].join("\n"),
+      },
+    });
+
+    expect(process.exitCode).toBe(2);
+    const output = JSON.parse(process.stdout) as {
+      decision?: string;
+      reason?: string;
+      hookSpecificOutput?: {
+        hookEventName?: string;
+        additionalContext?: string;
+      };
+    };
+    expect(output.decision).toBe("block");
+    expect(output.reason).toContain("ALS validation failed");
+    expect(output.hookSpecificOutput?.hookEventName).toBe("PostToolUse");
+    expect(output.hookSpecificOutput?.additionalContext).toContain("PAL-RV-FM-001");
+  });
+});
+
+test("codex post-edit hooks no-op when no changed file can be derived", async () => {
+  const result = runHook(codexPostBreadcrumbHookPath, {
+    session_id: `als-codex-${randomUUID()}`,
+    cwd: globalThis.process.cwd(),
+    hook_event_name: "PostToolUse",
+    tool_name: "apply_patch",
+    tool_input: {
+      command: "*** Begin Patch\n*** End Patch",
+    },
+  });
+
+  expect(result.exitCode).toBe(0);
+  expect(result.stdout).toBe("");
+  expect(result.stderr).toBe("");
+});
+
 test("alsc validate exits one when errors and deprecation warnings coexist", async () => {
   await withFixtureSandbox("cli-validate-fail-with-warning", async ({ root }) => {
     await configureSyntheticDeprecationFixture(root);
@@ -314,16 +405,55 @@ test("alsc deploy claude dry-run exposes the public deploy surface", async () =>
   });
 });
 
+test("alsc deploy codex dry-run exposes the Codex deploy surface", async () => {
+  await withFixtureSandbox("cli-deploy-codex-dry-run", async ({ root }) => {
+    const process = captureCli(["deploy", "codex", "--dry-run", root, "factory"]);
+
+    expect(process.exitCode).toBe(0);
+    const output = JSON.parse(process.stdout) as {
+      schema: string;
+      status: string;
+      dry_run: boolean;
+      planned_system_files: Array<{ kind: string; target_path: string }>;
+      planned_skills: Array<{ target_dir: string }>;
+      planned_delamains: Array<{ target_dir: string }>;
+    };
+    expect(output.schema).toBe("als-codex-deploy-output@1");
+    expect(output.status).toBe("pass");
+    expect(output.dry_run).toBe(true);
+    expect(output.planned_system_files).toEqual([
+      {
+        kind: "generated_codex_guidance",
+        target_path: ".als/AGENTS.md",
+      },
+      {
+        kind: "generated_codex_hooks",
+        target_path: ".codex/hooks.json",
+      },
+      {
+        kind: "generated_codex_config",
+        target_path: ".codex/config.toml",
+      },
+    ]);
+    expect(output.planned_skills.map((plan) => plan.target_dir)).toEqual([
+      ".agents/skills/factory-operate",
+    ]);
+    expect(output.planned_delamains.map((plan) => plan.target_dir)).toEqual([
+      ".codex/delamains/development-pipeline",
+    ]);
+  });
+});
+
 test("alsc help surfaces the main usage text", async () => {
   const process = captureCli(["--help"]);
 
   expect(process.exitCode).toBe(0);
   const { stdout } = process;
   expect(stdout).toContain("alsc validate <system-root> [module-id]");
-  expect(stdout).toContain("alsc deploy claude");
+  expect(stdout).toContain("alsc deploy <claude|codex>");
   expect(stdout).toContain("alsc changelog inspect [als-repo-or-changelog-path]");
   expect(stdout).toContain("alsc operator-config path [system-root-or-cwd]");
-  expect(stdout).toContain("Project active ALS Claude assets into .als/ and .claude/.");
+  expect(stdout).toContain("Project active ALS assets for a harness target.");
 });
 
 test("alsc validate help surfaces command usage", async () => {
@@ -344,5 +474,5 @@ test("alsc rejects invalid command usage with a usage error", async () => {
   const process = captureCli(["deploy", "ghost"]);
 
   expect(process.exitCode).toBe(2);
-  expect(process.stderr).toContain("Usage: alsc deploy claude");
+  expect(process.stderr).toContain("Usage: alsc deploy <claude|codex>");
 });

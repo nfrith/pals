@@ -5,7 +5,7 @@ Use a short opening frame for `/install`. The operator should know, in plain lan
 Suggested shape:
 
 1. Say this is the ALS first-touch install flow.
-2. Say you will first confirm `CLAUDE_PLUGIN_ROOT`, `bun`, and `jq`.
+2. Say you will first confirm the ALS plugin root, `bun`, `jq`, and `git`.
 3. Say you will acknowledge the ALS platform code, then ask for a short `system_id`.
 4. Say the flow ends with validation, skeleton deploy, and a handoff to the skill that brings in modules.
 

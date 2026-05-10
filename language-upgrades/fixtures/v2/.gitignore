@@ -5,6 +5,11 @@
 node_modules/
 bun.lock
 .claude/delamains/*/runtime/
-.claude/scripts/.cache/pulse/*.json
 .claude/delamains/*/telemetry/events.jsonl
 .claude/delamains/*/dispatcher/control/drain-request.json
+.codex/delamains/*/runtime/
+.codex/delamains/*/status.json
+.codex/delamains/*/telemetry/events.jsonl
+.codex/delamains/*/dispatcher/control/drain-request.json
+.claude/scripts/.cache/pulse/*.json
+.codex/scripts/.cache/pulse/*.json

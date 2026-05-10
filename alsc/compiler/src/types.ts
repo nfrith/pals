@@ -97,7 +97,7 @@ export interface SystemValidationOutput {
   };
 }
 
-export interface ClaudeSkillProjectionPlan {
+export interface HarnessSkillProjectionPlan {
   module_id: string;
   module_version: number;
   skill_id: string;
@@ -105,7 +105,7 @@ export interface ClaudeSkillProjectionPlan {
   target_dir: string;
 }
 
-export interface ClaudeSkillProjectionCollision {
+export interface HarnessSkillProjectionCollision {
   module_id: string;
   skill_id: string;
   source_dir: string;
@@ -113,7 +113,7 @@ export interface ClaudeSkillProjectionCollision {
   target_kind: "file" | "directory";
 }
 
-export interface ClaudeDelamainProjectionPlan {
+export interface HarnessDelamainProjectionPlan {
   module_id: string;
   module_version: number;
   delamain_name: string;
@@ -121,7 +121,7 @@ export interface ClaudeDelamainProjectionPlan {
   target_dir: string;
 }
 
-export interface ClaudeDelamainProjectionCollision {
+export interface HarnessDelamainProjectionCollision {
   module_id: string;
   delamain_name: string;
   source_dir: string;
@@ -129,19 +129,19 @@ export interface ClaudeDelamainProjectionCollision {
   target_kind: "file" | "directory";
 }
 
-export interface ClaudeSystemFilePlan {
-  kind: "generated_claude_guidance";
+export interface HarnessSystemInstructionPlan {
+  kind: string;
   target_path: string;
 }
 
-export interface ClaudeDelamainNameConflict {
+export interface HarnessDelamainNameConflict {
   delamain_name: string;
   // This list always contains at least two distinct module ids when emitted.
   module_ids: string[];
   target_dir: string;
 }
 
-export interface ClaudeSkillDeployWarning {
+export interface HarnessDeployWarning {
   code: "delamain_dispatcher_node_modules_missing";
   message: string;
   module_id: string;
@@ -150,7 +150,7 @@ export interface ClaudeSkillDeployWarning {
   target_path: string;
 }
 
-export interface ClaudeSkillDeployOutput {
+export interface HarnessDeployOutput {
   schema: string;
   status: "pass" | "fail";
   system_path: string;
@@ -161,17 +161,17 @@ export interface ClaudeSkillDeployOutput {
   require_empty_targets: boolean;
   planned_system_file_count: number;
   written_system_file_count: number;
-  planned_system_files: ClaudeSystemFilePlan[];
+  planned_system_files: HarnessSystemInstructionPlan[];
   planned_skill_count: number;
   written_skill_count: number;
-  planned_skills: ClaudeSkillProjectionPlan[];
-  existing_skill_targets: ClaudeSkillProjectionCollision[];
+  planned_skills: HarnessSkillProjectionPlan[];
+  existing_skill_targets: HarnessSkillProjectionCollision[];
   planned_delamain_count: number;
   written_delamain_count: number;
-  planned_delamains: ClaudeDelamainProjectionPlan[];
-  existing_delamain_targets: ClaudeDelamainProjectionCollision[];
-  delamain_name_conflicts: ClaudeDelamainNameConflict[];
-  warnings: ClaudeSkillDeployWarning[];
+  planned_delamains: HarnessDelamainProjectionPlan[];
+  existing_delamain_targets: HarnessDelamainProjectionCollision[];
+  delamain_name_conflicts: HarnessDelamainNameConflict[];
+  warnings: HarnessDeployWarning[];
   error: string | null;
 }
 

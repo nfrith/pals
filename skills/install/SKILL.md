@@ -6,7 +6,7 @@ allowed-tools: AskUserQuestion, Bash(bash *), Read, Write, Edit, Skill
 
 # install
 
-You are the first-touch ALS onboarding flow. Take a project from zero to a bootstrapped ALS system — `.als/system.ts` with the operator's chosen system id and an empty `modules: {}` block — validate it, deploy the Claude projection, create the operator profile if it does not already exist, then hand off to `/foundry` (curated pre-built modules) or `/new` (author a module from scratch). **First-module authoring is not this skill's job.**
+You are the first-touch ALS onboarding flow. Take a project from zero to a bootstrapped ALS system — `.als/system.ts` with the operator's chosen system id and an empty `modules: {}` block — validate it, deploy the active harness projection, create the operator profile if it does not already exist, then hand off to `/foundry` (curated pre-built modules) or `/new` (author a module from scratch). **First-module authoring is not this skill's job.**
 
 Before authoring anything, read:
 
@@ -23,29 +23,36 @@ Use `references/first-touch-flow.md` to open the interaction. The operator shoul
 2. detect and acknowledge the ALS platform code
 3. ask for a `system_id`
 4. bootstrap `.als/` with an empty modules block
-5. validate and deploy the Claude projection
+5. validate and deploy the active harness projection
 6. initialize git if needed
 7. create the operator profile if missing
 8. ask what to do next and hand off to the matching skill
 
-Do not ask the operator to open a terminal. Use Claude tools from inside the session.
+Do not ask the operator to open a terminal. Use the active harness tools from inside the session.
 
 ## Phase 1: Runtime prerequisites
 
 Before interviewing, verify the install can succeed.
 
-1. Confirm the plugin root resolves via harness substitution of `${CLAUDE_PLUGIN_ROOT}`. The harness rewrites this placeholder to an absolute path before Bash executes the command. Do not use the `${VAR:-default}` fancy form — it may not be substituted by the harness on all platforms. Use the bare form:
+1. Initialize plugin runtime variables:
 
 ```bash
-PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT}"
-if [ -d "$PLUGIN_ROOT" ] && [ -f "$PLUGIN_ROOT/alsc/compiler/src/cli.ts" ]; then
-  printf 'PLUGIN_ROOT=%s\n' "$PLUGIN_ROOT"
+bash {skill-dir}/../lib/runtime-env.sh plugin
+```
+
+Extract `ALS_PLUGIN_ROOT`, `HARNESS`, `ALS_PLATFORM_CODE`, `ALS_PLUGIN_MANIFEST_PATH`, and `ALS_MARKETPLACE_MANIFEST_PATH` from the output.
+
+Then confirm the plugin root:
+
+```bash
+if [ -d "${ALS_PLUGIN_ROOT}" ] && [ -f "${ALS_PLUGIN_ROOT}/alsc/compiler/src/cli.ts" ]; then
+  printf 'ALS_PLUGIN_ROOT=%s\n' "${ALS_PLUGIN_ROOT}"
 else
-  echo "PLUGIN_ROOT_INVALID: $PLUGIN_ROOT"
+  echo "PLUGIN_ROOT_INVALID: ${ALS_PLUGIN_ROOT}"
 fi
 ```
 
-If `PLUGIN_ROOT_INVALID` is reported, the harness did not substitute `${CLAUDE_PLUGIN_ROOT}` to a valid ALS plugin path. Stop and tell the operator install cannot proceed.
+If `PLUGIN_ROOT_INVALID` is reported, stop and tell the operator install cannot proceed.
 
 2. Run `which bun` to check if Bun is on PATH.
    - If not found, tell the operator: "ALS requires Bun to run the compiler. You can install it by typing `! curl -fsSL https://bun.sh/install | bash` and then restarting your shell." Do not proceed until Bun is available.
@@ -56,7 +63,7 @@ If `PLUGIN_ROOT_INVALID` is reported, the harness did not substitute `${CLAUDE_P
 4. Run `which git` to check if git is on PATH.
    - If not found, tell the operator: "ALS requires git. Every pipeline transition creates a commit, so the system cannot operate in a non-git workspace. Install git for your platform, then restart and re-run `/install`." Do not proceed until git is available.
 
-5. Run `cd ${CLAUDE_PLUGIN_ROOT}/alsc/compiler && bun install` to ensure compiler dependencies are installed. This is idempotent and fast when dependencies already exist.
+5. Run `cd ${ALS_PLUGIN_ROOT}/alsc/compiler && bun install` to ensure compiler dependencies are installed. This is idempotent and fast when dependencies already exist.
 
 Report the successful prerequisite check before continuing.
 
@@ -65,7 +72,7 @@ Report the successful prerequisite check before continuing.
 Follow `references/platform-detection.md`.
 
 - Produce one explicit platform acknowledgement using the matching `ALS-PLAT-XXXX` row from [`platforms.md`](nfrith-repos/als/skills/docs/references/platforms.md).
-- If `$CLAUDE_CODE_ENTRYPOINT` is unset or unrecognized, use AskUserQuestion to confirm in plain language. Do not show technical platform codes as visible options.
+- If the runtime helper cannot resolve a platform code, use AskUserQuestion to confirm in plain language. Do not show technical platform codes as visible options.
 - Do not branch behavior yet beyond acknowledgement. Call out that platform-specific install behavior is future work.
 
 ## Phase 3: Existing-system guard
@@ -99,33 +106,41 @@ With `system_id` chosen, write the authored skeleton. Follow `references/bootstr
 
 Do not author any modules, skills, or delamains. Those arrive via `/new` or `/foundry` in Phase 9.
 
-Do not hand-author `.als/CLAUDE.md` — that is generated by `deploy claude` in Phase 6.
+Do not hand-author the generated system instruction file — that is generated by deploy in Phase 6.
 
 ## Phase 6: Validate and deploy the skeleton
+
+Initialize system runtime variables:
+
+```bash
+bash {skill-dir}/../lib/runtime-env.sh ${HARNESS} "$(pwd)"
+```
+
+Extract `SYSTEM_ROOT`, `SKILLS_ROOT`, `DELAMAINS_ROOT`, `SYSTEM_INSTRUCTION_PATH`, and `TRANSACTION_ROOTS` from the output.
 
 Validate:
 
 ```bash
-bun ${CLAUDE_PLUGIN_ROOT}/alsc/compiler/src/cli.ts validate <system-root>
+bun ${ALS_PLUGIN_ROOT}/alsc/compiler/src/cli.ts validate ${SYSTEM_ROOT}
 ```
 
 An empty `modules: {}` record is valid — this should pass clean.
 
-Dry-run the Claude projection:
+Dry-run the active harness projection:
 
 ```bash
-bun ${CLAUDE_PLUGIN_ROOT}/alsc/compiler/src/cli.ts deploy claude --dry-run --require-empty-targets <system-root>
+bun ${ALS_PLUGIN_ROOT}/alsc/compiler/src/cli.ts deploy ${HARNESS} --dry-run --require-empty-targets ${SYSTEM_ROOT}
 ```
 
-Confirm the dry-run is clean and includes the planned `.als/CLAUDE.md` write. If it reports target collisions, stop and resolve with the operator before live deploy.
+Confirm the dry-run is clean and includes the planned `${SYSTEM_INSTRUCTION_PATH}` write. If it reports target collisions, stop and resolve with the operator before live deploy.
 
 Live deploy:
 
 ```bash
-bun ${CLAUDE_PLUGIN_ROOT}/alsc/compiler/src/cli.ts deploy claude <system-root>
+bun ${ALS_PLUGIN_ROOT}/alsc/compiler/src/cli.ts deploy ${HARNESS} ${SYSTEM_ROOT}
 ```
 
-The skeleton deploy produces `.claude/CLAUDE.md` and an otherwise empty projection surface. Modules and their projections arrive when the operator runs the next skill.
+The skeleton deploy produces `${SYSTEM_INSTRUCTION_PATH}` and an otherwise empty projection surface. Modules and their projections arrive when the operator runs the next skill.
 
 If any step fails, stop — do not proceed to Phase 7.
 
@@ -136,7 +151,7 @@ ALS requires git (checked in Phase 1) because every pipeline transition creates 
 1. Check whether the system root is already a git working tree:
 
 ```bash
-cd <system-root> && git rev-parse --is-inside-work-tree 2>/dev/null
+cd ${SYSTEM_ROOT} && git rev-parse --is-inside-work-tree 2>/dev/null
 ```
 
 2. If the check prints `true`, skip the rest of this phase. The system root already has git tracking (either a local repo or a subdirectory inside one) — leave it alone.
@@ -144,13 +159,13 @@ cd <system-root> && git rev-parse --is-inside-work-tree 2>/dev/null
 3. Otherwise, initialize a fresh repo and make the first commit:
 
 ```bash
-cd <system-root>
+cd ${SYSTEM_ROOT}
 git init -b main
-git add .als .claude
+for path in ${TRANSACTION_ROOTS}; do [ -e "$path" ] && git add "$path"; done
 git commit -m "Initial commit — <system_id> ALS system"
 ```
 
-Substitute `<system_id>` with the value captured in Phase 4, verbatim. If additional files exist at the system root outside `.als/` and `.claude/` (e.g. a README, `.gitignore`), include them in the initial commit as well.
+Substitute `<system_id>` with the value captured in Phase 4, verbatim. If additional files exist at the system root outside `${TRANSACTION_ROOTS}` (e.g. a README, `.gitignore`), include them in the initial commit as well.
 
 4. Record the outcome for the final report: either `initialized new repo` (with the commit SHA) or `existing git working tree — no change`.
 
@@ -159,7 +174,7 @@ Substitute `<system_id>` with the value captured in Phase 4, verbatim. If additi
 Resolve the canonical operator-config path through the compiler helper:
 
 ```bash
-CONFIG_PATH="$(bun ${CLAUDE_PLUGIN_ROOT}/alsc/compiler/src/cli.ts operator-config path)"
+CONFIG_PATH="$(bun ${ALS_PLUGIN_ROOT}/alsc/compiler/src/cli.ts operator-config path ${SYSTEM_ROOT})"
 [ -f "$CONFIG_PATH" ] && printf 'OPERATOR_CONFIG: exists (%s)\n' "$CONFIG_PATH" || printf 'OPERATOR_CONFIG: missing (%s)\n' "$CONFIG_PATH"
 ```
 
@@ -203,7 +218,7 @@ Use `references/final-report.md`.
 Report:
 
 - Acknowledged platform code (Phase 2)
-- Prerequisite checks (`bun`, `jq`, `git`, `CLAUDE_PLUGIN_ROOT`)
+- Prerequisite checks (`bun`, `jq`, `git`, `ALS_PLUGIN_ROOT`)
 - System id (Phase 4)
 - Authored skeleton files (Phase 5)
 - Validation and deploy results (Phase 6)

@@ -7,7 +7,11 @@ set -euo pipefail
 # Skip validation in demo mode (e.g. /run-demo traffic generators)
 [[ "${ALS_DEMO_MODE:-}" == "1" ]] && exit 0
 
-COMPILER="${CLAUDE_PLUGIN_ROOT}/alsc/compiler"
+PLUGIN_ROOT="${ALS_PLUGIN_ROOT:-${CLAUDE_PLUGIN_ROOT:-}}"
+[[ -n "$PLUGIN_ROOT" ]] || exit 0
+export ALS_PLUGIN_ROOT="$PLUGIN_ROOT"
+
+COMPILER="${PLUGIN_ROOT}/alsc/compiler"
 
 input=$(cat)
 session_id=$(echo "$input" | jq -r '.session_id // ""')

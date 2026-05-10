@@ -12,6 +12,7 @@ async function main(): Promise<void> {
 
   const service = await startDashboardService({
     systemRoot: options.systemRoot,
+    harnesses: options.harnesses,
     host: options.host,
     port: options.port,
     pollMs: options.pollMs,

@@ -259,7 +259,7 @@ async function startAction(
     detached: true,
     env: {
       ...process.env,
-      CLAUDE_PLUGIN_ROOT: roots.plugin_root,
+      ALS_PLUGIN_ROOT: roots.plugin_root,
     },
     stdio: "ignore",
   });

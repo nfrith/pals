@@ -1,6 +1,7 @@
 import { collectSystemSnapshot } from "../feed/collector.ts";
 import type { DashboardAppRoute } from "../app-bootstrap.ts";
 import type { DashboardSnapshot } from "../feed/types.ts";
+import type { HarnessTarget } from "../../../alsc/shared/harnesses.ts";
 import {
   buildDashboardClientBundle,
   contentTypeForAsset,
@@ -11,6 +12,7 @@ import { renderDashboardHtml } from "./html.ts";
 
 type DashboardSnapshotCollector = (options: {
   systemRoot: string;
+  harnesses?: readonly HarnessTarget[];
   telemetryLimit?: number;
   now?: Date;
 }) => Promise<DashboardSnapshot>;
@@ -18,6 +20,7 @@ type DashboardAssetBuilder = () => Promise<DashboardClientAssets>;
 
 export interface DashboardServiceOptions {
   systemRoot: string;
+  harnesses?: readonly HarnessTarget[];
   host?: string;
   port?: number;
   pollMs?: number;
@@ -50,6 +53,7 @@ export async function createDashboardServiceRuntime(
   const assets = await buildAssets();
   let snapshot = await collectSnapshot({
     systemRoot: options.systemRoot,
+    harnesses: options.harnesses,
     telemetryLimit,
   });
   let serializedSnapshot = JSON.stringify(snapshot);
@@ -129,6 +133,7 @@ export async function createDashboardServiceRuntime(
       try {
         const nextSnapshot = await collectSnapshot({
           systemRoot: options.systemRoot,
+          harnesses: options.harnesses,
           telemetryLimit,
         });
         const nextSerialized = JSON.stringify(nextSnapshot);

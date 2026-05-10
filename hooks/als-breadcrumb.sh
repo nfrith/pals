@@ -9,6 +9,10 @@
 # parsing shell commands to extract file paths, which is fragile.
 set -euo pipefail
 
+PLUGIN_ROOT="${ALS_PLUGIN_ROOT:-${CLAUDE_PLUGIN_ROOT:-}}"
+[[ -n "$PLUGIN_ROOT" ]] || exit 0
+export ALS_PLUGIN_ROOT="$PLUGIN_ROOT"
+
 input=$(cat)
 file_path=$(echo "$input" | jq -r '.tool_input.file_path // ""')
 session_id=$(echo "$input" | jq -r '.session_id // ""')
@@ -43,7 +47,7 @@ rel_path="${file_path#"$system_root"/}"
 [[ "$rel_path" != "$file_path" ]] || exit 0
 
 module_id=$(
-  bun "$CLAUDE_PLUGIN_ROOT/alsc/compiler/src/index.ts" system module-owner "$system_root" "$rel_path" 2>/dev/null \
+  bun "$PLUGIN_ROOT/alsc/compiler/src/index.ts" system module-owner "$system_root" "$rel_path" 2>/dev/null \
     || true
 )
 

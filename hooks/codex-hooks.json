@@ -1,0 +1,48 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume|clear",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ./hooks/codex-session-start-operator.sh",
+            "timeout": 10,
+            "statusMessage": "Loading ALS operator profile"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "apply_patch|Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ./hooks/codex-post-edit-breadcrumb.sh",
+            "timeout": 5,
+            "statusMessage": "Recording ALS edit"
+          },
+          {
+            "type": "command",
+            "command": "bash ./hooks/codex-post-edit-validate.sh",
+            "timeout": 15,
+            "statusMessage": "Validating ALS edit"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ./hooks/codex-stop-gate.sh",
+            "timeout": 30,
+            "statusMessage": "Checking ALS validation gate"
+          }
+        ]
+      }
+    ]
+  }
+}

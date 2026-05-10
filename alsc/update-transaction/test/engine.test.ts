@@ -3,7 +3,7 @@ import { cp, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/pr
 import { dirname, join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
-import { deployClaudeSkills } from "../../compiler/src/claude-skills.ts";
+import { deployHarnessProjection } from "../../compiler/src/harness-projection.ts";
 import { TRANSIENT_RUNTIME_GITIGNORE_PATTERNS } from "../../shared/transient-runtime.ts";
 import type { LanguageUpgradeRecipe } from "../../compiler/src/types.ts";
 import type { PlannedLanguageUpgradeHop } from "../../upgrade-language/src/plan-chain.ts";
@@ -156,6 +156,29 @@ test("prepareUpdateTransaction still blocks tracked non-transient .claude change
   });
 });
 
+test("prepareUpdateTransaction blocks tracked non-transient Codex projection changes for Codex harness", async () => {
+  await withSystemRepo("dirty-projected-codex", async ({ repo_root }) => {
+    await writeFixtureFile(repo_root, ".codex/manual-note.txt", "initial\n");
+    git(repo_root, ["add", ".codex/manual-note.txt"]);
+    git(repo_root, ["commit", "--no-gpg-sign", "-m", "Track manual codex note"]);
+    await writeFile(join(repo_root, ".codex", "manual-note.txt"), "modified\n", "utf-8");
+
+    const prepared = await prepareUpdateTransaction({
+      repo_root,
+      plugin_root: alsRepoRoot,
+      harness: "codex",
+    });
+
+    expect(prepared.status).toBe("blocked");
+    if (prepared.status === "blocked") {
+      expect(prepared.reason).toBe("dirty-live-tree");
+      expect(prepared.diagnostic).toContain(".codex/manual-note.txt");
+      expect(prepared.diagnostic).toContain(".agents");
+      expect(prepared.diagnostic).toContain(".codex");
+    }
+  });
+});
+
 test("prepareUpdateTransaction batches language and construct prompts without creating a staging worktree", async () => {
   await withSystemRepo("batched-prompts", async ({ repo_root, root }) => {
     const dispatcherVersionFiles = await replaceDispatcherFleet(repo_root, dispatcherV11FixtureRoot);
@@ -261,8 +284,8 @@ test("runPreparedUpdateTransaction preserves the staging worktree on deploy fail
     const result = await runPreparedUpdateTransaction({
       prepared,
       services: {
-        deploy_claude(systemRoot) {
-          const output = deployClaudeSkills(systemRoot);
+        deploy_harness_projection(target, systemRoot) {
+          const output = deployHarnessProjection(target, systemRoot);
           return {
             ...output,
             status: "fail",
@@ -280,6 +303,132 @@ test("runPreparedUpdateTransaction preserves the staging worktree on deploy fail
       expect(await pathExists(result.staging_worktree_path!)).toBe(true);
     }
     expect(git(repo_root, ["rev-parse", "HEAD"])).toBe(initialHead);
+  });
+});
+
+test("runPreparedUpdateTransaction deploys Codex projection roots when prepared for Codex", async () => {
+  await withSystemRepo("codex-success", async ({ repo_root, root }) => {
+    const bundleRoot = join(root, "bundle");
+    await writeFixtureFile(
+      bundleRoot,
+      "scripts/mark-codex-update.sh",
+      "#!/usr/bin/env bash\nprintf 'codex\\n' > .als/codex-update-marker.txt\n",
+    );
+    const languagePlan = createLanguagePlan(bundleRoot, [
+      {
+        id: "mark-codex-update",
+        title: "Mark Codex update",
+        type: "script",
+        category: "must-run",
+        depends_on: [],
+        preconditions: [],
+        postconditions: [],
+        trigger: "auto",
+        path: "scripts/mark-codex-update.sh",
+        args: [],
+      },
+    ]);
+    const prepared = await prepareUpdateTransaction({
+      repo_root,
+      plugin_root: alsRepoRoot,
+      harness: "codex",
+      language_plan: languagePlan,
+    });
+    expect(prepared.status).toBe("ready");
+    if (prepared.status !== "ready") {
+      return;
+    }
+    expect(prepared.harness).toBe("codex");
+    expect(prepared.constructs.dashboard.needs_upgrade).toBe(true);
+    expect(prepared.constructs.statusline.needs_upgrade).toBe(false);
+    expect(prepared.manual_follow_up_note).toBeNull();
+
+    const result = await runPreparedUpdateTransaction({
+      prepared,
+      services: {
+        async run_action_manifest() {
+          return {
+            success: true,
+            completed_action_count: 0,
+            total_action_count: 0,
+            failure: null,
+          };
+        },
+      },
+    });
+
+    expect(result.status).toBe("completed");
+    expect((await readFile(join(repo_root, ".als", "codex-update-marker.txt"), "utf-8")).trim()).toBe("codex");
+    expect(await pathExists(join(repo_root, ".als", "AGENTS.md"))).toBe(true);
+    expect(await pathExists(join(repo_root, ".agents", "skills"))).toBe(true);
+    expect(await pathExists(join(repo_root, ".codex", "delamains"))).toBe(true);
+    const committedPaths = git(repo_root, ["show", "--pretty=", "--name-only", "HEAD"])
+      .split("\n")
+      .filter((entry) => entry.length > 0);
+    expect(committedPaths.some((path) => path.startsWith(".agents/"))).toBe(true);
+    expect(committedPaths.some((path) => path.startsWith(".codex/"))).toBe(true);
+  });
+});
+
+test("runPreparedUpdateTransaction emits Codex dispatcher lifecycle actions for Codex updates", async () => {
+  await withSystemRepo("codex-dispatcher-lifecycle", async ({ repo_root }) => {
+    const dispatcherVersionFiles = await replaceDispatcherFleet(repo_root, dispatcherV11FixtureRoot);
+    const dispatcherRoots = dispatcherVersionFiles.map((relativePath) => dirname(relativePath));
+    git(repo_root, ["add", "-A", "--", ...dispatcherRoots]);
+    git(repo_root, ["commit", "--no-gpg-sign", "-m", "Downgrade dispatcher fixture"]);
+
+    const prepared = await prepareUpdateTransaction({
+      repo_root,
+      plugin_root: alsRepoRoot,
+      harness: "codex",
+    });
+    expect(prepared.status).toBe("ready");
+    if (prepared.status !== "ready") {
+      return;
+    }
+
+    const operatorAnswers = Object.fromEntries(
+      prepared.prompts
+        .filter((prompt) => prompt.key.startsWith("dispatcher-lifecycle:"))
+        .map((prompt) => [prompt.key, "drain"]),
+    );
+    let capturedCommands: string[][] = [];
+    let capturedPaths: string[] = [];
+    const result = await runPreparedUpdateTransaction({
+      prepared,
+      operator_answers: operatorAnswers,
+      services: {
+        async run_action_manifest(manifest) {
+          capturedCommands = manifest.actions.map((action) => action.start.command);
+          capturedPaths = manifest.actions
+            .flatMap((action) => [
+              action.process_locator?.path,
+              action.drain_signal?.path,
+            ])
+            .filter((path): path is string => typeof path === "string");
+          return {
+            success: true,
+            completed_action_count: manifest.actions.length,
+            total_action_count: manifest.actions.length,
+            failure: null,
+          };
+        },
+      },
+    });
+
+    expect(result.status).toBe("completed");
+    const dispatcherCommands = capturedCommands.filter((command) =>
+      command.some((part) => part.includes("/delamains/"))
+    );
+    const dashboardCommands = capturedCommands.filter((command) =>
+      command.some((part) => part.includes("delamain-dashboard/src/index.ts"))
+    );
+    expect(dispatcherCommands.length).toBeGreaterThan(0);
+    expect(dispatcherCommands.every((command) => command.some((part) => part.includes(".codex/delamains/")))).toBe(true);
+    expect(dispatcherCommands.some((command) => command.some((part) => part.includes(".claude/delamains/")))).toBe(false);
+    expect(dashboardCommands.some((command) => command.includes("--harness") && command.includes("codex"))).toBe(true);
+    expect(capturedPaths.length).toBeGreaterThan(0);
+    expect(capturedPaths.filter((path) => path.includes("/delamains/")).every((path) => path.includes(".codex/delamains/"))).toBe(true);
   });
 });
 
@@ -468,8 +617,30 @@ test("update-transaction CLI prepare emits a ready transaction payload", async (
     expect(result.exitCode).toBe(0);
     const output = JSON.parse(result.stdout) as PreparedUpdateTransaction;
     expect(output.status).toBe("ready");
+    expect(output.harness).toBe("claude");
     expect(output.language?.plan.hops.map((hop) => hop.hop_id)).toEqual(["v3-to-v3"]);
     expect(output.prompts.some((prompt) => prompt.key === "v3-to-v3:confirm-live-apply")).toBe(true);
+  });
+});
+
+test("update-transaction CLI prepare accepts a Codex harness target", async () => {
+  await withSystemRepo("cli-prepare-codex", async ({ repo_root }) => {
+    const result = await captureCli([
+      "prepare",
+      "--repo-root",
+      repo_root,
+      "--plugin-root",
+      alsRepoRoot,
+      "--harness",
+      "codex",
+      "--target-als-version",
+      "3",
+    ]);
+
+    expect(result.exitCode).toBe(0);
+    const output = JSON.parse(result.stdout) as PreparedUpdateTransaction;
+    expect(output.status).toBe("ready");
+    expect(output.harness).toBe("codex");
   });
 });
 
@@ -571,6 +742,10 @@ async function seedTrackedTransientRuntimeFiles(repoRoot: string): Promise<strin
     ".claude/scripts/.cache/pulse/meta.json": "{\"pid\":123}\n",
     ".claude/delamains/ops/telemetry/events.jsonl": "{\"event\":\"tick\"}\n",
     ".claude/delamains/ops/dispatcher/control/drain-request.json": "{\"requested\":true}\n",
+    ".codex/delamains/ops/runtime/worktree-state.json": "{\"dirty\":false}\n",
+    ".codex/delamains/ops/status.json": "{\"pid\":789}\n",
+    ".codex/delamains/ops/telemetry/events.jsonl": "{\"event\":\"tick\"}\n",
+    ".codex/delamains/ops/dispatcher/control/drain-request.json": "{\"requested\":true}\n",
   };
 
   for (const [relativePath, contents] of Object.entries(files)) {

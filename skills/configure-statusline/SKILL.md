@@ -10,7 +10,19 @@ Install the ALS statusline into the operator's project settings. The statusline 
 
 ## Procedure
 
-### 1. Ask for permission
+### 1. Resolve runtime support
+
+Initialize runtime variables:
+
+```bash
+bash {skill-dir}/../lib/runtime-env.sh
+```
+
+Extract `ALS_PLUGIN_ROOT`, `HARNESS`, and `STATUSLINE_SUPPORTED` from the output. If the output is `NO_SYSTEM`, tell the operator: "This project isn't an ALS system yet. Run `/install` first to bootstrap." Stop.
+
+If `STATUSLINE_SUPPORTED` is not `yes`, tell the operator: "The ALS statusline is not supported for the active harness (`${HARNESS}`)." Stop. Do not install `.claude/scripts` launchers from a non-Claude harness.
+
+### 2. Ask for permission
 
 Use AskUserQuestion to ask the operator:
 
@@ -22,7 +34,7 @@ Use AskUserQuestion to ask the operator:
 
 If the operator says no, acknowledge and stop.
 
-### 2. Backup existing statusline
+### 3. Backup existing statusline
 
 Before installing, check if the operator already has a statusline configured. If `.claude/scripts/statusline.sh` exists, back it up with a timestamp:
 
@@ -35,19 +47,19 @@ fi
 
 If a backup was created, tell the operator: "Backed up your existing statusline to `{backup path}`."
 
-### 3. Install statusline scripts
+### 4. Install statusline scripts
 
 Copy the statusline scripts from the ALS plugin into the operator's project:
 
 ```bash
 mkdir -p .claude/scripts
-cp {skill-dir}/../../statusline/statusline.sh .claude/scripts/statusline.sh
-cp {skill-dir}/../../statusline/statusline-daemon.sh .claude/scripts/statusline-daemon.sh
-cp {skill-dir}/../../statusline/obs-status.py .claude/scripts/obs-status.py
+cp ${ALS_PLUGIN_ROOT}/statusline/statusline.sh .claude/scripts/statusline.sh
+cp ${ALS_PLUGIN_ROOT}/statusline/statusline-daemon.sh .claude/scripts/statusline-daemon.sh
+cp ${ALS_PLUGIN_ROOT}/statusline/obs-status.py .claude/scripts/obs-status.py
 chmod +x .claude/scripts/statusline.sh .claude/scripts/statusline-daemon.sh
 ```
 
-### 4. Wire up settings.json
+### 5. Wire up settings.json
 
 Read the existing `.claude/settings.json` (or create it if missing). Set the `statusLine` key:
 
@@ -62,7 +74,7 @@ Read the existing `.claude/settings.json` (or create it if missing). Set the `st
 
 Merge this into the existing settings — do not overwrite other keys.
 
-### 5. Report
+### 6. Report
 
 Tell the operator:
 - Statusline installed at `.claude/scripts/statusline.sh`

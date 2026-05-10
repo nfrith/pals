@@ -8,10 +8,18 @@ allowed-tools: AskUserQuestion, Bash, Read
 
 See [SDR 038](../../sdr/038-construct-upgrade-engine-contract.md) for the construct-upgrade semantics. This skill is the operator surface for dispatcher upgrades only.
 
+Before either mode, initialize runtime variables:
+
+```bash
+bash {skill-dir}/../lib/runtime-env.sh
+```
+
+Extract `ALS_PLUGIN_ROOT`, `SYSTEM_ROOT`, and `HARNESS` from the output. If the output is `NO_SYSTEM`, stop.
+
 ## Modes
 
 - `preflight`
-  - Read `${CLAUDE_PLUGIN_ROOT}/delamain-dispatcher/{VERSION,construct.json}`.
+  - Read `${ALS_PLUGIN_ROOT}/delamain-dispatcher/{VERSION,construct.json}`.
   - Discover every installed dispatcher construct under `.als/constructs/delamain-dispatcher/*/`.
   - Fail closed if the fleet is heterogeneous.
   - If the fleet already matches the canonical dispatcher version, return a no-op result.

@@ -67,11 +67,11 @@ development-pipeline/
     └── developer.md        # optional helpers
 ```
 
-The authored Delamain bundle lives in `.als/modules/{module}/v{N}/delamains/` as `delamain.ts` plus markdown assets. Dispatcher source is not authored inside that bundle in ALS v2+; ALS installs it separately under `.als/constructs/delamain-dispatcher/<name>/` and deploy projects the runnable copy to `.claude/delamains/`.
+The authored Delamain bundle lives in `.als/modules/{module}/v{N}/delamains/` as `delamain.ts` plus markdown assets. Dispatcher source is not authored inside that bundle in ALS v2+; ALS installs it separately under `.als/constructs/delamain-dispatcher/<name>/` and deploy projects the runnable copy under `${DELAMAINS_ROOT}`.
 
-## Claude Projection
+## Harness Projection
 
-`alsc deploy claude` projects each active Delamain bundle to `.claude/delamains/<delamain-name>/`.
+`alsc deploy ${HARNESS}` projects each active Delamain bundle to `${DELAMAINS_ROOT}/<delamain-name>`.
 
 - Authored Delamain files refresh from the canonical ALS bundle on deploy.
 - Runtime dispatcher files project from `.als/constructs/delamain-dispatcher/<name>/`.

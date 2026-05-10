@@ -45,6 +45,7 @@ test("construct-upgrade literals expose the canonical public contract", () => {
   expect(CONSTRUCT_SOURCE_PATH_OWNERS).toEqual(["vendor", "operator"]);
   expect(CONSTRUCT_RUNTIME_PATH_PLACEHOLDERS).toEqual([
     "$ALS_SYSTEM_ROOT",
+    "$ALS_PLUGIN_ROOT",
     "$CLAUDE_PLUGIN_ROOT",
   ]);
 });

@@ -16,6 +16,7 @@ import {
 import { scan } from "../../../delamain-dispatcher/src/watcher.ts";
 import { parseDelamainYaml } from "./delamain-yaml.ts";
 import { discoverDelamainBundles } from "./discovery.ts";
+import type { HarnessTarget } from "../../../alsc/shared/harnesses.ts";
 import type {
   DashboardSnapshot,
   DispatcherDefinition,
@@ -29,6 +30,7 @@ import type {
 
 interface CollectOptions {
   systemRoot: string;
+  harnesses?: readonly HarnessTarget[];
   telemetryLimit?: number;
   now?: Date;
 }
@@ -38,7 +40,7 @@ export async function collectSystemSnapshot(
 ): Promise<DashboardSnapshot> {
   const telemetryLimit = options.telemetryLimit ?? 25;
   const now = options.now ?? new Date();
-  const discovered = await discoverDelamainBundles(options.systemRoot);
+  const discovered = await discoverDelamainBundles(options.systemRoot, options.harnesses);
   const dispatchers = await Promise.all(
     discovered.bundles.map((bundle) => collectDispatcherSnapshot(bundle, now, telemetryLimit)),
   );

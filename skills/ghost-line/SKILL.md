@@ -65,7 +65,11 @@ uname -s && uname -m
 ```
 
 ```bash
-cat ${CLAUDE_PLUGIN_ROOT}/.claude-plugin/plugin.json 2>/dev/null | grep '"version"' | head -1
+runtime_env="$(bash {skill-dir}/../lib/runtime-env.sh plugin 2>/dev/null || true)"
+manifest_path="$(printf '%s\n' "$runtime_env" | awk -F': ' '/^ALS_PLUGIN_MANIFEST_PATH:/ {print $2; exit}')"
+if [ -n "$manifest_path" ]; then
+  grep '"version"' "$manifest_path" 2>/dev/null | head -1
+fi
 ```
 
 ```bash

@@ -9,8 +9,16 @@
 
 set -euo pipefail
 
-SYSTEM_ROOT="${ALS_SYSTEM_ROOT:-$(cd "$(dirname "$0")/../../reference-system" && pwd)}"
-DELAMAINS_DIR="$SYSTEM_ROOT/.claude/delamains"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/../lib/runtime-env.sh"
+
+DEFAULT_SYSTEM_ROOT="$(cd "$SCRIPT_DIR/../../reference-system" && pwd)"
+if ! als_runtime_init_env "${ALS_HARNESS:-}" "${ALS_SYSTEM_ROOT:-$DEFAULT_SYSTEM_ROOT}"; then
+  echo "[run-demo] ERROR: $ALS_RUNTIME_ERROR"
+  exit 1
+fi
+
+DELAMAINS_DIR="$DELAMAINS_ROOT"
 
 DEMO_BODY='Run `sleep 5` via Bash, then read the item file. Pick the `advance` transition from legal_transitions in your Runtime Context. Update the status field to its target, set `updated` to today'\''s date, and append an ACTIVITY_LOG entry. That is all.'
 

@@ -105,6 +105,6 @@ Use `/configure-operator` to edit the file after onboarding. That skill:
 
 ## `.als/` edit boundary
 
-`.als/CLAUDE.md` is compiler-managed and should not be edited by hand. That warning does not prohibit `.als/operator.md`.
+The active harness system instruction file is compiler-managed and should not be edited by hand. That warning does not prohibit `.als/operator.md`.
 
 `/configure-operator` is the approved managed writer for `.als/operator.md`, and the SessionStart hook is the approved reader.

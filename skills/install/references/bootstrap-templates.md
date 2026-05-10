@@ -25,4 +25,4 @@ The `modules: {}` block stays empty. Module entries are appended later by `/foun
 - Always create `.als/` and `.als/modules/` (the latter as an empty directory) before writing any `.als/*.ts` file.
 - `/install` never writes anything under `.als/modules/` — that is the downstream skill's job.
 - `/install` does not write `.als/authoring.ts`. V3 authored entrypoints import directly from ALS-reserved specifiers.
-- `.als/CLAUDE.md` is deploy-generated and must not be written by hand.
+- `${SYSTEM_INSTRUCTION_PATH}` is deploy-generated and must not be written by hand.

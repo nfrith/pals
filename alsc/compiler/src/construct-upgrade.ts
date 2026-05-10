@@ -710,7 +710,7 @@ function validateRuntimePathToken(
     errors.push(issue(
       "construct_action.path.placeholder_required",
       pathField,
-      "Construct action paths must start with $ALS_SYSTEM_ROOT or $CLAUDE_PLUGIN_ROOT.",
+      "Construct action paths must start with $ALS_SYSTEM_ROOT, $ALS_PLUGIN_ROOT, or $CLAUDE_PLUGIN_ROOT.",
       CONSTRUCT_RUNTIME_PATH_PLACEHOLDERS,
       value,
     ));

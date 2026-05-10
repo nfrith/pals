@@ -1,6 +1,9 @@
+import { parseHarnessTarget, type HarnessTarget } from "../../alsc/shared/harnesses.ts";
+
 export interface ServiceCliOptions {
   mode: "service";
   systemRoot: string;
+  harnesses?: readonly HarnessTarget[];
   host: string;
   port: number;
   pollMs: number;
@@ -31,14 +34,27 @@ export function parseCliOptions(argv: string[], cwd = process.cwd()): CliOptions
     };
   }
 
+  const harness = readHarnessFlag(args);
+
   return {
     mode,
     systemRoot: readStringFlag(args, "--system-root") ?? cwd,
+    harnesses: harness ? [harness] : undefined,
     host: readStringFlag(args, "--host") ?? "127.0.0.1",
     port: readNumberFlag(args, "--port") ?? 4646,
     pollMs: readNumberFlag(args, "--poll-ms") ?? 1000,
     telemetryLimit: readNumberFlag(args, "--telemetry-limit") ?? 25,
   };
+}
+
+function readHarnessFlag(args: string[]): HarnessTarget | null {
+  const value = readStringFlag(args, "--harness");
+  if (!value) return null;
+  const target = parseHarnessTarget(value);
+  if (!target) {
+    throw new Error(`Unsupported dashboard harness '${value}'.`);
+  }
+  return target;
 }
 
 function normalizeMode(value: string | undefined): "service" | "tui" {

@@ -5,6 +5,10 @@ import { basename, join, resolve } from "node:path";
 import { inspectLanguageUpgradeRecipe } from "../../compiler/src/language-upgrade-recipe.ts";
 import { validateSystem } from "../../compiler/src/validate.ts";
 import {
+  formatHarnessTargetList,
+  parseHarnessTarget,
+} from "../../shared/harnesses.ts";
+import {
   planLanguageUpgradeChain,
   type PlannedLanguageUpgradeHop,
 } from "../../upgrade-language/src/plan-chain.ts";
@@ -16,7 +20,7 @@ import {
 } from "./index.ts";
 
 const MAIN_USAGE = `Usage:
-  update-transaction prepare --repo-root <path> --plugin-root <path> [--system-root <path>] [--language-plan-file <path>] [--target-als-version <version>]
+  update-transaction prepare --repo-root <path> --plugin-root <path> [--harness <${formatHarnessTargetList()}>] [--system-root <path>] [--language-plan-file <path>] [--target-als-version <version>]
   update-transaction execute --prepared-file <path> [--answers-file <path>]
 
 Commands:
@@ -24,7 +28,7 @@ Commands:
   execute  Run a prepared transaction with a prompt-answer map.
 `;
 
-const PREPARE_USAGE = "Usage: update-transaction prepare --repo-root <path> --plugin-root <path> [--system-root <path>] [--language-plan-file <path>] [--target-als-version <version>]";
+const PREPARE_USAGE = `Usage: update-transaction prepare --repo-root <path> --plugin-root <path> [--harness <${formatHarnessTargetList()}>] [--system-root <path>] [--language-plan-file <path>] [--target-als-version <version>]`;
 const EXECUTE_USAGE = "Usage: update-transaction execute --prepared-file <path> [--answers-file <path>]";
 
 export interface CliIo {
@@ -71,6 +75,7 @@ async function runPrepareCommand(args: string[], io: CliIo): Promise<number> {
     parsed = parseNamedArgs(args, {
       "--repo-root": true,
       "--plugin-root": true,
+      "--harness": true,
       "--system-root": true,
       "--language-plan-file": true,
       "--target-als-version": true,
@@ -89,6 +94,11 @@ async function runPrepareCommand(args: string[], io: CliIo): Promise<number> {
     const repoRoot = resolve(parsed["--repo-root"]);
     const systemRoot = resolve(parsed["--system-root"] ?? repoRoot);
     const pluginRoot = resolve(parsed["--plugin-root"]);
+    const harness = parsed["--harness"] ? parseHarnessTarget(parsed["--harness"]) : "claude";
+    if (!harness) {
+      writeStderr(io, `${PREPARE_USAGE}\nUnknown harness '${parsed["--harness"]}'.\n`);
+      return 2;
+    }
     const targetAlsVersion = parsed["--target-als-version"]
       ? parseAlsVersion(parsed["--target-als-version"])
       : null;
@@ -104,6 +114,7 @@ async function runPrepareCommand(args: string[], io: CliIo): Promise<number> {
       repo_root: repoRoot,
       system_root: systemRoot,
       plugin_root: pluginRoot,
+      harness,
       language_plan: languagePlan,
     });
     writeStdout(io, JSON.stringify(prepared, null, 2));

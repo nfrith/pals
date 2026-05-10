@@ -21,13 +21,21 @@ Before doing anything else, verify the runtime environment.
 2. Run `which jq` to check if jq is on PATH.
    - If not found, tell the operator: "ALS hooks require jq. Install it with your package manager (e.g. `! sudo apt-get install -y jq` or `! brew install jq`)." Do not proceed until jq is available.
 
-3. Run `cd ${CLAUDE_PLUGIN_ROOT}/alsc/compiler && bun install` to ensure compiler dependencies are installed. This is idempotent and fast when dependencies already exist.
+3. Initialize runtime variables:
+
+```bash
+bash {skill-dir}/../lib/runtime-env.sh
+```
+
+Extract `ALS_PLUGIN_ROOT`, `SYSTEM_ROOT`, `HARNESS`, `SKILLS_ROOT`, and `DELAMAINS_ROOT` from the output. If the output is `NO_SYSTEM`, stop and tell the operator this project is not ALS-aware yet. Direct them to `/install`, which bootstraps `.als/`, creates the first module, validates the system, and deploys the active harness assets.
+
+4. Run `cd ${ALS_PLUGIN_ROOT}/alsc/compiler && bun install` to ensure compiler dependencies are installed. This is idempotent and fast when dependencies already exist.
 
 ## Phase 1: Detection
 
-Check whether `.als/system.ts` exists in the working directory.
+Check whether `.als/system.ts` exists at `${SYSTEM_ROOT}`.
 
-- **If it does not exist**: stop and tell the operator this project is not ALS-aware yet. Direct them to `/install`, which bootstraps `.als/`, creates the first module, validates the system, and deploys the Claude assets.
+- **If it does not exist**: stop and tell the operator this project is not ALS-aware yet. Direct them to `/install`, which bootstraps `.als/`, creates the first module, validates the system, and deploys the active harness assets.
 - **If it exists**: read it. Understand the system_id and all existing modules, especially their mount paths. This context matters for the interview — the operator may want to reference entities from existing modules, and new modules must fit into the existing path layout without overlapping it. Proceed to Phase 2.
 
 ## Phase 2: The Interview
@@ -190,7 +198,7 @@ Then derive the default canonical ALS skill ids:
 - If the base phrase already repeats the module wording, normalize it to one leading prefix instead of doubling it.
 - Check the resulting ids against:
   - active ALS skill ids already declared elsewhere in the system
-  - existing `.claude/skills/<skill-id>/` target directories and any projected `.claude/delamains/<name>/` targets that would collide during deploy
+  - existing `${SKILLS_ROOT}/<skill-id>/` target directories and any projected `${DELAMAINS_ROOT}/<name>/` targets that would collide during deploy
 - If a collision appears, present the problem and recommended alternative ids. The operator chooses the final names.
 
 If the skill decomposition reveals that two entities have completely unrelated lifecycles and no shared invariants, challenge whether they belong in the same module.
@@ -329,20 +337,20 @@ Create everything inside the existing system.
 9. Validate the live system:
 
 ```bash
-bun ${CLAUDE_PLUGIN_ROOT}/alsc/compiler/src/cli.ts validate <system-root>
+bun ${ALS_PLUGIN_ROOT}/alsc/compiler/src/cli.ts validate ${SYSTEM_ROOT}
 ```
 
-10. Preflight Claude projection with empty-target protection:
+10. Preflight active harness projection with empty-target protection:
 
 ```bash
-bun ${CLAUDE_PLUGIN_ROOT}/alsc/compiler/src/cli.ts deploy claude --dry-run --require-empty-targets <system-root> [module-id]
+bun ${ALS_PLUGIN_ROOT}/alsc/compiler/src/cli.ts deploy ${HARNESS} --dry-run --require-empty-targets ${SYSTEM_ROOT} [module-id]
 ```
 
-11. If the preflight reports target collisions or Delamain name conflicts under `.claude/`, stop and resolve them with the operator before live deploy.
-12. Project the active Claude assets into `.claude/`:
+11. If the preflight reports target collisions or Delamain name conflicts under `${DELAMAINS_ROOT}`, stop and resolve them with the operator before live deploy.
+12. Project the active harness assets:
 
 ```bash
-bun ${CLAUDE_PLUGIN_ROOT}/alsc/compiler/src/cli.ts deploy claude <system-root> [module-id]
+bun ${ALS_PLUGIN_ROOT}/alsc/compiler/src/cli.ts deploy ${HARNESS} ${SYSTEM_ROOT} [module-id]
 ```
 
 ### Skill authoring
@@ -432,9 +440,9 @@ The body is a TODO scaffold. The skill cannot write domain-specific agent prompt
 
 Do not copy vendor dispatcher source into the authored Delamain bundle.
 
-- The canonical dispatcher construct lives at `${CLAUDE_PLUGIN_ROOT}/delamain-dispatcher/`.
+- The canonical dispatcher construct lives at `${ALS_PLUGIN_ROOT}/delamain-dispatcher/`.
 - ALS installs one operator-side dispatcher source tree per Delamain at `.als/constructs/delamain-dispatcher/{delamain-name}/`.
-- `alsc deploy claude` projects runtime dispatcher files from that installed construct root into `.claude/delamains/{delamain-name}/dispatcher/`.
+- `alsc deploy ${HARNESS}` projects runtime dispatcher files from that installed construct root into `${DELAMAINS_ROOT}/{delamain-name}/dispatcher/`.
 
 The authored bundle stays limited to `delamain.ts`, agent prompts, optional sub-agent prompts, and optional `runtime-manifest.config.json`.
 
@@ -444,6 +452,6 @@ Tell the operator what was created and where. Suggest they can now create their 
 
 If a Delamain was created, also tell the operator:
 - Agent files are TODO scaffolds that need prompts written before the dispatcher can run.
-- The authored bundle does not contain dispatcher source. ALS installs that construct at `.als/constructs/delamain-dispatcher/{delamain-name}/` and deploy projects the runnable copy to `.claude/delamains/{delamain-name}/dispatcher/`.
-- The dispatcher reads `${CLAUDE_PLUGIN_ROOT}/delamain-dispatcher/VERSION` at startup and will fail if the plugin root or either `VERSION` file is missing or malformed.
+- The authored bundle does not contain dispatcher source. ALS installs that construct at `.als/constructs/delamain-dispatcher/{delamain-name}/` and deploy projects the runnable copy to `${DELAMAINS_ROOT}/{delamain-name}/dispatcher/`.
+- The dispatcher reads `${ALS_PLUGIN_ROOT}/delamain-dispatcher/VERSION` at startup and will fail if the plugin root or either `VERSION` file is missing or malformed.
 - Session fields are implicit — they do not need to be added to `module.ts` or entity frontmatter manually. The dispatcher handles persistence.

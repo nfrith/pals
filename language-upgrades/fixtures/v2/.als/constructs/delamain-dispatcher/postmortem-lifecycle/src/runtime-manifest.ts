@@ -1,9 +1,11 @@
 import { readFile } from "fs/promises";
 import { join } from "path";
 import type { AgentProvider } from "./provider.js";
+import { HARNESS_TARGETS, isHarnessTarget, type HarnessTarget } from "./harness-runtime.js";
 
 export interface RuntimeManifest {
   schema: string;
+  harness?: HarnessTarget;
   delamain_name: string;
   module_id: string;
   module_version: number;
@@ -120,9 +122,11 @@ export async function loadRuntimeManifest(bundleRoot: string): Promise<RuntimeMa
   const submodules = normalizeSubmodules(bundleRoot, manifest.submodules);
   const stateProviders = normalizeStateProviders(bundleRoot, manifest.state_providers);
   const limits = normalizeLimits(bundleRoot, manifest.limits);
+  const harness = normalizeHarness(bundleRoot, manifest.harness);
 
   return {
     schema: requireStringField(manifest, "schema"),
+    ...(harness ? { harness } : {}),
     delamain_name: requireStringField(manifest, "delamain_name"),
     module_id: requireStringField(manifest, "module_id"),
     module_version: manifest.module_version,
@@ -136,6 +140,18 @@ export async function loadRuntimeManifest(bundleRoot: string): Promise<RuntimeMa
     state_providers: stateProviders,
     limits,
   };
+}
+
+function normalizeHarness(bundleRoot: string, value: unknown): HarnessTarget | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  if (!isHarnessTarget(value)) {
+    throw new Error(
+      `Invalid runtime-manifest.json in '${bundleRoot}': 'harness' must be one of ${HARNESS_TARGETS.map((target) => `'${target}'`).join(" or ")}`,
+    );
+  }
+  return value;
 }
 
 function normalizeSubmodules(bundleRoot: string, value: unknown): string[] {

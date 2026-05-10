@@ -1,12 +1,12 @@
 ---
 name: foundry
-description: Install curated modules from the ALS plugin's bundled Foundry shelf. Lets the operator pick one or many modules, copies them into the current project, validates, and auto-deploys the Claude projection. Re-runnable any time — not an onboarding-only flow.
+description: Install curated modules from the ALS plugin's bundled Foundry shelf. Lets the operator pick one or many modules, copies them into the current project, validates, and auto-deploys the active harness projection. Re-runnable any time — not an onboarding-only flow.
 allowed-tools: AskUserQuestion, Bash(bash *), Read, Write, Edit, Skill
 ---
 
 # foundry
 
-Import curated modules from the Foundry shelf (bundled with the ALS plugin) into the operator's current project. The operator picks from the shelf declared at `${CLAUDE_PLUGIN_ROOT}/foundry/.als/system.ts`.
+Import curated modules from the Foundry shelf (bundled with the ALS plugin) into the operator's current project. The operator picks from the shelf declared at `${ALS_PLUGIN_ROOT}/foundry/.als/system.ts`.
 
 This skill is a peer to `/new` (which authors a module from scratch). Use this one when the operator wants something ready-made. Do not duplicate `/new`'s authoring logic here — if the operator wants to create from scratch, hand off to `/new` and exit.
 
@@ -19,33 +19,32 @@ This skill is a peer to `/new` (which authors a module from scratch). Use this o
 
 ## Phase 0 — Prereqs
 
-Same form as `/install` Phase 1:
+Initialize runtime variables:
 
 ```bash
-PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT}"
-if [ -d "$PLUGIN_ROOT" ] && [ -f "$PLUGIN_ROOT/alsc/compiler/src/cli.ts" ]; then
-  printf 'PLUGIN_ROOT=%s\n' "$PLUGIN_ROOT"
+bash {skill-dir}/../lib/runtime-env.sh
+```
+
+Extract `ALS_PLUGIN_ROOT`, `SYSTEM_ROOT`, `HARNESS`, `ALS_PLATFORM_CODE`, `SKILLS_ROOT`, and `DELAMAINS_ROOT` from the output. If the output is `NO_SYSTEM`, tell the operator: "This project isn't an ALS system yet. Run `/install` first to bootstrap." Do not attempt to bootstrap from Foundry — that's a separate flow and pulling bundled modules into nothing is not a sane default.
+
+Then confirm the plugin root:
+
+```bash
+if [ -d "${ALS_PLUGIN_ROOT}" ] && [ -f "${ALS_PLUGIN_ROOT}/alsc/compiler/src/cli.ts" ]; then
+  printf 'ALS_PLUGIN_ROOT=%s\n' "${ALS_PLUGIN_ROOT}"
 else
-  echo "PLUGIN_ROOT_INVALID: $PLUGIN_ROOT"
+  echo "PLUGIN_ROOT_INVALID: ${ALS_PLUGIN_ROOT}"
 fi
 ```
 
-If `PLUGIN_ROOT_INVALID`, stop. See [`skills/CLAUDE.md`](../CLAUDE.md) for the plugin-root resolution rule.
-
-Then confirm the current project is an ALS system:
-
-```bash
-[ -f .als/system.ts ] && echo "SYSTEM: present" || echo "SYSTEM: missing"
-```
-
-If `SYSTEM: missing`, tell the operator: "This project isn't an ALS system yet. Run `/install` first to bootstrap." Do not attempt to bootstrap from Foundry — that's a separate flow and pulling bundled modules into nothing is not a sane default.
+If `PLUGIN_ROOT_INVALID`, stop.
 
 ## Phase 1 — Resolve Foundry
 
-There is exactly one Foundry shelf bundled with this plugin: `${CLAUDE_PLUGIN_ROOT}/foundry`. This skill does not scan, does not offer a picker, and does not support variants. Use the canonical path directly:
+There is exactly one Foundry shelf bundled with this plugin: `${ALS_PLUGIN_ROOT}/foundry`. This skill does not scan, does not offer a picker, and does not support variants. Use the canonical path directly:
 
 ```bash
-FOUNDRY_ROOT="${CLAUDE_PLUGIN_ROOT}/foundry"
+FOUNDRY_ROOT="${ALS_PLUGIN_ROOT}/foundry"
 if [ -f "$FOUNDRY_ROOT/.als/system.ts" ]; then
   printf 'FOUNDRY_ROOT=%s\n' "$FOUNDRY_ROOT"
 else
@@ -136,37 +135,37 @@ For each surviving candidate, in order:
 1. Copy the module's ALS bundle only — the authored definition under `.als/modules/{module_id}`. **Do not copy the module's mounted data directory** from Foundry (e.g. whatever sits under the module's `path`). That data is bundled exemplar content, not something the operator wants imported into their project.
 
    ```bash
-   cp -R "${FOUNDRY_ROOT}/.als/modules/{module_id}" ".als/modules/{module_id}"
+   cp -R "${FOUNDRY_ROOT}/.als/modules/{module_id}" "${SYSTEM_ROOT}/.als/modules/{module_id}"
    ```
 
 2. Create an empty mounted data directory at the module's `path` so the compiler and skills can project into it:
 
    ```bash
-   mkdir -p "{module.path}"
+   mkdir -p "${SYSTEM_ROOT}/{module.path}"
    ```
 
-3. Append the module's entry to the target `.als/system.ts`'s `modules: {}` block. Use Edit to insert a new key immediately before the closing `}` of the modules record. Preserve indentation. Copy Foundry's fields verbatim (`path`, `version`, `description`, and `skills`). If the module was renamed in Phase 4, use the new id as the key and keep the renamed id consistent across the copied bundle and this entry.
+3. Append the module's entry to the target `${SYSTEM_ROOT}/.als/system.ts`'s `modules: {}` block. Use Edit to insert a new key immediately before the closing `}` of the modules record. Preserve indentation. Copy Foundry's fields verbatim (`path`, `version`, `description`, and `skills`). If the module was renamed in Phase 4, use the new id as the key and keep the renamed id consistent across the copied bundle and this entry.
 
 Do this per-module so a failure mid-way is easy to surface and partial state is visible.
 
 ## Phase 6 — Validate
 
 ```bash
-bun ${CLAUDE_PLUGIN_ROOT}/alsc/compiler/src/cli.ts validate .
+bun ${ALS_PLUGIN_ROOT}/alsc/compiler/src/cli.ts validate ${SYSTEM_ROOT}
 ```
 
-If validation fails, surface the full compiler output to the operator without trying to auto-fix. Tell them: "The installed modules are on disk but the system did not validate. Resolve the errors or run `/foundry` again after undoing the copy. Nothing was deployed to `.claude/`." Stop — do not proceed to Phase 7.
+If validation fails, surface the full compiler output to the operator without trying to auto-fix. Tell them: "The installed modules are on disk but the system did not validate. Resolve the errors or run `/foundry` again after undoing the copy. Nothing was deployed to the active harness projection." Stop — do not proceed to Phase 7.
 
 ## Phase 7 — Deploy
 
-Validation passed. Dry-run the Claude projection, then live-deploy:
+Validation passed. Dry-run the active harness projection, then live-deploy:
 
 ```bash
-bun ${CLAUDE_PLUGIN_ROOT}/alsc/compiler/src/cli.ts deploy claude --dry-run .
-bun ${CLAUDE_PLUGIN_ROOT}/alsc/compiler/src/cli.ts deploy claude .
+bun ${ALS_PLUGIN_ROOT}/alsc/compiler/src/cli.ts deploy ${HARNESS} --dry-run ${SYSTEM_ROOT}
+bun ${ALS_PLUGIN_ROOT}/alsc/compiler/src/cli.ts deploy ${HARNESS} ${SYSTEM_ROOT}
 ```
 
-If the dry-run surfaces target collisions, stop and report them — do not push through. If the live deploy fails, report the full compiler output. Otherwise the installed modules' skills, delamains, and projections are now live under `.claude/`.
+If the dry-run surfaces target collisions, stop and report them — do not push through. If the live deploy fails, report the full compiler output. Otherwise the installed modules' skills, delamains, and projections are now live under `${SKILLS_ROOT}` and `${DELAMAINS_ROOT}`.
 
 The operator does not request this step. New modules are useless until projected — auto-deploy is the default.
 
@@ -174,9 +173,9 @@ The operator does not request this step. New modules are useless until projected
 
 Installed modules may include delamains — autonomous dispatchers that watch for pipeline work and act on it. Delamains are inert until their dispatchers are running, which the `/bootup` skill handles. Ask the operator before invoking it.
 
-Read `$CLAUDE_CODE_ENTRYPOINT` and branch on the current platform per [`platforms.md`](../docs/references/platforms.md).
+Use `ALS_PLATFORM_CODE` from the runtime helper and branch on the current platform per [`platforms.md`](../docs/references/platforms.md). If it is empty and `HARNESS` is `claude`, map `$CLAUDE_CODE_ENTRYPOINT` via the same reference. If `HARNESS` is `codex`, treat the platform as [`ALS-PLAT-CXCLI`](../docs/references/platforms.md).
 
-### On Claude Code CLI ([`ALS-PLAT-CCLI`](../docs/references/platforms.md)) — default
+### On CLI harnesses ([`ALS-PLAT-CCLI`](../docs/references/platforms.md), [`ALS-PLAT-CXCLI`](../docs/references/platforms.md)) — default
 
 Use a single AskUserQuestion:
 
@@ -226,13 +225,13 @@ Proceed to Phase 9 after the invoked skill (if any) returns.
 
 One block, no ceremony:
 
-- Foundry: `foundry` at `${CLAUDE_PLUGIN_ROOT}/foundry`
+- Foundry: `foundry` at `${ALS_PLUGIN_ROOT}/foundry`
 - Installed: `<module_id_1>, <module_id_2>, ...`
 - Skipped (conflicts): `<module_id>: <reason>` (one per line, or "none")
 - Validation: `pass`
 - Deploy: `pass` (or the error summary if it failed)
 - Bootup: `invoked` / `skipped` (Phase 8 outcome)
-- Next: installed skills and delamains are live under `.claude/`. Invoke them directly. If you skipped bootup, run `/bootup` when you want dispatchers running.
+- Next: installed skills and delamains are live under `${SKILLS_ROOT}` and `${DELAMAINS_ROOT}`. Invoke them directly. If you skipped bootup, run `/bootup` when you want dispatchers running.
 
 ## Notes
 

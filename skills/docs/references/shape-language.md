@@ -550,7 +550,8 @@ Rules:
 
 ## Deployment Note
 
-Authored Delamains are TypeScript, but Claude deploy still writes a runtime `delamain.yaml` into `.claude/delamains/{name}/` beside `runtime-manifest.json` so existing dispatchers keep the same downstream contract. The deployed state shape preserves authored `label` and terminal `outcome` and adds compiler-derived `customer_bucket`.
+Authored Delamains are TypeScript, but deploy still writes a runtime `delamain.yaml` into `${DELAMAINS_ROOT}/{name}/` beside `runtime-manifest.json` so existing dispatchers keep the same downstream contract.
+The deployed state shape preserves authored `label` and terminal `outcome` and adds compiler-derived `customer_bucket`.
 
 ## Detailed Rules
 

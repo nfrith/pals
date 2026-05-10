@@ -17,7 +17,13 @@ The brain's poll loop stays running. The next time it wakes (on new mail or rest
 ## Procedure
 
 ```bash
-SESSION_FILE="${CLAUDE_PLUGIN_ROOT}/../../ghost-factory/constructs/cyber-brain/session.json"
+runtime_env="$(bash {skill-dir}/../lib/runtime-env.sh plugin 2>/dev/null || true)"
+ALS_PLUGIN_ROOT="$(printf '%s\n' "$runtime_env" | awk -F': ' '/^ALS_PLUGIN_ROOT:/ {print $2; exit}')"
+if [ -z "$ALS_PLUGIN_ROOT" ]; then
+  echo "ALS plugin root unavailable."
+  exit 0
+fi
+SESSION_FILE="${ALS_PLUGIN_ROOT}/../../ghost-factory/constructs/cyber-brain/session.json"
 
 if [ -f "$SESSION_FILE" ]; then
   # Read current state before clearing

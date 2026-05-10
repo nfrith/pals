@@ -9,6 +9,7 @@
     "cli": "bun src/cli.ts",
     "validate": "bun src/index.ts validate",
     "deploy:claude": "bun src/deploy.ts",
+    "deploy:codex": "bun src/cli.ts deploy codex",
     "test": "bun test",
     "test:parallel": "bun test --concurrent --max-concurrency=20",
     "test:stress": "bun test --concurrent --randomize --rerun-each 3"

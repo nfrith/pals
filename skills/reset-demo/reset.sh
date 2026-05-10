@@ -11,6 +11,16 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SR="${1:-$SCRIPT_DIR/../../reference-system}"
+source "$SCRIPT_DIR/../lib/runtime-env.sh"
+
+if ! als_runtime_init_env "${ALS_HARNESS:-}" "$SR"; then
+  echo "[reset-demo] ERROR: $ALS_RUNTIME_ERROR"
+  exit 1
+fi
+
+SR="$SYSTEM_ROOT"
+DELAMAINS_DIR="$DELAMAINS_ROOT"
+DELAMAINS_RELATIVE="${DELAMAINS_DIR#$SR/}"
 
 # Find project root by walking up from system root to find .git/
 # Use .git (not .claude/) because subsystems also have .claude/ directories
@@ -36,7 +46,7 @@ sdk_pids=$(ps aux | grep "claude-agent-sdk/cli.js" | grep -v grep | awk '{print 
 [[ -n "$sdk_pids" ]] && { echo "$sdk_pids" | xargs kill -9 2>/dev/null || true; }
 
 # Dispatchers via status.json
-for sf in "$SR"/.claude/delamains/*/status.json; do
+for sf in "$DELAMAINS_DIR"/*/status.json; do
   [[ -f "$sf" ]] || continue
   pid=$(jq -r '.pid // empty' "$sf" 2>/dev/null)
   [[ -n "$pid" ]] && { kill -9 "$pid" 2>/dev/null || true; }
@@ -71,8 +81,8 @@ echo "[reset-demo] removed $removed fabricated items"
 
 # --- 3. Restore modified records and agent files ---
 git checkout -- \
-  .claude/delamains/*/agents/ \
-  .claude/delamains/*/sub-agents/ \
+  "$DELAMAINS_RELATIVE"/*/agents/ \
+  "$DELAMAINS_RELATIVE"/*/sub-agents/ \
   workspace/factory/items/ \
   workspace/incident-response/reports/ \
   workspace/experiments/ \

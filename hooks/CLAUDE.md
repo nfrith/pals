@@ -1,6 +1,6 @@
 # ALS Hooks
 
-All hooks resolve the compiler path via `${CLAUDE_PLUGIN_ROOT}/alsc/compiler`.
+Shared hooks resolve the compiler path via `${ALS_PLUGIN_ROOT}/alsc/compiler`. Claude manifests may enter through `${CLAUDE_PLUGIN_ROOT}`, but hook bootstrap normalizes that value to `ALS_PLUGIN_ROOT` before shared work runs.
 
 ## Hook inventory
 
@@ -21,6 +21,10 @@ After Write/Edit operations, records which ALS system and module were touched to
 This hook exists so the stop gate knows what to validate without scanning the whole filesystem.
 
 TODO: Does not capture Bash-based file mutations (e.g. `echo ... > file.md`).
+
+### codex-post-edit-breadcrumb.sh / codex-post-edit-validate.sh (PostToolUse — apply_patch|Edit|Write)
+
+Codex adapters normalize `apply_patch` hook payloads into the shared `tool_input.file_path` shape consumed by `als-breadcrumb.sh` and `als-validate.sh`. They extract `*** Add File:`, `*** Update File:`, `*** Delete File:`, and `*** Move to:` headers and run the shared hook once per changed path.
 
 ### als-stop-gate.sh (Stop)
 
@@ -48,4 +52,4 @@ When set to `"1"`, `als-validate.sh` and `als-stop-gate.sh` skip all validation.
 
 - Bun must be installed and on `$PATH`.
 - jq must be installed and on `$PATH`.
-- The plugin must be loaded so `CLAUDE_PLUGIN_ROOT` resolves.
+- The plugin must be loaded so `ALS_PLUGIN_ROOT` resolves, either directly or via the Claude manifest bootstrap.

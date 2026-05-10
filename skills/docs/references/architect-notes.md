@@ -9,9 +9,9 @@ One way to quickly modify an ALS module without running the `/change` and `/migr
 After editing the source file under `.als/modules/{module}/v{N}/`, run:
 
 ```bash
-bun ${CLAUDE_PLUGIN_ROOT}/alsc/compiler/src/deploy.ts <system-root> <module-id>
+bun ${ALS_PLUGIN_ROOT}/alsc/compiler/src/cli.ts deploy ${HARNESS} ${SYSTEM_ROOT} <module-id>
 ```
 
-This instantly projects the change into `.claude/skills/` and `.claude/delamains/`.
+Resolve `ALS_PLUGIN_ROOT`, `HARNESS`, and `SYSTEM_ROOT` through `skills/lib/runtime-env.sh` first. This instantly projects the change into the active harness roots reported by the helper.
 
 This technique is also useful for debugging — when you want to test a prompt change or dispatcher behavior quickly without going through the full version lifecycle. Just be mindful that nothing is actively processing in the delamain while you're editing, or you may create a race between the running dispatcher and your in-flight edits.

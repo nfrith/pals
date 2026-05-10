@@ -4,6 +4,9 @@ reference-system/.als/modules/*/delamains/*/runtime/
 .claude/delamains/*/runtime/
 .als/modules/*/delamains/*/runtime/
 
+# Local package installs
+node_modules/
+
 # Dispatcher install artifacts (regenerated on deploy)
 reference-system/.claude/delamains/*/dispatcher/bun.lock
 reference-system/.claude/delamains/*/dispatcher/node_modules/

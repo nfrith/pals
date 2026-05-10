@@ -135,20 +135,20 @@ ALS is a filesystem-backed specification language with a compiler and a small se
 
 A strict contract: structure separates from workflow, operator attention separates from agent execution, across every device the operator touches.
 
-ALS targets the Claude platforms today — Claude Code CLI, Cowork, Desktop, Web — with a vision toward wearables and ambient computing.
+ALS targets agent harnesses through explicit projections. Claude Code and Codex CLI are the current implemented surfaces; Cowork, Desktop, Web, wearables, and ambient surfaces remain design targets unless the implementation matrix says otherwise.
 
 ## What Works Today
 
 The current public preview is centered on two usable surfaces:
 
 - `alsc validate` validates an ALS system and emits machine-readable JSON
-- `alsc deploy claude` projects active ALS Claude assets into `.claude/skills/` and `.claude/delamains/`
+- `alsc deploy <harness>` projects active ALS assets into the selected harness roots
 - `alsc changelog inspect` validates the ALS repo's structured `CHANGELOG.md` staging area
 - `reference-system/` provides the canonical reference fixture for the current ALS v1 contract
 
 ## Install
 
-ALS is distributed as a Claude Code plugin. Requires [Bun](https://bun.sh) >= 1.3.0 and [jq](https://jqlang.github.io/jq/).
+ALS is distributed as a Claude Code plugin and now includes Codex plugin metadata for local Codex workflows. Requires [Bun](https://bun.sh) >= 1.3.0 and [jq](https://jqlang.github.io/jq/).
 
 ALS uses a **two-channel release model**:
 
@@ -180,6 +180,27 @@ Use only if you need the latest unreleased commits. Edgerunners should NOT use t
 
 Once installed, ALS skills (`/install`, `/new`, `/validate`, `/change`, `/migrate`, `/update`) are available inside Claude Code sessions.
 
+### Codex marketplace install
+
+This repo includes Codex plugin metadata for preview workflows. Codex plugin hooks require the Codex hooks feature flag:
+
+```toml
+[features]
+codex_hooks = true
+```
+
+Add the marketplace, restart Codex, then install **ALS** from `/plugins` under **ALS Local Marketplace**:
+
+```bash
+codex plugin marketplace add https://github.com/JC-Flanders/als.git
+```
+
+Codex skills are invoked as `$install`, `$new`, `$validate`, `$change`, `$migrate`, and `$update`. The Codex projection path is:
+
+```bash
+bun alsc/compiler/src/cli.ts deploy codex <system-root>
+```
+
 ## Update
 
 ALS does not auto-update installed systems in the background. When a newer preview release is available, run `/update` from inside Claude Code.
@@ -188,11 +209,11 @@ If a preview release is bad, the recovery path is fix-forward: ship a hotfix bum
 
 ## How to Use
 
-The ALS plugin adds skills to Claude Code — slash commands that guide Claude through structured workflows. Type the skill name in your Claude Code session to invoke it.
+The ALS plugin adds skills to the active harness — slash commands in Claude Code and `$skill` prompts in Codex — that guide the agent through structured workflows.
 
 ### `/install` — Bootstrap a new ALS system
 
-Start here in a fresh project. ALS welcomes you, checks prerequisites, acknowledges the ALS platform code, interviews for the first module, bootstraps `.als/`, validates the authored system, and deploys the Claude assets into `.claude/`.
+Start here in a fresh project. ALS welcomes you, checks prerequisites, acknowledges the ALS platform code, interviews for the first module, bootstraps `.als/`, validates the authored system, and deploys the active harness assets.
 
 ```
 /install Track client projects with status, owner, and deliverables
@@ -275,14 +296,14 @@ my-system/
 ## Why ALS
 
 - **Attention is the scarce resource.** ALS is built around managing operator attention, not maximizing agent throughput. Every primitive — modules, skills, delamains, the cyber-brain — exists to help you graduate work upward and out of your head.
-- **Single session.** You only ever need one Claude session open. ALS systems run inside the session you already have.
-- **Online-ready.** This means Claude Code online and cowork will work when they support full Claude primitives. No local-only lock-in.
-- **Future-proof.** ALS builds on Claude's native surface — skills, tools, markdown. Any future Anthropic product will support it. You never have to worry about upgrading.
+- **Single session.** You only ever need one supported harness session open. ALS systems run inside the session you already have.
+- **Online-ready.** Harness projections keep ALS out of local-only lock-in; Claude Code online and cowork remain design targets as their primitives mature.
+- **Future-proof.** ALS builds on native harness surfaces — skills, tools, markdown, and projected runtime files — so new agent products can get explicit projections instead of ad hoc glue.
 - **No third-party services.** You do not need to host, maintain, or pay for external agent infrastructure.
-- **Anthropic-grade security.** Infinitely more secure than any third-party agent provider because you use Anthropic's security boundary, not someone else's.
+- **Host-harness security.** ALS stays inside the security boundary of the harness you already chose instead of requiring a separate third-party agent service.
 - **Event-driven, token-efficient.** Agents run when work exists, not on a polling loop. No heartbeat, no daemon burning tokens in the background. The heartbeat is the operator. Always.
-- **Agents run inside the session.** Dispatched agents are background shell tasks inside your single Claude session. No separate processes, no orphaned daemons.
-- **Agent SDK — same guarantees.** Since agents are Claude Agent SDK sessions, they inherit the same security, updates, and future-proofing that comes with using Claude Code itself.
+- **Agents run inside the session.** Dispatched agents are background shell tasks inside your active harness session. No separate process manager, no orphaned daemon layer.
+- **Runtime sessions — same guarantees.** Dispatched work inherits the active harness/provider runtime guarantees instead of introducing another control plane.
 - **Operator and agent are first-class citizens.** The language distinguishes operator-owned and agent-owned states. Both are formalized, not bolted on.
 
 ## Philosophy
@@ -366,7 +387,22 @@ This is a research preview, not a stability release.
 - ALS currently supports `als_version: 1` only.
 - ALS does not yet ship a language-version upgrade toolchain.
 - ALS does not yet ship a real warning or deprecation lifecycle.
-- Claude projection is the only harness projection surfaced in this preview.
+- Harness projections are preview surfaces; Claude has the broader operator UI surface today.
+
+### Harness Parity
+
+| Surface | Claude | Codex | Notes |
+|---------|--------|-------|-------|
+| Deploy | yes | yes | `alsc deploy <harness>` |
+| Validate hooks | yes | yes | Codex uses hook payload adapters |
+| SessionStart operator profile | yes | yes | Codex adapter exists |
+| Stop validation | yes | yes | Codex adapter exists |
+| SessionEnd dispatcher cleanup | yes | no | Codex has no equivalent lifecycle hook in this plugin |
+| Update transaction follow-through | yes | yes | `$update` uses `--harness codex` after local plugin source refresh |
+| Plugin self-update | yes | no | Claude marketplace only |
+| Dispatcher boot/reboot | yes | yes | Uses `DELAMAINS_ROOT` and `ALS_PLUGIN_ROOT` from runtime env |
+| Statusline | yes | no | Claude-specific settings/statusline surface |
+| Dashboard | yes | limited | Current dashboard lifecycle remains Claude-oriented |
 
 The longer-form preview contract lives in [RESEARCH-PREVIEW.md](RESEARCH-PREVIEW.md). Public docs intentionally stay compact: install from the stable marketplace, update with `/update`, and expect fix-forward recovery rather than rollback.
 
@@ -374,7 +410,7 @@ The longer-form preview contract lives in [RESEARCH-PREVIEW.md](RESEARCH-PREVIEW
 
 ```text
 alsc/
-  compiler/       # Validator and Claude skill projector
+  compiler/       # Validator and harness asset projector
   skills/         # ALS skill definitions and workflow material
 sdr/              # Spec Decision Records
 reference-system/ # Canonical reference fixture

@@ -84,7 +84,7 @@ export const DISPATCHER_KNOWN_VENDOR_FINGERPRINTS: ConstructVersionFingerprint[]
       "package.json": "d4dc20ca1ebb120e8e6a3def8c7d2bff5f8dfcb77ec427e7c253876c37a5c5b9",
       "tsconfig.json": "87009d314114d610d94a92724cc20c1c61db50ee3ebe909806bd5a82bd3eea6c",
       migrations: "aa7c22ce5dcb2ced37d25fae9b634a1d87d6e168b149508089cff5b241a88d13",
-      src: "30266f2bce2921567c9821d13c0673b591c30a4ec82f78254c8e99649570e981",
+      src: "1f4620753738efc08a6298f33345a795a408579961e45a418e6c2bbcfa15d124",
     },
   },
   {
@@ -95,7 +95,7 @@ export const DISPATCHER_KNOWN_VENDOR_FINGERPRINTS: ConstructVersionFingerprint[]
       "package.json": "d4dc20ca1ebb120e8e6a3def8c7d2bff5f8dfcb77ec427e7c253876c37a5c5b9",
       "tsconfig.json": "87009d314114d610d94a92724cc20c1c61db50ee3ebe909806bd5a82bd3eea6c",
       migrations: "eb0fd9b887080aef08553e7b85a971cabd912cf04f9dc93d93623fe9739be57a",
-      src: "dfbb8c6c089acda35531aa0bce5163cd6662b7c0a82d382ddd7534bf57c4ad0d",
+      src: "82df15df0199042e3f22280815fc875ee16addd380c679beeea65c2249fcb745",
     },
   },
 ];

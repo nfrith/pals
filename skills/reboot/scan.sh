@@ -2,20 +2,18 @@
 # Fast scan: find offline delamains for /reboot
 # Outputs only what's needed — no config, no formatting frills
 
-sys_root="$(pwd)"
-while [[ "$sys_root" != "/" ]]; do
-    [[ -f "$sys_root/.als/system.ts" ]] && break
-    sys_root=$(dirname "$sys_root")
-done
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/../lib/runtime-env.sh"
 
-if [[ ! -f "$sys_root/.als/system.ts" ]]; then
-    echo "NO_SYSTEM"
+if ! als_runtime_init_env "${ALS_HARNESS:-${1:-}}" "$(pwd)"; then
+    echo "$ALS_RUNTIME_ERROR"
     exit 0
 fi
 
-echo "SYSTEM_ROOT: $sys_root"
+delamains_root="$DELAMAINS_ROOT"
+als_runtime_emit_env
 
-if [[ ! -d "$sys_root/.claude/delamains" ]]; then
+if [[ ! -d "$delamains_root" ]]; then
     echo "NO_DELAMAINS"
     exit 0
 fi
@@ -23,7 +21,7 @@ fi
 offline_names=()
 running_names=()
 
-for dy in "$sys_root"/.claude/delamains/*/delamain.yaml; do
+for dy in "$delamains_root"/*/delamain.yaml; do
     [[ -f "$dy" ]] || continue
     d_dir=$(dirname "$dy")
     d_name=$(basename "$d_dir")

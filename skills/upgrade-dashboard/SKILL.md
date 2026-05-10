@@ -8,10 +8,18 @@ allowed-tools: AskUserQuestion, Bash, Read
 
 See [SDR 038](../../sdr/038-construct-upgrade-engine-contract.md) for the construct-upgrade semantics. This skill covers the delamain dashboard service only.
 
+Before either mode, initialize runtime variables:
+
+```bash
+bash {skill-dir}/../lib/runtime-env.sh
+```
+
+Extract `ALS_PLUGIN_ROOT`, `SYSTEM_ROOT`, and `HARNESS` from the output. If the output is `NO_SYSTEM`, stop.
+
 ## Modes
 
 - `preflight`
-  - Read `${CLAUDE_PLUGIN_ROOT}/delamain-dashboard/{VERSION,construct.json}`.
+  - Read `${ALS_PLUGIN_ROOT}/delamain-dashboard/{VERSION,construct.json}`.
   - Read `.als/runtime/construct-upgrades/state.json` if present.
   - If the recorded applied version already matches the canonical dashboard version, return a no-op result.
   - Otherwise return `needs_upgrade: true` with no operator prompts.

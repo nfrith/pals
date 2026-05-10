@@ -1,0 +1,21 @@
+{
+  "name": "als-local-marketplace",
+  "interface": {
+    "displayName": "ALS Local Marketplace"
+  },
+  "plugins": [
+    {
+      "name": "als",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/JC-Flanders/als.git",
+        "ref": "main"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}

@@ -57,7 +57,7 @@ Author these sections in this exact order:
 - `Preflight`: flat bullet list covering baseline validation, manifest validation, and git readiness.
 - `Clone Dry Run`: flat bullet list summarizing clone location, script outcome, validation outcome, and record counts, or explicit statement that the clone phase was skipped.
 - `Behavior Checks`: flat bullet list of checklist items or executed commands and their outcomes.
-- `Live Cutover`: flat bullet list covering live script execution, version and `skills:` flip, Claude projection, and rollback if it happened.
+- `Live Cutover`: flat bullet list covering live script execution, version and `skills:` flip, active harness projection, and rollback if it happened.
 - `Outcome`: flat bullet list summarizing manifest status, final live status, and resulting commit message when successful.
 - `Notes`: flat bullet list of operator decisions, preserved failure clones, or unusual observations, or explicit statement that there are no extra notes.
 

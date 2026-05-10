@@ -75,7 +75,7 @@ Notes:
 - Preflight discovers every `operator-prompt` step that can fire for the selected hop chain and option set.
 - Execute consumes a pre-collected operator-answer map and fails closed if a required answer is missing.
 - `operator-prompt` steps in `category: "recovery"` are rejected so prompt discovery stays static.
-- When `/upgrade-language` runs under `/update`, SDR 039's transaction wrapper owns the staged `alsc deploy claude` refresh.
+- When `/upgrade-language` runs under `/update`, SDR 039's transaction wrapper owns the staged `alsc deploy ${HARNESS}` refresh.
 
 ## Fixtures And Verification
 

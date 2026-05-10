@@ -218,7 +218,7 @@ test("construct action manifest inspection accepts the approved action kinds and
           instance_id: "pulse",
           display_name: "Statusline Pulse",
           start: {
-            command: ["bun", "run", "$CLAUDE_PLUGIN_ROOT/statusline/pulse.ts", "$ALS_SYSTEM_ROOT"],
+            command: ["bun", "run", "$ALS_PLUGIN_ROOT/statusline/pulse.ts", "$ALS_SYSTEM_ROOT"],
             cwd: "$ALS_SYSTEM_ROOT",
           },
         },

@@ -316,6 +316,10 @@ test("shipped cleanup step untracks historical runtime ephemera and commits the 
       ".claude/scripts/.cache/pulse/delamains.json": "{}\n",
       ".claude/delamains/ops/telemetry/events.jsonl": "{\"event\":\"tick\"}\n",
       ".claude/delamains/ops/dispatcher/control/drain-request.json": "{\"requested\":true}\n",
+      ".codex/delamains/ops/runtime/worktree-state.json": "{\"dirty\":false}\n",
+      ".codex/delamains/ops/status.json": "{\"pid\":789}\n",
+      ".codex/delamains/ops/telemetry/events.jsonl": "{\"event\":\"tick\"}\n",
+      ".codex/delamains/ops/dispatcher/control/drain-request.json": "{\"requested\":true}\n",
     },
   }, async ({ state_path, system_root }) => {
     const hop = {
@@ -348,6 +352,10 @@ test("shipped cleanup step untracks historical runtime ephemera and commits the 
     expect(trackedFiles).not.toContain(".claude/scripts/.cache/pulse/delamains.json");
     expect(trackedFiles).not.toContain(".claude/delamains/ops/telemetry/events.jsonl");
     expect(trackedFiles).not.toContain(".claude/delamains/ops/dispatcher/control/drain-request.json");
+    expect(trackedFiles).not.toContain(".codex/delamains/ops/runtime/worktree-state.json");
+    expect(trackedFiles).not.toContain(".codex/delamains/ops/status.json");
+    expect(trackedFiles).not.toContain(".codex/delamains/ops/telemetry/events.jsonl");
+    expect(trackedFiles).not.toContain(".codex/delamains/ops/dispatcher/control/drain-request.json");
 
     const gitignore = await readFile(join(system_root, ".gitignore"), "utf-8");
     for (const pattern of TRANSIENT_RUNTIME_GITIGNORE_PATTERNS) {

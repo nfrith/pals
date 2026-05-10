@@ -10,7 +10,7 @@ Prepare the next version of an ALS v1 module bundle through structured discovery
 `change` is the v1 successor to v0 `als-mutate`.
 
 It prepares a committed `vN+1/` bundle under `.als/modules/<module_id>/` and stops there.
-It does not modify `.als/system.ts`, does not touch live records, does not execute the migration, and does not live-deploy `.claude/skills/` or `.claude/delamains/`.
+It does not modify `.als/system.ts`, does not touch live records, does not execute the migration, and does not live-deploy `${SKILLS_ROOT}` or `${DELAMAINS_ROOT}`.
 
 ## Input
 
@@ -55,7 +55,7 @@ Use `manifest-template.md` as the manifest contract for `vN+1/migrations/MANIFES
 - Change the module's active `version`
 - Modify any live module records
 - Execute migration scripts
-- Live-deploy or delete `.claude/skills/` or `.claude/delamains/`
+- Live-deploy or delete `${SKILLS_ROOT}` or `${DELAMAINS_ROOT}`
 - Reuse the previous bundle's `migrations/` directory
 - Overwrite an existing future `vN+1/` bundle without explicit operator review
 
@@ -66,18 +66,26 @@ Use `manifest-template.md` as the manifest contract for `vN+1/migrations/MANIFES
 Before reading module contents in detail, resolve the real system and baseline.
 
 1. Find the system root. Use the same system-root rules as the sibling `validate` skill: prefer an explicit user path, then clear conversation context, then the current directory tree.
-2. Read `.als/system.ts`.
-3. Resolve the target module id from the operator request.
-4. Determine the active module version `vN` from `.als/system.ts`.
-5. Run whole-system validation against the live system before doing any authoring.
+2. Initialize runtime variables:
 
 ```bash
-bun ${CLAUDE_PLUGIN_ROOT}/alsc/compiler/src/index.ts validate <system-root>
+bash {skill-dir}/../lib/runtime-env.sh <system-root>
 ```
 
-6. If the live system fails validation, stop. `change` does not author a new version on top of a broken baseline.
-7. Check whether `.als/modules/<module_id>/vN+1/` already exists.
-8. If it exists, stop and inspect it with the operator. Explain what is already there and do not overwrite it automatically.
+Extract `ALS_PLUGIN_ROOT`, `SYSTEM_ROOT`, `SKILLS_ROOT`, and `DELAMAINS_ROOT` from the output.
+
+3. Read `.als/system.ts`.
+4. Resolve the target module id from the operator request.
+5. Determine the active module version `vN` from `.als/system.ts`.
+6. Run whole-system validation against the live system before doing any authoring.
+
+```bash
+bun ${ALS_PLUGIN_ROOT}/alsc/compiler/src/index.ts validate ${SYSTEM_ROOT}
+```
+
+7. If the live system fails validation, stop. `change` does not author a new version on top of a broken baseline.
+8. Check whether `.als/modules/<module_id>/vN+1/` already exists.
+9. If it exists, stop and inspect it with the operator. Explain what is already there and do not overwrite it automatically.
 
 ### Phase 1 — Module Comprehension
 
@@ -226,7 +234,7 @@ Create:
 
 5. **Preflight the future skill namespace.**
    - Confirm the staged future active skill ids would remain globally unique if `vN+1` became live.
-   - Do not live-deploy `.claude/skills/` or `.claude/delamains/` during `change`.
+   - Do not live-deploy `${SKILLS_ROOT}` or `${DELAMAINS_ROOT}` during `change`.
 
 6. **Always create one additional migration artifact.**
    - `MANIFEST.md` alone is invalid for `vN+1`.

@@ -3,7 +3,11 @@ import { cp, mkdir, rm, writeFile } from "node:fs/promises";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { ALS_SYSTEM_CLAUDE_MD_CONTENTS, deployClaudeSkillsFromConfig } from "../src/claude-skills.ts";
+import {
+  ALS_CLAUDE_SYSTEM_INSTRUCTION_CONTENTS,
+  ALS_CODEX_SYSTEM_INSTRUCTION_CONTENTS,
+  deployClaudeSkillsFromConfig,
+} from "../src/harness-projection.ts";
 import { loadSystemValidationContext } from "../src/validate.ts";
 import {
   removePath,
@@ -84,7 +88,7 @@ test("deploy CLI projects active skills into .claude/skills and is idempotent", 
     }
 
     const firstSkillSnapshot = snapshotTree(join(root, ".claude/skills"));
-    expect(readFileSync(join(root, ".als/CLAUDE.md"), "utf-8")).toBe(ALS_SYSTEM_CLAUDE_MD_CONTENTS);
+    expect(readFileSync(join(root, ".als/CLAUDE.md"), "utf-8")).toBe(ALS_CLAUDE_SYSTEM_INSTRUCTION_CONTENTS);
     expect(firstSkillSnapshot["backlog-module/SKILL.md"]).toContain("name: backlog-module");
     expect(firstSkillSnapshot["people-module/SKILL.md"]).toContain("name: people-module");
     expect(firstSkillSnapshot["playbooks-module/SKILL.md"]).toContain("name: playbooks-module");
@@ -194,6 +198,161 @@ test("deploy CLI dry-run reports planned work without creating .claude/skills", 
   });
 });
 
+test("deploy CLI dry-run reports Codex projection paths", { timeout: 180_000 }, async () => {
+  await withFixtureSandbox("deploy-cli-codex-dry-run", async ({ root }) => {
+    await rm(join(root, ".agents/skills"), { recursive: true, force: true });
+    await rm(join(root, ".codex/delamains"), { recursive: true, force: true });
+
+    const process = Bun.spawnSync({
+      cmd: ["bun", "src/cli.ts", "deploy", "codex", "--dry-run", root, "factory"],
+      cwd: compilerRoot,
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+
+    expect(process.exitCode).toBe(0);
+    const output = JSON.parse(new TextDecoder().decode(process.stdout)) as {
+      schema: string;
+      status: string;
+      planned_system_files: Array<Record<string, unknown>>;
+      planned_skills: Array<{ target_dir: string }>;
+      planned_delamains: Array<{ target_dir: string }>;
+      written_system_file_count: number;
+      written_skill_count: number;
+      written_delamain_count: number;
+    };
+    expect(output.schema).toBe("als-codex-deploy-output@1");
+    expect(output.status).toBe("pass");
+    expect(output.planned_system_files).toEqual([
+      {
+        kind: "generated_codex_guidance",
+        target_path: ".als/AGENTS.md",
+      },
+      {
+        kind: "generated_codex_hooks",
+        target_path: ".codex/hooks.json",
+      },
+      {
+        kind: "generated_codex_config",
+        target_path: ".codex/config.toml",
+      },
+    ]);
+    expect(output.planned_skills.map((plan) => plan.target_dir)).toEqual([
+      ".agents/skills/factory-operate",
+    ]);
+    expect(output.planned_delamains.map((plan) => plan.target_dir)).toEqual([
+      ".codex/delamains/development-pipeline",
+    ]);
+    expect(output.written_system_file_count).toBe(0);
+    expect(output.written_skill_count).toBe(0);
+    expect(output.written_delamain_count).toBe(0);
+    expect(existsSync(join(root, ".als/AGENTS.md"))).toBe(false);
+    expect(existsSync(join(root, ".codex/hooks.json"))).toBe(false);
+    expect(existsSync(join(root, ".codex/config.toml"))).toBe(false);
+    expect(existsSync(join(root, ".agents/skills"))).toBe(false);
+    expect(existsSync(join(root, ".codex/delamains"))).toBe(false);
+  });
+});
+
+test("deploy CLI projects Codex skills, guidance, and Delamain runtime", { timeout: 180_000 }, async () => {
+  await withFixtureSandbox("deploy-cli-codex-live", async ({ root }) => {
+    await rm(join(root, ".agents/skills"), { recursive: true, force: true });
+    await rm(join(root, ".codex/delamains"), { recursive: true, force: true });
+    await rm(join(root, ".claude/skills"), { recursive: true, force: true });
+    await rm(join(root, ".claude/delamains"), { recursive: true, force: true });
+
+    const process = Bun.spawnSync({
+      cmd: ["bun", "src/cli.ts", "deploy", "codex", root, "factory"],
+      cwd: compilerRoot,
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+
+    expect(process.exitCode).toBe(0);
+    const output = JSON.parse(new TextDecoder().decode(process.stdout)) as {
+      status: string;
+      written_system_file_count: number;
+      written_skill_count: number;
+      written_delamain_count: number;
+    };
+    expect(output.status).toBe("pass");
+    expect(output.written_system_file_count).toBe(3);
+    expect(output.written_skill_count).toBe(1);
+    expect(output.written_delamain_count).toBe(1);
+    expect(readFileSync(join(root, ".als/AGENTS.md"), "utf-8")).toBe(ALS_CODEX_SYSTEM_INSTRUCTION_CONTENTS);
+    const hooksJson = readFileSync(join(root, ".codex/hooks.json"), "utf-8");
+    expect(hooksJson).toContain("\"SessionStart\"");
+    expect(hooksJson).toContain("\"PostToolUse\"");
+    expect(hooksJson).toContain("\"Stop\"");
+    expect(hooksJson).toContain("codex-post-edit-validate.sh");
+    expect(readFileSync(join(root, ".codex/config.toml"), "utf-8")).toContain("codex_hooks = true");
+    const skill = readFileSync(join(root, ".agents/skills/factory-operate/SKILL.md"), "utf-8");
+    expect(skill).toContain("name: factory-operate");
+    expect(skill).not.toContain("CLAUDE_PLUGIN_ROOT");
+    const manifest = readFileSync(
+      join(root, ".codex/delamains/development-pipeline/runtime-manifest.json"),
+      "utf-8",
+    );
+    expect(manifest).toContain("\"harness\": \"codex\"");
+    expect(manifest).toContain("\"delamain_name\": \"development-pipeline\"");
+    expect(manifest).toContain("\"state_providers\"");
+    expect(manifest).toContain("\"openai\"");
+    expect(manifest).not.toContain("\"anthropic\"");
+    const delamainYaml = readFileSync(join(root, ".codex/delamains/development-pipeline/delamain.yaml"), "utf-8");
+    expect(delamainYaml).toContain("provider: openai");
+    expect(delamainYaml).not.toContain("provider: anthropic");
+    expect(delamainYaml).not.toContain("sub-agent:");
+    expect(existsSync(join(root, ".claude/skills/factory-operate"))).toBe(false);
+  });
+});
+
+test("deploy CLI minimally merges codex hooks feature into existing Codex config", { timeout: 180_000 }, async () => {
+  await withFixtureSandbox("deploy-cli-codex-config-merge", async ({ root }) => {
+    await rm(join(root, ".agents/skills"), { recursive: true, force: true });
+    await rm(join(root, ".codex/delamains"), { recursive: true, force: true });
+    await mkdir(join(root, ".codex"), { recursive: true });
+    await writeFile(
+      join(root, ".codex/config.toml"),
+      [
+        'model = "gpt-5.4"',
+        "",
+        "[features]",
+        "some_existing_feature = true",
+        "",
+        "[tools]",
+        "web_search = true",
+        "",
+      ].join("\n"),
+    );
+
+    const process = Bun.spawnSync({
+      cmd: ["bun", "src/cli.ts", "deploy", "codex", root, "factory"],
+      cwd: compilerRoot,
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+
+    expect(process.exitCode).toBe(0);
+    const output = JSON.parse(new TextDecoder().decode(process.stdout)) as {
+      status: string;
+      written_system_file_count: number;
+    };
+    expect(output.status).toBe("pass");
+    expect(output.written_system_file_count).toBe(3);
+    expect(readFileSync(join(root, ".codex/config.toml"), "utf-8")).toBe([
+      'model = "gpt-5.4"',
+      "",
+      "[features]",
+      "some_existing_feature = true",
+      "codex_hooks = true",
+      "",
+      "[tools]",
+      "web_search = true",
+      "",
+    ].join("\n"));
+  });
+});
+
 test("deploy CLI can target a single module", { timeout: 180_000 }, async () => {
   await withFixtureSandbox("deploy-cli-module-filter", async ({ root }) => {
     await rm(join(root, ".claude/skills"), { recursive: true, force: true });
@@ -223,7 +382,7 @@ test("deploy CLI can target a single module", { timeout: 180_000 }, async () => 
     ]);
     const snapshot = snapshotTree(join(root, ".claude/skills"));
     expect(Object.keys(snapshot)).toEqual(["backlog-module/SKILL.md"]);
-    expect(readFileSync(join(root, ".als/CLAUDE.md"), "utf-8")).toBe(ALS_SYSTEM_CLAUDE_MD_CONTENTS);
+    expect(readFileSync(join(root, ".als/CLAUDE.md"), "utf-8")).toBe(ALS_CLAUDE_SYSTEM_INSTRUCTION_CONTENTS);
   });
 });
 
@@ -239,7 +398,7 @@ test("deploy CLI overwrites existing system .als/CLAUDE.md with canonical conten
     });
 
     expect(process.exitCode).toBe(0);
-    expect(readFileSync(join(root, ".als/CLAUDE.md"), "utf-8")).toBe(ALS_SYSTEM_CLAUDE_MD_CONTENTS);
+    expect(readFileSync(join(root, ".als/CLAUDE.md"), "utf-8")).toBe(ALS_CLAUDE_SYSTEM_INSTRUCTION_CONTENTS);
   });
 });
 
@@ -347,7 +506,7 @@ test("deploy library projects skills when validation status is warn", { timeout:
     expect(output.written_skill_count).toBe(1);
     expect(output.planned_delamain_count).toBe(0);
     expect(output.written_delamain_count).toBe(0);
-    expect(readFileSync(join(root, ".als/CLAUDE.md"), "utf-8")).toBe(ALS_SYSTEM_CLAUDE_MD_CONTENTS);
+    expect(readFileSync(join(root, ".als/CLAUDE.md"), "utf-8")).toBe(ALS_CLAUDE_SYSTEM_INSTRUCTION_CONTENTS);
     expect(existsSync(join(root, ".claude/skills/backlog-module/SKILL.md"))).toBe(true);
   });
 });

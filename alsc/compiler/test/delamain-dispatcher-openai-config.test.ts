@@ -130,3 +130,71 @@ test("openai provider omits approvals_reviewer config for disabled and absent pa
   expect(constructorOptions[0]).not.toHaveProperty("config");
   expect(constructorOptions[1]).not.toHaveProperty("config");
 });
+
+test("openai provider injects Codex hooks config when agent prompt declares hooks", async () => {
+  const constructorOptions: Array<Record<string, unknown>> = [];
+
+  setCodexSdkLoaderForTests(async () => ({
+    Codex: class {
+      constructor(options: Record<string, unknown>) {
+        constructorOptions.push(options);
+      }
+
+      startThread() {
+        return {
+          async runStreamed() {
+            return {
+              events: (async function* () {
+                yield { type: "thread.started", thread_id: "hooked-thread" };
+              })(),
+            };
+          },
+        };
+      }
+
+      resumeThread() {
+        throw new Error("unexpected resume");
+      }
+    },
+  }));
+
+  const hooks = {
+    PostToolUse: [
+      {
+        matcher: "apply_patch",
+        hooks: [
+          {
+            type: "command",
+            command: "bash hooks/codex-post-edit-validate.sh",
+          },
+        ],
+      },
+    ],
+  };
+
+  await getAgentProvider("openai").dispatch({
+    itemId: "ALS-049-hooks",
+    prompt: "Run with hooks",
+    cwd: process.cwd(),
+    agent: {
+      description: "developer",
+      prompt: "Run with hooks",
+      hooks,
+    },
+    maxTurns: 4,
+    maxBudgetUsd: 5,
+    env: {},
+    onToolUse() {},
+    onDebugLog() {},
+  });
+
+  expect(constructorOptions).toHaveLength(1);
+  expect(constructorOptions[0]).toMatchObject({
+    config: {
+      features: {
+        codex_hooks: true,
+      },
+      hooks,
+    },
+  });
+});

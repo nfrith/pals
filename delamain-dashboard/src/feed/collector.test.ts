@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { expect, test } from "bun:test";
 import type { RuntimeDispatchRecord } from "../../../delamain-dispatcher/src/runtime-state.ts";
@@ -57,6 +57,31 @@ test("collector enriches dispatcher snapshots with runtime metadata and item cou
     });
     expect(dispatcher.telemetry.available).toBe(true);
     expect(dispatcher.recentRun?.outcome).toBe("success");
+  } finally {
+    await fixture.cleanup();
+  }
+});
+
+test("collector discovers Codex delamain runtime roots through the harness registry", async () => {
+  const fixture = await createDashboardFixture("collector-codex-root");
+
+  try {
+    await mkdir(join(fixture.root, ".codex"), { recursive: true });
+    await cp(
+      join(fixture.root, ".claude", "delamains"),
+      join(fixture.root, ".codex", "delamains"),
+      { recursive: true },
+    );
+    await rm(join(fixture.root, ".claude", "delamains"), { recursive: true, force: true });
+
+    const snapshot = await collectSystemSnapshot({
+      systemRoot: fixture.root,
+      harnesses: ["codex"],
+      telemetryLimit: 10,
+    });
+
+    expect(snapshot.dispatcherCount).toBe(1);
+    expect(snapshot.dispatchers[0]?.name).toBe("factory-jobs");
   } finally {
     await fixture.cleanup();
   }
