@@ -59,6 +59,7 @@ Rules:
 - `als_version` is the active ALS language version declared by `.als/system.ts`.
 - `modules.{module_id}.path` is the mounted record root for that module.
 - `modules.{module_id}.version` points at `.als/modules/{module_id}/v{version}`.
+- `.als/` holds authored language definitions and ALS-managed assets; concrete entity records live under `modules.{module_id}.path` outside `.als/`.
 - `modules.{module_id}.description` is a required one-line summary for scanners and operators.
 - `modules.{module_id}.skills` lists the active operator-facing skill ids for that mounted version.
 - Active skill ids must stay globally unique across the system.

@@ -46,7 +46,7 @@ Start with one open question:
 
 Listen carefully. Do not interrupt with clarifications yet. Let them talk. The first answer contains most of what you need — entities are the nouns, relationships are the verbs, constraints are the adjectives.
 
-Before proposing YAML, lock the new module's mount path. It must be relative to the system root and must not overlap any existing module mount path.
+Before proposing YAML, lock the new module's mount path. It must be relative to the system root and must not overlap any existing module mount path. This mount path is the module's record root — the place concrete entity records live. It is not the authored bundle path under `.als/modules/{module_id}/v1/`.
 
 ### Decomposition
 
@@ -221,7 +221,7 @@ Once you have enough information, synthesize and present the design. Do NOT prod
 
 ### What to present
 
-1. **Module identity**: the module id and mount path
+1. **Module identity**: the module id, module bundle path, and module record root
 2. **Entities**: a list of each entity with a one-line description
 3. **Relationships**: how entities connect — parent chains and cross-references
 4. **Directory structure**: the path template for each entity, shown as a tree
@@ -230,11 +230,28 @@ Once you have enough information, synthesize and present the design. Do NOT prod
 7. **Skills**: the decomposition pattern chosen, with each skill name and its scope
 8. **Delamain** (if designed): the transition graph, actor assignments, resumability, and agent file roster
 
+### Record placement guard
+
+Before you present the proposal, and again before any final "Approve and I'll run `/als:new`" handoff, compute and validate the concrete example record paths.
+
+1. Derive the **module bundle path** as `.als/modules/{module_id}/v1/`.
+2. Derive the **module record root** from the approved `modules.{module_id}.path` value.
+3. For each entity, bind its path-template placeholders to concrete example values and join that relative path onto the module record root to produce an **example record path**.
+4. Normalize each example record path textually before showing it:
+   - trim whitespace
+   - replace backslashes with `/`
+   - strip any leading `./`
+   - collapse repeated `/`
+   - split on `/` and ignore empty segments plus literal `.`
+5. If any normalized segment is exactly `.als`, fail closed. Tell the operator the proposal mixed authored language definitions with module data records, cite `../docs/references/shape-language.md`, and do not continue to approval, file creation, or `/als:new`.
+6. Only after every example record path passes this guard may you present the design or ask for approval.
+
 ### Example proposal format
 
 ```
 Module: experiments
-Path: workspace/experiments
+Module bundle path: .als/modules/experiments/v1/
+Module record root: workspace/experiments
 
 Entities:
   - program: a research program grouping related experiments
@@ -253,6 +270,11 @@ Directory structure:
           {experiment-id}.md
           runs/
             {run-id}.md
+
+Example record paths:
+  - program: workspace/experiments/programs/pgm-001/pgm-001.md
+  - experiment: workspace/experiments/programs/pgm-001/experiments/exp-001/exp-001.md
+  - run: workspace/experiments/programs/pgm-001/experiments/exp-001/runs/run-001.md
 
 Fields:
   program:
@@ -324,7 +346,7 @@ Create everything inside the existing system.
 4. If the module has skills, create `.als/modules/{module_id}/v1/skills/`
 5. Create a `SKILL.md` for each skill at `.als/modules/{module_id}/v1/skills/{skill_name}/SKILL.md`
 6. If a Delamain was designed, create the Delamain bundle (see "Delamain bundle authoring" below)
-7. Create the module's data directory at `{path}/`
+7. Create the module's data directory at `{path}/` outside `.als/` — this is the mounted record root, not an authored bundle directory
 8. Create the subdirectory tree implied by the path templates (empty directories)
 9. Validate the live system:
 

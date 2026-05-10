@@ -1,0 +1,34 @@
+{
+  "accepted": [
+    {
+      "label": "als-factory job records stay under the mounted job root",
+      "moduleBundlePath": ".als/modules/als-factory/v1/",
+      "moduleRecordRoot": "als-factory/jobs/",
+      "entityExamplePath": "ALS-123.md",
+      "exampleRecordPath": "als-factory/jobs/ALS-123.md"
+    },
+    {
+      "label": "hierarchical experiment records stay under the mounted experiments root",
+      "moduleBundlePath": ".als/modules/experiments/v1/",
+      "moduleRecordRoot": "workspace/experiments/",
+      "entityExamplePath": "programs/pgm-001/experiments/exp-001/exp-001.md",
+      "exampleRecordPath": "workspace/experiments/programs/pgm-001/experiments/exp-001/exp-001.md"
+    }
+  ],
+  "rejected": [
+    {
+      "label": "module bundle path must never become the data root",
+      "moduleBundlePath": ".als/modules/bulk-analysis/v1/",
+      "moduleRecordRoot": ".als/modules/bulk-analysis/data/",
+      "entityExamplePath": "video-analysis/b71-bmad-poem.md",
+      "exampleRecordPath": ".als/modules/bulk-analysis/data/video-analysis/b71-bmad-poem.md"
+    },
+    {
+      "label": "nested .als segments also violate the record boundary",
+      "moduleBundlePath": ".als/modules/client-registry/v1/",
+      "moduleRecordRoot": "workspace/.als/clients/",
+      "entityExamplePath": "accounts/acc-001.md",
+      "exampleRecordPath": "workspace/.als/clients/accounts/acc-001.md"
+    }
+  ]
+}
