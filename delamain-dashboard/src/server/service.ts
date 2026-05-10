@@ -73,7 +73,7 @@ export async function createDashboardServiceRuntime(
         });
       }
 
-      const route = resolveAppRoute(url.pathname);
+      const route = resolveAppRoute(url);
 
       if (route) {
         const found = route.kind === "dashboard"
@@ -217,16 +217,26 @@ function encodeSse(snapshot: DashboardSnapshot): Uint8Array {
   return encoder.encode(`event: snapshot\ndata: ${JSON.stringify(snapshot)}\n\n`);
 }
 
-function resolveAppRoute(pathname: string): DashboardAppRoute | null {
-  if (pathname === "/") {
+function resolveAppRoute(url: URL): DashboardAppRoute | null {
+  if (url.pathname === "/") {
     return { kind: "dashboard" };
   }
 
-  if (!pathname.startsWith("/journey/")) {
+  if (!url.pathname.startsWith("/journey/")) {
     return null;
   }
 
-  const dispatcherName = decodeURIComponent(pathname.slice("/journey/".length));
+  const segments = url.pathname.split("/").filter(Boolean);
+  if (segments[0] !== "journey") {
+    return null;
+  }
+
+  if (segments.length < 2 || segments.length > 3) {
+    return null;
+  }
+
+  const dispatcherName = decodeURIComponent(segments[1] ?? "");
+  const selectedPhase = segments[2] ? decodeURIComponent(segments[2]) : null;
   if (!dispatcherName) {
     return null;
   }
@@ -234,6 +244,8 @@ function resolveAppRoute(pathname: string): DashboardAppRoute | null {
   return {
     kind: "journey",
     dispatcherName,
+    selectedPhase,
+    view: url.searchParams.get("view") === "developer" ? "developer" : "customer",
   };
 }
 

@@ -374,6 +374,8 @@ async function readItems(
       status: item.status,
       type: item.type,
       filePath: item.filePath,
+      title: item.title,
+      updated: item.updated,
     }))
     .sort((left, right) => left.id.localeCompare(right.id));
 }
@@ -431,6 +433,7 @@ function buildJourneyTelemetry(
       age_ms: Number.isFinite(startedAt) ? Math.max(0, now.getTime() - startedAt) : 0,
       provider: record.provider,
       status: record.status,
+      transitionTargets: record.transition_targets,
     };
   });
 

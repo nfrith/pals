@@ -2,10 +2,12 @@
 
 Operational dashboard for ALS Delamain dispatchers.
 
-Both the web UI and the TUI consume the same snapshot feed from the local dashboard service. The web UI is now a Bun-bundled React client with two operator routes:
+Both the web UI and the TUI consume the same snapshot feed from the local dashboard service. The web UI is now a Bun-bundled React client with:
 
 - `/` for the live dispatcher overview
-- `/journey/{delamainName}` for the compiled phase/state/transition graph
+- `/journey/{delamainName}` for the customer-facing phase pipeline
+- `/journey/{delamainName}/{phase}` for phase drill-in
+- `?view=developer` on either journey route for the compiled state-machine graph
 
 The TUI remains unchanged and is still designed for both full-screen terminals and a narrow tmux pane.
 
@@ -129,4 +131,4 @@ The dashboard service reads dispatcher runtime state from:
 - `runtime-manifest.json` and `delamain.yaml` for bundle metadata plus phase/state/transition graph definitions
 - current module items for queue state
 
-Both the web UI and the TUI consume the same service snapshot instead of rescanning the filesystem independently. The journey view is driven from that same snapshot contract, with `transitions` added additively for the graph renderer and a reserved telemetry seam for future overlay styling.
+Both the web UI and the TUI consume the same service snapshot instead of rescanning the filesystem independently. The customer journey pipeline and the developer graph are siblings projected from that same snapshot contract, with the web renderer consuming deployed `label`, `outcome`, and `customer_bucket` fields when they are present and failing closed in customer mode when the v4 contract is absent.

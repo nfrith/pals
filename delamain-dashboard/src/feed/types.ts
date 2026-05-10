@@ -4,6 +4,13 @@ import type { RuntimeDispatchRecord } from "../../../delamain-dispatcher/src/run
 export type DispatcherLivenessState = "live" | "idle" | "offline" | "stale" | "error";
 export type DispatcherAgentProvider = "anthropic" | "openai";
 export type DispatcherTransitionClass = "advance" | "rework" | "exit";
+export type DispatcherTerminalOutcome = "success" | "stopped" | "errored";
+export type DispatcherCustomerBucket =
+  | "active"
+  | "waiting_for_user"
+  | "closed_success"
+  | "closed_stopped"
+  | "closed_errored";
 
 export interface DispatcherHeartbeat {
   name: string;
@@ -26,6 +33,9 @@ export interface DispatcherDefinitionState {
   phase: string | null;
   initial: boolean;
   terminal: boolean;
+  label?: string | null;
+  outcome?: DispatcherTerminalOutcome | null;
+  customerBucket?: DispatcherCustomerBucket | null;
   provider?: DispatcherAgentProvider | null;
   resumable?: boolean | null;
 }
@@ -47,6 +57,8 @@ export interface DispatcherItemRecord {
   status: string;
   type: string;
   filePath: string;
+  title: string | null;
+  updated: string | null;
 }
 
 export interface DispatcherItemSummary {
@@ -96,6 +108,7 @@ export interface DispatcherJourneyTelemetry {
     age_ms: number;
     provider: DispatcherAgentProvider;
     status: RuntimeDispatchRecord["status"];
+    transitionTargets: string[];
   }>;
   recentEdges: Array<{
     from: string;

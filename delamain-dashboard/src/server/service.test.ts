@@ -1,4 +1,4 @@
-import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { spawn } from "node:child_process";
 import { cp, mkdir, readFile, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import { join } from "node:path";
@@ -35,15 +35,23 @@ test("dashboard handlers serve snapshot JSON and fan out SSE updates to concurre
     expect(await landingResponse.text()).toContain("__ALS_DASHBOARD_BOOTSTRAP__");
 
     const journeyResponse = await Promise.resolve(
-      runtime.handleRequest(new Request("http://localhost/journey/factory-jobs")),
+      runtime.handleRequest(new Request("http://localhost/journey/factory-jobs/implementation?view=developer")),
     );
     expect(journeyResponse.status).toBe(200);
-    expect(await journeyResponse.text()).toContain("\"dispatcherName\":\"factory-jobs\"");
+    const journeyHtml = await journeyResponse.text();
+    expect(journeyHtml).toContain("\"dispatcherName\":\"factory-jobs\"");
+    expect(journeyHtml).toContain("\"selectedPhase\":\"implementation\"");
+    expect(journeyHtml).toContain("\"view\":\"developer\"");
 
     const missingJourneyResponse = await Promise.resolve(
       runtime.handleRequest(new Request("http://localhost/journey/missing-delamain")),
     );
     expect(missingJourneyResponse.status).toBe(404);
+
+    const invalidJourneyResponse = await Promise.resolve(
+      runtime.handleRequest(new Request("http://localhost/journey/factory-jobs/implementation/extra")),
+    );
+    expect(invalidJourneyResponse.status).toBe(404);
 
     const assetResponse = await Promise.resolve(
       runtime.handleRequest(new Request("http://localhost/app.js")),
@@ -121,7 +129,6 @@ test("dashboard refresh keeps the last good snapshot when a refresh throws", asy
 
 test(
   "dashboard service survives a 60s Bun.serve host soak without TypeError",
-  { timeout: 120_000 },
   async () => {
     const fixture = await createDashboardFixture("service-host-regression");
     const extraDispatchers = Array.from({ length: 7 }, (_, index) => `factory-jobs-${index + 2}`);
@@ -189,6 +196,7 @@ test(
       await fixture.cleanup();
     }
   },
+  120_000,
 );
 
 function createSnapshotEventReader(response: Response): {
@@ -341,7 +349,7 @@ async function rewriteJsonFile(
 }
 
 function startDashboardProcess(systemRoot: string, port: number): {
-  process: ChildProcessWithoutNullStreams;
+  process: ReturnType<typeof spawn>;
   url: string;
   ready: Promise<void>;
   output(): string;
@@ -379,8 +387,8 @@ function startDashboardProcess(systemRoot: string, port: number): {
     output += chunk.toString();
   };
 
-  child.stdout.on("data", appendOutput);
-  child.stderr.on("data", appendOutput);
+  child.stdout?.on("data", appendOutput);
+  child.stderr?.on("data", appendOutput);
 
   return {
     process: child,
@@ -391,7 +399,7 @@ function startDashboardProcess(systemRoot: string, port: number): {
 }
 
 function waitForProcessOutput(
-  process: ChildProcessWithoutNullStreams,
+  process: ReturnType<typeof spawn>,
   needle: string,
   getOutput: () => string,
   timeoutMs: number,
@@ -417,20 +425,20 @@ function waitForProcessOutput(
 
     const cleanup = () => {
       clearTimeout(timer);
-      process.stdout.off("data", onData);
-      process.stderr.off("data", onData);
+      process.stdout?.off("data", onData);
+      process.stderr?.off("data", onData);
       process.off("exit", onExit);
     };
 
-    process.stdout.on("data", onData);
-    process.stderr.on("data", onData);
+    process.stdout?.on("data", onData);
+    process.stderr?.on("data", onData);
     process.once("exit", onExit);
     onData();
   });
 }
 
 function waitForProcessExit(
-  process: ChildProcessWithoutNullStreams,
+  process: ReturnType<typeof spawn>,
 ): Promise<{ exitCode: number | null; signal: NodeJS.Signals | null }> {
   return new Promise((resolve) => {
     if (process.exitCode !== null || process.signalCode !== null) {
@@ -441,14 +449,14 @@ function waitForProcessExit(
       return;
     }
 
-    process.once("exit", (exitCode, signal) => {
+    process.once("exit", (exitCode: number | null, signal: NodeJS.Signals | null) => {
       resolve({ exitCode, signal });
     });
   });
 }
 
 async function stopDashboardProcess(
-  process: ChildProcessWithoutNullStreams,
+  process: ReturnType<typeof spawn>,
 ): Promise<{ exitCode: number | null; signal: NodeJS.Signals | null }> {
   if (process.exitCode !== null || process.signalCode !== null) {
     return {
@@ -461,7 +469,7 @@ async function stopDashboardProcess(
   return withTimeout(waitForProcessExit(process), 10_000);
 }
 
-async function ensureDashboardStopped(process: ChildProcessWithoutNullStreams): Promise<void> {
+async function ensureDashboardStopped(process: ReturnType<typeof spawn>): Promise<void> {
   if (process.exitCode !== null || process.signalCode !== null) {
     return;
   }
@@ -471,7 +479,7 @@ async function ensureDashboardStopped(process: ChildProcessWithoutNullStreams): 
 }
 
 async function assertProcessStaysRunning(
-  process: ChildProcessWithoutNullStreams,
+  process: ReturnType<typeof spawn>,
   durationMs: number,
 ): Promise<void> {
   const exit = await Promise.race([

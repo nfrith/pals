@@ -51,6 +51,9 @@ export function parseDelamainYaml(raw: string): DispatcherDefinition {
           phase: null,
           initial: false,
           terminal: false,
+          label: null,
+          outcome: null,
+          customerBucket: null,
           provider: null,
           resumable: null,
         };
@@ -59,7 +62,7 @@ export function parseDelamainYaml(raw: string): DispatcherDefinition {
 
       if (!currentState) continue;
 
-      const fieldMatch = line.match(/^    ([a-z-]+):\s*(.*)$/);
+      const fieldMatch = line.match(/^    ([a-z_-]+):\s*(.*)$/);
       if (!fieldMatch) continue;
 
       const key = fieldMatch[1]!;
@@ -74,6 +77,24 @@ export function parseDelamainYaml(raw: string): DispatcherDefinition {
         state.initial = value === "true";
       } else if (key === "terminal") {
         state.terminal = value === "true";
+      } else if (key === "label") {
+        state.label = value || null;
+      } else if (
+        key === "outcome"
+        && (value === "success" || value === "stopped" || value === "errored")
+      ) {
+        state.outcome = value;
+      } else if (
+        key === "customer_bucket"
+        && (
+          value === "active"
+          || value === "waiting_for_user"
+          || value === "closed_success"
+          || value === "closed_stopped"
+          || value === "closed_errored"
+        )
+      ) {
+        state.customerBucket = value;
       } else if (key === "provider" && (value === "anthropic" || value === "openai")) {
         state.provider = value;
       } else if (key === "resumable") {

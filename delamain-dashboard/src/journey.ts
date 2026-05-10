@@ -3,6 +3,7 @@ import type {
   DispatcherDefinitionState,
   DispatcherJourneyTelemetry,
   DispatcherSnapshot,
+  DispatcherTerminalOutcome,
   DispatcherTransition,
   DispatcherTransitionClass,
 } from "./feed/types.ts";
@@ -70,6 +71,9 @@ export interface JourneyNodeData {
   color: string;
   description: string;
   initial: boolean;
+  label: string;
+  live: boolean;
+  outcomeIcon: string | null;
   phase: string | null;
   provider: DispatcherDefinitionState["provider"];
   resumable: DispatcherDefinitionState["resumable"];
@@ -132,7 +136,7 @@ export interface JourneyGraphLayout {
 export interface JourneyGraph {
   anchors: JourneyAnchorNode[];
   contract: JourneyGraphContract;
-  edges: Edge<JourneyEdgeData, "journey">[];
+  edges: Edge<JourneyEdgeData, "smoothstep">[];
   lanes: JourneyLaneNode[];
   layout: JourneyGraphLayout;
   nodes: JourneyStateNode[];
@@ -155,6 +159,8 @@ export function buildJourneyGraph(dispatcher: DispatcherSnapshot): JourneyGraph 
   const orderedStates = Object.entries(contract.states);
   const phaseOrder = resolvePhaseOrder(contract.phases, orderedStates);
   const palette = buildPhasePalette(phaseOrder);
+  const activeNodeIds = buildActiveNodeIds(dispatcher.journeyTelemetry);
+  const activeEdgeKeys = buildActiveEdgeKeys(dispatcher);
   const phaseBuckets = phaseOrder.map((phase) => ({
     phase,
     entries: orderedStates.filter(([, state]) => normalizePhase(state.phase) === phase),
@@ -162,9 +168,9 @@ export function buildJourneyGraph(dispatcher: DispatcherSnapshot): JourneyGraph 
   const laneLayouts = buildLaneLayouts(phaseBuckets, palette);
   const canvasHeight = measureCanvasHeight(phaseBuckets);
   const lanes = laneLayouts.map((layout) => buildLaneNode(layout, canvasHeight));
-  const nodes = buildStateNodes(phaseBuckets, laneLayouts, palette);
+  const nodes = buildStateNodes(phaseBuckets, laneLayouts, palette, activeNodeIds);
   const nodesById = new Map(nodes.map((node) => [node.id, node]));
-  const { anchors, edges } = buildEdges(contract.transitions, nodesById, laneLayouts);
+  const { anchors, edges } = buildEdges(contract.transitions, nodesById, laneLayouts, activeEdgeKeys);
   const edgeCounts = summarizeRawEdges(contract.transitions);
 
   return {
@@ -289,6 +295,7 @@ function buildStateNodes(
   }>,
   laneLayouts: JourneyLaneLayout[],
   palette: Record<string, string>,
+  activeNodeIds: Set<string>,
 ): JourneyStateNode[] {
   const maxStackHeight = Math.max(
     0,
@@ -311,6 +318,7 @@ function buildStateNodes(
           "journey-node-shell",
           `journey-node-${state.actor ?? "terminal"}`,
           state.provider ? `journey-node-provider-${state.provider}` : "",
+          activeNodeIds.has(stateName) ? "journey-node-live" : "",
           state.initial ? "journey-node-initial" : "",
           state.terminal ? "journey-node-terminal" : "",
         ].filter(Boolean).join(" "),
@@ -332,6 +340,9 @@ function buildStateNodes(
           color: resolveNodeColor(state, palette[phase] ?? PHASE_PALETTE[phaseIndex % PHASE_PALETTE.length]!),
           description: buildNodeDescription(state),
           initial: state.initial,
+          label: state.label ?? stateName,
+          live: activeNodeIds.has(stateName),
+          outcomeIcon: outcomeIcon(state.outcome ?? null),
           phase: state.phase,
           provider: state.provider ?? null,
           resumable: state.resumable ?? null,
@@ -351,12 +362,13 @@ function buildEdges(
   transitions: DispatcherTransition[],
   nodesById: Map<string, JourneyStateNode>,
   laneLayouts: JourneyLaneLayout[],
+  activeEdgeKeys: Set<string>,
 ): {
   anchors: JourneyAnchorNode[];
-  edges: Edge<JourneyEdgeData, "journey">[];
+  edges: Edge<JourneyEdgeData, "smoothstep">[];
 } {
   const anchors: JourneyAnchorNode[] = [];
-  const edges: Edge<JourneyEdgeData, "journey">[] = [];
+  const edges: Edge<JourneyEdgeData, "smoothstep">[] = [];
   const laneContextByPhase = new Map(laneLayouts.map((layout, index) => [layout.phase, { index, layout }]));
   const reworkSlotsByPhase = new Map<string, number>();
 
@@ -420,7 +432,7 @@ function buildEdges(
           id: `${transition.class}-${phase}-${transition.to}-${transitionIndex}`,
           source: anchorId,
           target: transition.to,
-          type: "journey",
+          type: "smoothstep",
           zIndex: 1,
           className: `journey-edge journey-edge-${transition.class} journey-edge-aggregated`,
           markerEnd: { type: MarkerType.ArrowClosed },
@@ -466,14 +478,20 @@ function buildEdges(
       const routeSlot = transition.class === "rework"
         ? nextRouteSlot(reworkSlotsByPhase, sourcePhase)
         : 0;
+      const isActive = activeEdgeKeys.has(edgeActivityKey(source, transition.to));
 
       edges.push({
         id: `${transition.class}-${source}-${transition.to}-${transitionIndex}-${sourceIndex}`,
         source,
         target: transition.to,
-        type: "journey",
+        type: "smoothstep",
         zIndex: 1,
-        className: `journey-edge journey-edge-${transition.class}`,
+        animated: isActive,
+        className: [
+          "journey-edge",
+          `journey-edge-${transition.class}`,
+          isActive ? "journey-edge-active" : "",
+        ].filter(Boolean).join(" "),
         markerEnd: { type: MarkerType.ArrowClosed },
         data: {
           class: transition.class,
@@ -587,6 +605,9 @@ function buildRightSourceHandle(width: number, height: number) {
 }
 
 function buildBadge(state: DispatcherDefinitionState): string {
+  if (state.terminal && state.outcome === "success") return "SUCCESS";
+  if (state.terminal && state.outcome === "stopped") return "STOPPED";
+  if (state.terminal && state.outcome === "errored") return "ERRORED";
   if (state.terminal) return "TERMINAL";
   if (state.actor === "agent" && state.provider === "anthropic") return "ANTHROPIC AGENT";
   if (state.actor === "agent" && state.provider === "openai") return "OPENAI AGENT";
@@ -599,6 +620,9 @@ function resolveNodeColor(
   state: DispatcherDefinitionState,
   phaseColor: string,
 ): string {
+  if (state.terminal && state.outcome === "success") return "#7dc99b";
+  if (state.terminal && state.outcome === "stopped") return "#d8b268";
+  if (state.terminal && state.outcome === "errored") return "#d66e62";
   if (state.terminal) return phaseColor;
   if (state.actor === "operator") return PROVIDER_COLORS.anthropic;
   if (state.provider) return PROVIDER_COLORS[state.provider];
@@ -607,6 +631,10 @@ function resolveNodeColor(
 
 function buildNodeDescription(state: DispatcherDefinitionState): string {
   const parts = [normalizePhase(state.phase)];
+
+  if (state.customerBucket) {
+    parts.push(state.customerBucket.replaceAll("_", " "));
+  }
 
   if (state.resumable === true) {
     parts.push("resumable");
@@ -623,14 +651,64 @@ function buildNodeDescription(state: DispatcherDefinitionState): string {
 
 function buildNodeTooltip(stateName: string, state: DispatcherDefinitionState): string {
   return [
-    stateName,
+    state.label ?? stateName,
+    `state id: ${stateName}`,
     `phase: ${normalizePhase(state.phase)}`,
     `actor: ${state.actor ?? "n/a"}`,
     `provider: ${state.provider ?? "n/a"}`,
+    `customer bucket: ${state.customerBucket ?? "n/a"}`,
+    `outcome: ${state.outcome ?? "n/a"}`,
     `resumable: ${state.resumable === null || state.resumable === undefined ? "n/a" : state.resumable ? "true" : "false"}`,
     `initial: ${state.initial ? "true" : "false"}`,
     `terminal: ${state.terminal ? "true" : "false"}`,
   ].join("\n");
+}
+
+function buildActiveNodeIds(
+  telemetry: DispatcherJourneyTelemetry | undefined,
+): Set<string> {
+  return new Set(
+    (telemetry?.activeJobs ?? [])
+      .filter((job) => job.status === "active")
+      .map((job) => job.state),
+  );
+}
+
+function buildActiveEdgeKeys(dispatcher: DispatcherSnapshot): Set<string> {
+  const activeByItemId = new Map(
+    (dispatcher.journeyTelemetry?.activeJobs ?? [])
+      .filter((job) => job.status === "active")
+      .map((job) => [job.jobId, job]),
+  );
+  const keys = new Set<string>();
+
+  for (const [itemId, activeJob] of activeByItemId.entries()) {
+    for (let index = dispatcher.recentEvents.length - 1; index >= 0; index -= 1) {
+      const event = dispatcher.recentEvents[index]!;
+      if (event.item_id !== itemId) continue;
+      if (event.transition_targets.includes(activeJob.state)) {
+        keys.add(edgeActivityKey(event.state, activeJob.state));
+        break;
+      }
+    }
+
+    for (const target of activeJob.transitionTargets) {
+      keys.add(edgeActivityKey(activeJob.state, target));
+    }
+  }
+
+  return keys;
+}
+
+function edgeActivityKey(source: string, target: string): string {
+  return `${source}->${target}`;
+}
+
+function outcomeIcon(outcome: DispatcherTerminalOutcome | null): string | null {
+  if (outcome === "success") return "✓";
+  if (outcome === "stopped") return "⊘";
+  if (outcome === "errored") return "⚠";
+  return null;
 }
 
 function normalizePhase(phase: string | null | undefined): string {

@@ -27,6 +27,8 @@ export interface WorkItem {
   status: string;
   type: string;
   filePath: string;
+  title: string | null;
+  updated: string | null;
 }
 
 const warnedUncommittedTransitions = new Map<string, string>();
@@ -246,6 +248,8 @@ export async function scan(
         status: frontmatter[statusField]!,
         type: frontmatter["type"] ?? "unknown",
         filePath,
+        title: frontmatter["title"] ?? null,
+        updated: frontmatter["updated"] ?? frontmatter["updated_at"] ?? null,
       });
     } catch {
       // Skip unreadable files
