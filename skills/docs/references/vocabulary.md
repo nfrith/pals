@@ -59,6 +59,8 @@ These are the things an ALS author creates and lives inside. They are owned by t
 
 A self-contained authored bundle of related entities and (optionally) one or more delamains. Lives at `.als/modules/{module}/v{N}/`. Versioned per-module via `module_version`.
 
+If you need a classical analog, think DDD bounded context or versioned package, not relational schema. A module carries behavior and lifecycle orchestration alongside type definitions and records.
+
 ### Delamain
 
 A state machine for orchestrating items (records) through stages. A delamain definition declares states, transitions, phases, actors, providers, and per-state agents. The dispatcher reads the definition and drives records through the graph.

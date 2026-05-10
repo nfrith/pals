@@ -33,6 +33,18 @@ Read this when:
 - Reasoning about version axes or language upgrades
 - Linking to canonical definitions instead of inventing local wording
 
+### Developer Mapping
+
+[`references/dev-mapping.md`](references/dev-mapping.md)
+
+Bridge doc for developers arriving with classical MVC, DDD, workflow-engine, or framework vocabulary. Reframes ALS as event-driven/workflow architecture first, then maps ALS terms onto the closest classical analogs without collapsing the layers.
+
+Read this when:
+- Onboarding a classical software developer to ALS
+- Explaining why `delamain` is not a controller
+- Translating ALS terms into workflow-engine or DDD language
+- Teaching where the analogy stops for terms like `cyborg`, `forge`, and `bond`
+
 ### Compatibility Classes
 
 [`references/compatibility-classes.md`](references/compatibility-classes.md)
