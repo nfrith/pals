@@ -177,7 +177,7 @@ Read the full entry again — version, gitCommitSha, lastUpdated should all refl
 
 ## Phase 6: Upgrade runtime surfaces
 
-After the plugin update is verified, drive runtime follow-through through the transaction-wrapper CLI at `${CLAUDE_PLUGIN_ROOT}/alsc/update-transaction/src/cli.ts`. The CLI is the operator-reachable adapter for [SDR 039](../../sdr/039-update-transaction-wrapper-contract.md); the SDR still owns the semantics.
+After the plugin update is verified, drive runtime follow-through through the transaction-wrapper CLI at `${CLAUDE_PLUGIN_ROOT}/alsc/update-transaction/src/cli.ts`. The CLI is the operator-reachable adapter for [SDR 039](../../sdr/039-update-transaction-wrapper-contract.md); [SDR 050](../../sdr/050-update-transaction-language-phase-truthfulness-contract.md) owns the language-phase truthfulness refinement for `/update` runs: transaction-scoped checkpoint state, same-plan-only resume, per-phase language trace, and fail-closed commit claims.
 
 1. Create temp files for the prepared payload, answer map, and final result.
 

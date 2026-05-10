@@ -2,7 +2,7 @@
 
 Language upgrades are explicit whole-system cutovers from one `als_version` to the next.
 
-The recipe contract lives in [SDR 037](../../../sdr/037-language-upgrade-recipe-contract.md). The two-phase runtime contract lives in [SDR 039](../../../sdr/039-update-transaction-wrapper-contract.md). This doc is the human-readable reference for authors and operators; it points back to those SDRs for required, allowed, and rejected behavior.
+The recipe contract lives in [SDR 037](../../../sdr/037-language-upgrade-recipe-contract.md). The two-phase runtime contract lives in [SDR 039](../../../sdr/039-update-transaction-wrapper-contract.md). The `/update` language-phase truthfulness and checkpoint-identity refinement lives in [SDR 050](../../../sdr/050-update-transaction-language-phase-truthfulness-contract.md). This doc is the human-readable reference for authors and operators; it points back to those SDRs for required, allowed, and rejected behavior.
 
 ## Core Model
 
@@ -72,10 +72,11 @@ Notes:
 - Post-step `git diff` / status is the source of truth for the actual mutation set.
 - Recipe-owned rewrites must be deterministic and idempotent. Re-running a completed hop should produce no further diff beyond the already-migrated target shape.
 - Any residual non-`.als/` path change fails the step closed.
+- Caller-owned checkpoints are same-plan only. A resume checkpoint must match the requested target version and hop chain; stale checkpoint state fails closed rather than counting as progress.
 - Preflight discovers every `operator-prompt` step that can fire for the selected hop chain and option set.
 - Execute consumes a pre-collected operator-answer map and fails closed if a required answer is missing.
 - `operator-prompt` steps in `category: "recovery"` are rejected so prompt discovery stays static.
-- When `/upgrade-language` runs under `/update`, SDR 039's transaction wrapper owns the staged `alsc deploy claude` refresh.
+- When `/upgrade-language` runs under `/update`, SDR 039's transaction wrapper owns the staged `alsc deploy claude` refresh and SDR 050's transaction-scoped checkpoint plus truthful commit-claim invariants.
 
 ## Fixtures And Verification
 
@@ -91,4 +92,4 @@ Notes:
 - Construct upgrades are a sibling primitive, not part of the core `language-upgrade-recipe` contract.
 - Rollback, partial-system upgrades, and live patching are excluded.
 
-See [SDR 037](../../../sdr/037-language-upgrade-recipe-contract.md) and [SDR 039](../../../sdr/039-update-transaction-wrapper-contract.md) for the exact contract.
+See [SDR 037](../../../sdr/037-language-upgrade-recipe-contract.md), [SDR 039](../../../sdr/039-update-transaction-wrapper-contract.md), and [SDR 050](../../../sdr/050-update-transaction-language-phase-truthfulness-contract.md) for the exact contract.
