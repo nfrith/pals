@@ -51,7 +51,9 @@ ALS-090 adds a second, repo-local follow-through contract after canonical public
 
 - the primary clone for every published repo must converge to canonical upstream immediately when it is safe
 - when tracked or untracked operator work makes that unsafe, the dispatcher records pending convergence in git admin state and leaves the work untouched
-- the installed git pre-commit guard blocks stale-base commits while that pending state exists
+- the installed git pre-commit guard blocks stale-base commits while that pending state exists, but only when the commit is being made directly in the authoritative primary worktree
+
+Because linked worktrees share a common hook file, the guard resolves the invoking worktree at runtime instead of trusting the hook's install location. Secondary dispatch worktrees and no-upstream fixture repos intentionally fall through that guard boundary and rely on publish follow-through instead of commit-time upstream checks.
 
 The release-side rationale and dirty-worktree trade are documented in [`als-factory/docs/release-model/update-mechanics/primary-clone-convergence.md`](../../../../als-factory/docs/release-model/update-mechanics/primary-clone-convergence.md).
 

@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { existsSync } from "node:fs";
-import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -157,6 +157,78 @@ test("pre-commit guard blocks stale-base commits before git writes the commit ob
     expect(await runGit(primaryRoot, ["rev-parse", "HEAD"])).toBe(headBefore);
     expect(existsSync(await readPendingStatePath(primaryRoot))).toBe(true);
   });
+});
+
+test("pre-commit guard skips secondary linked worktrees that share the primary hook", async () => {
+  await withPrimaryCloneSandbox("secondary-worktree-skip", async ({ primaryRoot, originRoot, root }) => {
+    await ensurePrimaryClonePreCommitGuard({
+      repoRoot: primaryRoot,
+      helperScriptPath: helperPath,
+    });
+
+    await advanceOrigin(root, originRoot, "origin-secondary-worktree-skip", async (cloneRoot) => {
+      await writeFile(join(cloneRoot, "REMOTE.md"), "remote\n", "utf-8");
+      await gitCommitAll(cloneRoot, "release: remote first");
+    });
+
+    const secondaryRoot = join(root, "dispatch");
+    await runGit(primaryRoot, [
+      "worktree",
+      "add",
+      "-b",
+      "delamain/test-secondary-worktree",
+      secondaryRoot,
+      "HEAD",
+    ]);
+
+    expect(await realpath(await readHookPath(primaryRoot))).toBe(
+      await realpath(await readHookPath(secondaryRoot)),
+    );
+
+    await writeFile(join(secondaryRoot, "DISPATCH.md"), "secondary\n", "utf-8");
+    await runGit(secondaryRoot, ["add", "DISPATCH.md"]);
+    const headBefore = await runGit(secondaryRoot, ["rev-parse", "HEAD"]);
+
+    const commit = await runCommand(
+      ["git", "commit", "--no-gpg-sign", "-m", "docs: secondary worktree change"],
+      { cwd: secondaryRoot },
+    );
+
+    expect(commit.exitCode).toBe(0);
+    expect(await runGit(secondaryRoot, ["rev-parse", "HEAD"])).not.toBe(headBefore);
+    expect(existsSync(await readPendingStatePath(primaryRoot))).toBe(false);
+    expect(existsSync(await readPendingStatePath(secondaryRoot))).toBe(false);
+  });
+});
+
+test("pre-commit guard skips no-upstream fixture repos", async () => {
+  const root = await mkdtemp(join(tmpdir(), "als-primary-clone-no-upstream-"));
+
+  try {
+    await initRepo(root);
+    await writeFile(join(root, "README.md"), "# fixture seed\n", "utf-8");
+    await gitCommitAll(root, "fixture: initial commit");
+
+    await ensurePrimaryClonePreCommitGuard({
+      repoRoot: root,
+      helperScriptPath: helperPath,
+    });
+
+    await writeFile(join(root, "README.md"), "# fixture freeze\n", "utf-8");
+    await runGit(root, ["add", "README.md"]);
+    const headBefore = await runGit(root, ["rev-parse", "HEAD"]);
+
+    const commit = await runCommand(
+      ["git", "commit", "--no-gpg-sign", "-m", "test-prep: freeze fixture state"],
+      { cwd: root },
+    );
+
+    expect(commit.exitCode).toBe(0);
+    expect(await runGit(root, ["rev-parse", "HEAD"])).not.toBe(headBefore);
+    expect(existsSync(await readPendingStatePath(root))).toBe(false);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });
 
 test("dispatcher runtime owns symmetric guard installation for host and mounted primary repos", async () => {

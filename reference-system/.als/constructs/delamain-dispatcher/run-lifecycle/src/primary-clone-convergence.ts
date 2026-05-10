@@ -567,7 +567,8 @@ function buildHookContents(input: {
   return [
     "#!/bin/sh",
     `# ${HOOK_MARKER}`,
-    `bun "${shellEscape(input.helperScriptPath)}" guard --repo-root "${shellEscape(input.repoRoot)}"`,
+    "caller_root=$(git rev-parse --show-toplevel 2>/dev/null || pwd -P)",
+    `bun "${shellEscape(input.helperScriptPath)}" guard --repo-root "${shellEscape(input.repoRoot)}" --invoking-repo-root "$caller_root"`,
     "status=$?",
     "if [ \"$status\" -ne 0 ]; then",
     "  exit \"$status\"",
@@ -605,7 +606,7 @@ async function runCli(args: string[]): Promise<number> {
       [
         "Usage:",
         "  primary-clone-convergence.ts converge --repo-root <path> [--publisher <label>]",
-        "  primary-clone-convergence.ts guard --repo-root <path>",
+        "  primary-clone-convergence.ts guard --repo-root <path> [--invoking-repo-root <path>]",
         "",
       ].join("\n"),
     );
@@ -629,11 +630,23 @@ async function runCli(args: string[]): Promise<number> {
   }
 
   if (command === "guard") {
+    const authoritativeRepoRoot = await gitRepoRoot(resolve(repoRoot));
+    const invokingRepoRoot = parsed["--invoking-repo-root"];
+    if (invokingRepoRoot) {
+      const resolvedInvokingRepoRoot = await gitRepoRoot(resolve(invokingRepoRoot)).catch(() => null);
+      if (resolvedInvokingRepoRoot && resolvedInvokingRepoRoot !== authoritativeRepoRoot) {
+        return 0;
+      }
+    }
+
     const result = await convergePrimaryClone({
-      repoRoot,
+      repoRoot: authoritativeRepoRoot,
       publisher: "git-pre-commit-guard",
     });
     if (result.status === "converged") {
+      return 0;
+    }
+    if (result.status === "blocked" && result.reason === "missing_canonical_upstream") {
       return 0;
     }
     process.stderr.write(`${formatGuardFailure(result)}\n`);

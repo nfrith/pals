@@ -98,4 +98,15 @@ export const DISPATCHER_KNOWN_VENDOR_FINGERPRINTS: ConstructVersionFingerprint[]
       src: "dfbb8c6c089acda35531aa0bce5163cd6662b7c0a82d382ddd7534bf57c4ad0d",
     },
   },
+  {
+    version: 20,
+    hashes: {
+      VERSION: "cea099b3e28e9596cf9ad36c9d90246ca65859f5e4abec1f3b868c6df024ac11",
+      "construct.json": "4c8d9a3af686607ed6af666bf77c998f75b57fc5f2902d20e7803df02752f830",
+      "package.json": "d4dc20ca1ebb120e8e6a3def8c7d2bff5f8dfcb77ec427e7c253876c37a5c5b9",
+      "tsconfig.json": "87009d314114d610d94a92724cc20c1c61db50ee3ebe909806bd5a82bd3eea6c",
+      migrations: "62a514adfff38881649482624f4e027b37ef49fef3d2aac566bd7375b7f83750",
+      src: "0015dd62984b0d62abdb910805ca844cdda5aaa512c432175423c778be54a664",
+    },
+  },
 ];
