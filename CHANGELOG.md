@@ -4,6 +4,14 @@ For pre-2026-04-29 release history, see git tags.
 
 ## [Unreleased]
 
+## 0.14.1 - 2026-05-10
+
+### ALS-094
+- Compatibility: docs_only
+- Summary: Add a new ALS reference doc at `nfrith-repos/als/skills/docs/references/dev-mapping.md` that bridges ALS vocabulary to classical software-development concepts. The doc opens with the architectural reframe — ALS is event-driven / workflow architecture, not MVC — then carries the v1 ALS-term-to-classical-analog mapping table (delamain → workflow / saga / state machine, dispatcher → workflow engine runtime, module → DDD bounded context / versioned npm package, construct → framework code, `alsc` → build tool / transpiler, dashboard / statusline / console → consumer-plane views, edgerunner → end user, language-upgrade-recipe → DB migration, compatibility class → breaking-change category, etc.), a "one classical concept → many ALS concepts" section that explains why ALS split DB-migration into `/change`+`/migrate`, language-upgrade-recipe, construct upgrade, and bundled-surface refresh and why `/update` rolls up multiple version axes (plugin, `als_version`, `module_version`, construct), and a "things that don't map cleanly" section that names cyborg, forge, and bond honestly instead of forcing a misleading analog. Tightens `nfrith-repos/als/skills/docs/references/vocabulary.md` `### Module` to point classical-dev readers at DDD bounded context / versioned package framing and explicitly retire the latent module-as-relational-schema reading. Registers the new reference in `nfrith-repos/als/skills/docs/SKILL.md` per the ALS-068 docs-index parity rule.
+- Operator action: None. New reference doc surfaces automatically on the next `/update`; no deploy, installer rerun, or authored-source migration required.
+- Affected surfaces: `nfrith-repos/als/skills/docs/references/dev-mapping.md` (new), `nfrith-repos/als/skills/docs/references/vocabulary.md` (`### Module`), `nfrith-repos/als/skills/docs/SKILL.md` (index entry).
+
 ## 0.14.0 - 2026-05-10
 
 ### ALS-093
