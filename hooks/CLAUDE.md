@@ -8,7 +8,7 @@ Claude still launches the hook commands from `${CLAUDE_PLUGIN_ROOT}/hooks/*.json
 
 ### operator-config-session-start.ts (SessionStart)
 
-On session start, walks up from the reported `cwd`, finds the current ALS system root, resolves `<system_root>/.als/operator.md`, validates it, and injects one `<system-reminder>` block with stable operator identity/business context. If no ALS system root is found, if the current ALS system contains `.als/skip-operator-config`, or if the config file is missing, it injects nothing. If the config is invalid, it injects remediation instructions telling the operator to run `/configure-operator`.
+On session start, walks up from the reported `cwd`, finds the current ALS system root, and resolves the ALS v5 operator-config surface: `<system_root>/.als/operator-roster.ts` plus the machine-local selector at `<system_root>/.als/local/active-operator.json`. If no ALS system root is found or the current ALS system contains `.als/skip-operator-config`, it injects nothing. If the roster or selector is missing or invalid, it injects hard remediation telling the operator to run `/configure-operator` or finish the `v4 -> v5` migration; it never reads legacy `.als/operator.md` at runtime.
 
 ### als-validate.ts (PostToolUse — Write|Edit)
 

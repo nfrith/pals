@@ -191,7 +191,7 @@ Read this when:
 
 [`references/operator-config.md`](references/operator-config.md)
 
-The system-scoped profile stored at `<system_root>/.als/operator.md`, validated by ALS and injected into sessions by the SessionStart hook.
+The ALS v5 roster-based operator-config surface: committed authored operator files plus the machine-local active selector that SessionStart resolves.
 
 Read this when:
 - Setting up the operator profile during onboarding

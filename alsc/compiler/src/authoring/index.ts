@@ -1,9 +1,12 @@
+import type { OperatorConfig, OperatorRoster } from "../operator-config.ts";
 import type { DelamainShape } from "../delamain.ts";
 import type { ModuleShape, SystemConfig } from "../schema.ts";
 
 export type AlsSystemDefinition = SystemConfig;
 export type AlsModuleDefinition = ModuleShape;
 export type AlsDelamainDefinition = DelamainShape;
+export type AlsOperatorDefinition = OperatorConfig;
+export type AlsOperatorRosterDefinition = OperatorRoster;
 
 export function defineSystem<T extends AlsSystemDefinition>(definition: T): T {
   return definition;
@@ -14,5 +17,13 @@ export function defineModule<T extends AlsModuleDefinition>(definition: T): T {
 }
 
 export function defineDelamain<T extends AlsDelamainDefinition>(definition: T): T {
+  return definition;
+}
+
+export function defineOperator<T extends AlsOperatorDefinition>(definition: T): T {
+  return definition;
+}
+
+export function defineOperatorRoster<T extends AlsOperatorRosterDefinition>(definition: T): T {
   return definition;
 }

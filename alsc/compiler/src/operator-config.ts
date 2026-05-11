@@ -1,18 +1,23 @@
-import { existsSync, readFileSync } from "node:fs";
-import { basename, dirname, join, resolve } from "node:path";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import matter from "gray-matter";
 import { stringify as stringifyYaml } from "yaml";
 import { z } from "zod";
+import { loadAuthoredSourceExport } from "./authored-load.ts";
+import { codes } from "./diagnostics.ts";
 
-export const OPERATOR_CONFIG_OUTPUT_SCHEMA = "als-operator-config-output@1";
-export const OPERATOR_CONFIG_VERSION = 1;
+export const OPERATOR_CONFIG_OUTPUT_SCHEMA = "als-operator-config-output@2";
+export const ACTIVE_OPERATOR_SELECTION_SCHEMA = "als-active-operator-selection@1";
+export const LEGACY_OPERATOR_CONFIG_VERSION = 1;
 
 export const OPERATOR_PROFILES = ["edgerunner", "als_developer", "als_architect"] as const;
 export const OPERATOR_COMPANY_TYPES = ["llc", "sole_prop", "corp", "ltd", "partnership", "nonprofit", "other"] as const;
 export const OPERATOR_REVENUE_BANDS = ["<100k", "100k-1M", "1M-10M", "10M+"] as const;
 
+const OPERATOR_ID_REGEX = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+const OPERATOR_PATH_REGEX = /^\.\/operators\/[a-z0-9]+(?:-[a-z0-9]+)*\.ts$/;
 const isoDateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "must use YYYY-MM-DD");
-const operatorProfileSchema = z.enum(OPERATOR_PROFILES);
+const operatorProfileEnumSchema = z.enum(OPERATOR_PROFILES);
 const companyTypeSchema = z.enum(OPERATOR_COMPANY_TYPES);
 const revenueBandSchema = z.enum(OPERATOR_REVENUE_BANDS);
 
@@ -54,7 +59,7 @@ function trimmedEmailString(fieldLabel: string) {
 const nullableTrimmedSingleLineString = (fieldLabel: string) =>
   z.union([trimmedSingleLineString(fieldLabel), z.null()]);
 
-const profilesSchema = z.array(operatorProfileSchema).min(1).superRefine((value, ctx) => {
+const profilesSchema = z.array(operatorProfileEnumSchema).min(1).superRefine((value, ctx) => {
   const seenProfiles = new Set<string>();
   for (const [index, profile] of value.entries()) {
     if (seenProfiles.has(profile)) {
@@ -68,30 +73,25 @@ const profilesSchema = z.array(operatorProfileSchema).min(1).superRefine((value,
   }
 });
 
-export const operatorConfigSchema = z.object({
-  config_version: z.number().int().positive(),
-  created: isoDateSchema,
-  updated: isoDateSchema,
-  first_name: trimmedSingleLineString("first_name"),
-  last_name: trimmedSingleLineString("last_name"),
-  display_name: nullableTrimmedSingleLineString("display_name"),
-  primary_email: trimmedEmailString("primary_email"),
-  role: trimmedSingleLineString("role"),
-  profiles: profilesSchema,
-  owns_company: z.boolean(),
-  company_name: nullableTrimmedSingleLineString("company_name"),
-  company_type: z.union([companyTypeSchema, z.null()]),
-  company_type_other: nullableTrimmedSingleLineString("company_type_other"),
-  revenue_band: z.union([revenueBandSchema, z.null()]),
-}).strict().superRefine((value, ctx) => {
-  if (value.config_version !== OPERATOR_CONFIG_VERSION) {
+const operatorIdSchema = trimmedSingleLineString("id").superRefine((value, ctx) => {
+  if (!OPERATOR_ID_REGEX.test(value)) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
-      message: `config_version must be ${OPERATOR_CONFIG_VERSION}`,
-      path: ["config_version"],
+      message: "id must use lowercase slug tokens joined by hyphens",
     });
   }
+});
 
+function applyCompanyValidation(
+  value: {
+    owns_company: boolean;
+    company_name: string | null;
+    company_type: (typeof OPERATOR_COMPANY_TYPES)[number] | null;
+    company_type_other: string | null;
+    revenue_band: (typeof OPERATOR_REVENUE_BANDS)[number] | null;
+  },
+  ctx: z.RefinementCtx,
+): void {
   if (!value.owns_company) {
     for (const fieldName of ["company_name", "company_type", "company_type_other", "revenue_band"] as const) {
       if (value[fieldName] !== null) {
@@ -144,12 +144,82 @@ export const operatorConfigSchema = z.object({
       path: ["company_type_other"],
     });
   }
+}
+
+const operatorProfileShape = {
+  first_name: trimmedSingleLineString("first_name"),
+  last_name: trimmedSingleLineString("last_name"),
+  display_name: nullableTrimmedSingleLineString("display_name"),
+  primary_email: trimmedEmailString("primary_email"),
+  role: trimmedSingleLineString("role"),
+  profiles: profilesSchema,
+  owns_company: z.boolean(),
+  company_name: nullableTrimmedSingleLineString("company_name"),
+  company_type: z.union([companyTypeSchema, z.null()]),
+  company_type_other: nullableTrimmedSingleLineString("company_type_other"),
+  revenue_band: z.union([revenueBandSchema, z.null()]),
+} as const;
+
+const operatorConfigSchema = z.object({
+  id: operatorIdSchema,
+  ...operatorProfileShape,
+}).strict().superRefine((value, ctx) => {
+  applyCompanyValidation(value, ctx);
 });
 
-export type OperatorConfig = z.infer<typeof operatorConfigSchema>;
+const legacyOperatorConfigSchema = z.object({
+    config_version: z.number().int().positive(),
+    created: isoDateSchema,
+    updated: isoDateSchema,
+    ...operatorProfileShape,
+  }).strict().superRefine((value, ctx) => {
+  if (value.config_version !== LEGACY_OPERATOR_CONFIG_VERSION) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: `config_version must be ${LEGACY_OPERATOR_CONFIG_VERSION}`,
+      path: ["config_version"],
+    });
+  }
 
-export interface OperatorConfigDocument {
-  config: OperatorConfig;
+  applyCompanyValidation(value, ctx);
+});
+
+const operatorRosterSchema = z.object({
+  operator_paths: z.array(trimmedSingleLineString("operator_paths")).min(1).superRefine((value, ctx) => {
+    const seenPaths = new Set<string>();
+    for (const [index, entry] of value.entries()) {
+      if (!OPERATOR_PATH_REGEX.test(entry)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "operator_paths entries must be relative './operators/{id}.ts' paths",
+          path: [index],
+        });
+      }
+
+      if (seenPaths.has(entry)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `duplicate operator path ${entry}`,
+          path: [index],
+        });
+      }
+      seenPaths.add(entry);
+    }
+  }),
+}).strict();
+
+const activeOperatorSelectionSchema = z.object({
+  schema: z.literal(ACTIVE_OPERATOR_SELECTION_SCHEMA),
+  operator_id: operatorIdSchema,
+}).strict();
+
+export type OperatorConfig = z.infer<typeof operatorConfigSchema>;
+export type LegacyOperatorConfig = z.infer<typeof legacyOperatorConfigSchema>;
+export type OperatorRoster = z.infer<typeof operatorRosterSchema>;
+export type ActiveOperatorSelection = z.infer<typeof activeOperatorSelectionSchema>;
+
+export interface LegacyOperatorConfigDocument {
+  config: LegacyOperatorConfig;
   body: string;
 }
 
@@ -162,18 +232,76 @@ export interface OperatorConfigIssue {
 export interface OperatorConfigInspection {
   schema: typeof OPERATOR_CONFIG_OUTPUT_SCHEMA;
   status: "pass" | "fail" | "missing";
+  system_root: string;
   file_path: string;
   exists: boolean;
+  skip_operator_config: boolean;
   errors: OperatorConfigIssue[];
   warnings: OperatorConfigIssue[];
   config: OperatorConfig | null;
-  body: string | null;
+  roster: {
+    file_path: string;
+    exists: boolean;
+    operator_paths: string[] | null;
+    operator_ids: string[];
+  };
+  active_selection: {
+    file_path: string;
+    exists: boolean;
+    schema: string | null;
+    operator_id: string | null;
+  };
+  operators: Array<{
+    id: string;
+    file_path: string;
+    display_name: string;
+    legal_name: string;
+  }>;
+  legacy: {
+    file_path: string;
+    exists: boolean;
+    status: "pass" | "fail" | "missing";
+    errors: OperatorConfigIssue[];
+    warnings: OperatorConfigIssue[];
+    config: LegacyOperatorConfig | null;
+    body: string | null;
+  };
+}
+
+export interface ActiveOperatorSelectionWriteResult {
+  status: "pass" | "fail";
+  file_path: string;
+  operator_id: string | null;
+  error: string | null;
 }
 
 interface CredentialPattern {
   code: string;
   message: string;
   regex: RegExp;
+}
+
+interface LoadedOperatorEntry {
+  file_path: string;
+  config: OperatorConfig;
+}
+
+interface LoadedOperatorRoster {
+  file_path: string;
+  exists: boolean;
+  roster: OperatorRoster | null;
+  operators: LoadedOperatorEntry[];
+  errors: OperatorConfigIssue[];
+  warnings: OperatorConfigIssue[];
+}
+
+interface ActiveSelectionInspection {
+  file_path: string;
+  exists: boolean;
+  schema: string | null;
+  operator_id: string | null;
+  selection: ActiveOperatorSelection | null;
+  errors: OperatorConfigIssue[];
 }
 
 const CREDENTIAL_PATTERNS: CredentialPattern[] = [
@@ -232,16 +360,11 @@ export function findAlsSystemRoot(startPath: string): string | null {
 }
 
 export function resolveOperatorConfigPathFromSystemRoot(systemRoot: string): string {
-  return join(resolve(systemRoot), ".als", "operator.md");
+  return join(resolve(systemRoot), ".als", "operator-roster.ts");
 }
 
 export function resolveOperatorConfigPath(startPath = process.cwd()): string | null {
-  const candidate = resolve(startPath);
-  if (basename(candidate) === "operator.md") {
-    return candidate;
-  }
-
-  const systemRoot = findAlsSystemRoot(candidate);
+  const systemRoot = findAlsSystemRoot(startPath);
   if (!systemRoot) {
     return null;
   }
@@ -249,7 +372,19 @@ export function resolveOperatorConfigPath(startPath = process.cwd()): string | n
   return resolveOperatorConfigPathFromSystemRoot(systemRoot);
 }
 
-export function serializeOperatorConfigDocument(document: OperatorConfigDocument): string {
+export function resolveLegacyOperatorConfigPathFromSystemRoot(systemRoot: string): string {
+  return join(resolve(systemRoot), ".als", "operator.md");
+}
+
+export function resolveActiveOperatorSelectionPathFromSystemRoot(systemRoot: string): string {
+  return join(resolve(systemRoot), ".als", "local", "active-operator.json");
+}
+
+export function resolveOperatorEntryPathFromSystemRoot(systemRoot: string, operatorId: string): string {
+  return join(resolve(systemRoot), ".als", "operators", `${operatorId}.ts`);
+}
+
+export function serializeLegacyOperatorConfigDocument(document: LegacyOperatorConfigDocument): string {
   const frontmatter = {
     config_version: document.config.config_version,
     created: document.config.created,
@@ -267,7 +402,7 @@ export function serializeOperatorConfigDocument(document: OperatorConfigDocument
     revenue_band: document.config.revenue_band,
   };
   const yaml = stringifyYaml(frontmatter).trimEnd();
-  const body = normalizeOperatorConfigBody(document.body);
+  const body = normalizeLegacyOperatorConfigBody(document.body);
 
   if (body.length === 0) {
     return `---\n${yaml}\n---\n`;
@@ -276,53 +411,116 @@ export function serializeOperatorConfigDocument(document: OperatorConfigDocument
   return `---\n${yaml}\n---\n\n${body}\n`;
 }
 
-export function inspectOperatorConfigFile(filePath: string): OperatorConfigInspection {
+export function serializeOperatorConfigSource(config: OperatorConfig): string {
+  return [
+    "import { defineOperator } from \"als:authoring\";",
+    "",
+    `export const operator = defineOperator(${JSON.stringify(config, null, 2)} as const);`,
+    "",
+    "export default operator;",
+    "",
+  ].join("\n");
+}
+
+export function serializeOperatorRosterSource(roster: OperatorRoster): string {
+  return [
+    "import { defineOperatorRoster } from \"als:authoring\";",
+    "",
+    `export const operatorRoster = defineOperatorRoster(${JSON.stringify(roster, null, 2)} as const);`,
+    "",
+    "export default operatorRoster;",
+    "",
+  ].join("\n");
+}
+
+export function serializeActiveOperatorSelection(selection: ActiveOperatorSelection): string {
+  return `${JSON.stringify(selection, null, 2)}\n`;
+}
+
+export function inspectLegacyOperatorConfigFile(filePath: string): {
+  status: "pass" | "fail" | "missing";
+  errors: OperatorConfigIssue[];
+  warnings: OperatorConfigIssue[];
+  config: LegacyOperatorConfig | null;
+  body: string | null;
+} {
   if (!existsSync(filePath)) {
-    return buildInspection("missing", filePath, false, [], [], null, null);
+    return {
+      status: "missing",
+      errors: [],
+      warnings: [],
+      config: null,
+      body: null,
+    };
   }
 
   const source = readFileSync(filePath, "utf-8");
-  return inspectOperatorConfigSource(source, filePath);
+  return inspectLegacyOperatorConfigSource(source, filePath);
 }
 
-export function inspectOperatorConfigSource(source: string, filePath = "operator.md"): OperatorConfigInspection {
+export function inspectLegacyOperatorConfigSource(
+  source: string,
+  filePath = "operator.md",
+): {
+  status: "pass" | "fail";
+  errors: OperatorConfigIssue[];
+  warnings: OperatorConfigIssue[];
+  config: LegacyOperatorConfig | null;
+  body: string | null;
+} {
   let parsed: ReturnType<typeof matter>;
 
   try {
     parsed = matter(source);
   } catch (error) {
-    return buildInspection(
-      "fail",
-      filePath,
-      true,
-      [{
+    return {
+      status: "fail",
+      errors: [{
         code: "frontmatter.parse_error",
         path: "frontmatter",
         message: `Failed to parse operator config frontmatter: ${error instanceof Error ? error.message : String(error)}`,
       }],
-      [],
-      null,
-      null,
-    );
+      warnings: [],
+      config: null,
+      body: null,
+    };
   }
 
   const normalizedData = normalizeMatterValue(parsed.data);
-  const parsedConfig = operatorConfigSchema.safeParse(normalizedData);
-  const body = normalizeOperatorConfigBody(parsed.content);
+  const parsedConfig = legacyOperatorConfigSchema.safeParse(normalizedData);
+  const body = normalizeLegacyOperatorConfigBody(parsed.content);
 
   if (!parsedConfig.success) {
-    return buildInspection("fail", filePath, true, zodIssuesToOperatorIssues(parsedConfig.error.issues), [], null, body);
+    return {
+      status: "fail",
+      errors: zodIssuesToOperatorIssues(parsedConfig.error.issues),
+      warnings: [],
+      config: null,
+      body,
+    };
   }
 
   const warnings = collectCredentialWarnings(parsedConfig.data, body);
   const status = warnings.length > 0 ? "fail" : "pass";
-
-  return buildInspection(status, filePath, true, [], warnings, parsedConfig.data, body);
+  return {
+    status,
+    errors: [],
+    warnings,
+    config: parsedConfig.data,
+    body,
+  };
 }
 
-export function buildOperatorConfigSessionStartOutput(
-  cwd: string,
-): string {
+export function inspectOperatorConfig(startPath = process.cwd()): OperatorConfigInspection | null {
+  const systemRoot = findAlsSystemRoot(startPath);
+  if (!systemRoot) {
+    return null;
+  }
+
+  return inspectOperatorConfigFromSystemRoot(systemRoot);
+}
+
+export function buildOperatorConfigSessionStartOutput(cwd: string): string {
   const systemRoot = findAlsSystemRoot(cwd);
   if (!systemRoot) {
     return "";
@@ -332,25 +530,30 @@ export function buildOperatorConfigSessionStartOutput(
     return "";
   }
 
-  const filePath = resolveOperatorConfigPathFromSystemRoot(systemRoot);
-  const inspection = inspectOperatorConfigFile(filePath);
-  if (inspection.status === "missing") {
-    return "";
+  const inspection = inspectOperatorConfigFromSystemRoot(systemRoot);
+  if (inspection.status === "pass" && inspection.config) {
+    return renderOperatorConfigReminder(
+      inspection.config,
+      inspection.roster.file_path,
+      inspection.active_selection.file_path,
+    );
   }
 
-  if (inspection.status === "fail" || !inspection.config) {
-    return renderOperatorConfigRemediation(filePath, inspection.errors, inspection.warnings);
-  }
-
-  return renderOperatorConfigReminder(inspection.config, filePath);
+  return renderOperatorConfigRemediation(inspection);
 }
 
-export function renderOperatorConfigReminder(config: OperatorConfig, filePath: string): string {
+export function renderOperatorConfigReminder(
+  config: OperatorConfig,
+  rosterPath: string,
+  activeSelectionPath: string,
+): string {
   const displayName = resolveDisplayName(config);
   const lines = [
     "<system-reminder>",
-    `Stable operator context loaded from ${filePath}.`,
+    `Stable operator context loaded from ${rosterPath}.`,
+    `Active operator selected from ${activeSelectionPath}.`,
     "Use this as ambient context for the current ALS system unless the operator says it changed.",
+    `- Operator ID: ${config.id}`,
     `- Name: ${displayName}`,
   ];
 
@@ -377,55 +580,454 @@ export function renderOperatorConfigReminder(config: OperatorConfig, filePath: s
   return `${lines.join("\n")}\n`;
 }
 
-export function renderOperatorConfigRemediation(
-  filePath: string,
-  errors: OperatorConfigIssue[],
-  warnings: OperatorConfigIssue[],
-): string {
+export function renderOperatorConfigRemediation(inspection: OperatorConfigInspection): string {
   const lines = [
     "<system-reminder>",
-    `Operator config at ${filePath} is present but not usable.`,
-    "Do not rely on partial operator-profile data from this file.",
-    "Run /configure-operator to repair it before using operator identity or business context from ALS.",
+    "Operator config is not usable for SessionStart identity injection.",
+    "Do not rely on partial operator-profile data from this ALS system.",
+    "Run /configure-operator to author or repair the roster and local active-operator selection.",
   ];
 
-  if (errors.length > 0) {
-    lines.push("Errors:");
-    for (const issue of errors) {
-      lines.push(`- ${formatIssue(issue)}`);
-    }
+  if (inspection.legacy.exists && !inspection.exists) {
+    lines.push(
+      `Legacy migration input is still present at ${inspection.legacy.file_path}.`,
+      "Run /update or /upgrade-language to convert the legacy `.als/operator.md` surface before relying on operator identity.",
+    );
   }
 
-  if (warnings.length > 0) {
-    lines.push("Warnings:");
-    for (const issue of warnings) {
-      lines.push(`- ${formatIssue(issue)}`);
-    }
+  lines.push("Problems:");
+  if (inspection.errors.length === 0 && inspection.warnings.length === 0) {
+    lines.push(`- No operator roster found at ${inspection.file_path}.`);
+  }
+  for (const issue of inspection.errors) {
+    lines.push(`- ${formatIssue(issue)}`);
+  }
+  for (const issue of inspection.warnings) {
+    lines.push(`- ${formatIssue(issue)}`);
   }
 
   lines.push("</system-reminder>");
   return `${lines.join("\n")}\n`;
 }
 
-function buildInspection(
-  status: OperatorConfigInspection["status"],
-  filePath: string,
-  exists: boolean,
-  errors: OperatorConfigIssue[],
-  warnings: OperatorConfigIssue[],
-  config: OperatorConfig | null,
-  body: string | null,
-): OperatorConfigInspection {
+export function deriveLegacyOperatorId(config: LegacyOperatorConfig): string {
+  const label = resolveLegacyDisplayName(config);
+  const operatorId = slugifyOperatorId(label);
+  if (operatorId.length === 0) {
+    throw new Error(`Could not derive a stable operator id from legacy label '${label}'.`);
+  }
+  return operatorId;
+}
+
+export function slugifyOperatorId(value: string): string {
+  return value
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .replace(/-{2,}/g, "-");
+}
+
+export function convertLegacyOperatorConfig(config: LegacyOperatorConfig): OperatorConfig {
+  return {
+    id: deriveLegacyOperatorId(config),
+    first_name: config.first_name,
+    last_name: config.last_name,
+    display_name: config.display_name,
+    primary_email: config.primary_email,
+    role: config.role,
+    profiles: [...config.profiles],
+    owns_company: config.owns_company,
+    company_name: config.company_name,
+    company_type: config.company_type,
+    company_type_other: config.company_type_other,
+    revenue_band: config.revenue_band,
+  };
+}
+
+export function writeActiveOperatorSelection(startPath: string, operatorId: string): ActiveOperatorSelectionWriteResult {
+  const systemRoot = findAlsSystemRoot(startPath);
+  if (!systemRoot) {
+    return {
+      status: "fail",
+      file_path: resolve(startPath, ".als", "local", "active-operator.json"),
+      operator_id: null,
+      error: "No ALS system root found.",
+    };
+  }
+
+  const roster = loadOperatorRoster(systemRoot);
+  if (!roster.exists) {
+    return {
+      status: "fail",
+      file_path: resolveActiveOperatorSelectionPathFromSystemRoot(systemRoot),
+      operator_id: null,
+      error: "No operator roster exists for this ALS system.",
+    };
+  }
+
+  if (roster.errors.length > 0 || roster.warnings.length > 0) {
+    return {
+      status: "fail",
+      file_path: resolveActiveOperatorSelectionPathFromSystemRoot(systemRoot),
+      operator_id: null,
+      error: "Operator roster is invalid; repair it before selecting an active operator.",
+    };
+  }
+
+  if (!roster.operators.some((entry) => entry.config.id === operatorId)) {
+    return {
+      status: "fail",
+      file_path: resolveActiveOperatorSelectionPathFromSystemRoot(systemRoot),
+      operator_id: null,
+      error: `Operator id '${operatorId}' is not present in the roster.`,
+    };
+  }
+
+  return writeActiveOperatorSelectionFile(systemRoot, operatorId);
+}
+
+export function selectSingletonActiveOperator(startPath: string): ActiveOperatorSelectionWriteResult {
+  const systemRoot = findAlsSystemRoot(startPath);
+  if (!systemRoot) {
+    return {
+      status: "fail",
+      file_path: resolve(startPath, ".als", "local", "active-operator.json"),
+      operator_id: null,
+      error: "No ALS system root found.",
+    };
+  }
+
+  const roster = loadOperatorRoster(systemRoot);
+  if (!roster.exists) {
+    return {
+      status: "fail",
+      file_path: resolveActiveOperatorSelectionPathFromSystemRoot(systemRoot),
+      operator_id: null,
+      error: "No operator roster exists for this ALS system.",
+    };
+  }
+
+  if (roster.errors.length > 0 || roster.warnings.length > 0) {
+    return {
+      status: "fail",
+      file_path: resolveActiveOperatorSelectionPathFromSystemRoot(systemRoot),
+      operator_id: null,
+      error: "Operator roster is invalid; repair it before writing a local selector.",
+    };
+  }
+
+  if (roster.operators.length !== 1) {
+    return {
+      status: "fail",
+      file_path: resolveActiveOperatorSelectionPathFromSystemRoot(systemRoot),
+      operator_id: null,
+      error: `Expected exactly one roster entry for automatic local selection, found ${roster.operators.length}.`,
+    };
+  }
+
+  return writeActiveOperatorSelectionFile(systemRoot, roster.operators[0]!.config.id);
+}
+
+function inspectOperatorConfigFromSystemRoot(systemRoot: string): OperatorConfigInspection {
+  const roster = loadOperatorRoster(systemRoot);
+  const selection = inspectActiveSelection(systemRoot);
+  const legacyPath = resolveLegacyOperatorConfigPathFromSystemRoot(systemRoot);
+  const legacy = inspectLegacyOperatorConfigFile(legacyPath);
+  const skipOperatorConfig = existsSync(join(systemRoot, ".als", "skip-operator-config"));
+  const errors = [...roster.errors, ...selection.errors];
+  const warnings = [...roster.warnings];
+  let activeConfig: OperatorConfig | null = null;
+
+  if (!roster.exists) {
+    if (selection.exists) {
+      errors.push({
+        code: "active_selection.roster_missing",
+        path: "active_selection",
+        message: `Local active-operator selector exists at ${selection.file_path}, but ${roster.file_path} is missing.`,
+      });
+    } else if (!skipOperatorConfig && legacy.exists) {
+      errors.push({
+        code: "legacy.migration_required",
+        path: "legacy",
+        message: `Legacy operator config at ${legacyPath} is migration input only and no operator roster exists yet.`,
+      });
+    }
+  } else if (roster.errors.length === 0) {
+    if (!selection.exists) {
+      errors.push({
+        code: "active_selection.missing",
+        path: "active_selection",
+        message: `Machine-local active-operator selector is missing at ${selection.file_path}.`,
+      });
+    } else if (selection.selection) {
+      const matchedOperator = roster.operators.find((entry) => entry.config.id === selection.selection!.operator_id);
+      if (!matchedOperator) {
+        errors.push({
+          code: "active_selection.unknown_operator",
+          path: "active_selection.operator_id",
+          message: `Active operator id '${selection.selection.operator_id}' does not exist in the roster.`,
+        });
+      } else {
+        activeConfig = matchedOperator.config;
+      }
+    }
+  }
+
+  let status: OperatorConfigInspection["status"] = "missing";
+  if (activeConfig && errors.length === 0 && warnings.length === 0) {
+    status = "pass";
+  } else if (errors.length > 0 || warnings.length > 0 || roster.exists || selection.exists || legacy.exists) {
+    status = "fail";
+  }
+
   return {
     schema: OPERATOR_CONFIG_OUTPUT_SCHEMA,
     status,
-    file_path: filePath,
-    exists,
+    system_root: systemRoot,
+    file_path: roster.file_path,
+    exists: roster.exists,
+    skip_operator_config: skipOperatorConfig,
     errors,
     warnings,
-    config,
-    body,
+    config: activeConfig,
+    roster: {
+      file_path: roster.file_path,
+      exists: roster.exists,
+      operator_paths: roster.roster?.operator_paths ?? null,
+      operator_ids: roster.operators.map((entry) => entry.config.id),
+    },
+    active_selection: {
+      file_path: selection.file_path,
+      exists: selection.exists,
+      schema: selection.schema,
+      operator_id: selection.operator_id,
+    },
+    operators: roster.operators.map((entry) => ({
+      id: entry.config.id,
+      file_path: entry.file_path,
+      display_name: resolveDisplayName(entry.config),
+      legal_name: `${entry.config.first_name} ${entry.config.last_name}`,
+    })),
+    legacy: {
+      file_path: legacyPath,
+      exists: legacy.status !== "missing",
+      status: legacy.status,
+      errors: legacy.errors,
+      warnings: legacy.warnings,
+      config: legacy.config,
+      body: legacy.body,
+    },
   };
+}
+
+function loadOperatorRoster(systemRoot: string): LoadedOperatorRoster {
+  const filePath = resolveOperatorConfigPathFromSystemRoot(systemRoot);
+  if (!existsSync(filePath)) {
+    return {
+      file_path: filePath,
+      exists: false,
+      roster: null,
+      operators: [],
+      errors: [],
+      warnings: [],
+    };
+  }
+
+  const loadedRoster = loadAuthoredSourceExport(
+    filePath,
+    "operatorRoster",
+    "operator_roster",
+    codes.SHAPE_INVALID,
+    null,
+  );
+  if (!loadedRoster.success) {
+    return {
+      file_path: filePath,
+      exists: true,
+      roster: null,
+      operators: [],
+      errors: authoredDiagnosticsToIssues(loadedRoster.diagnostics),
+      warnings: [],
+    };
+  }
+
+  const parsedRoster = operatorRosterSchema.safeParse(loadedRoster.data);
+  if (!parsedRoster.success) {
+    return {
+      file_path: filePath,
+      exists: true,
+      roster: null,
+      operators: [],
+      errors: zodIssuesToOperatorIssues(parsedRoster.error.issues, "roster"),
+      warnings: [],
+    };
+  }
+
+  const errors: OperatorConfigIssue[] = [];
+  const warnings: OperatorConfigIssue[] = [];
+  const operators: LoadedOperatorEntry[] = [];
+  const seenIds = new Map<string, string>();
+
+  for (const [index, operatorPath] of parsedRoster.data.operator_paths.entries()) {
+    const operatorFilePath = resolve(dirname(filePath), operatorPath);
+    const operatorRelativeToSystem = relative(join(systemRoot, ".als"), operatorFilePath);
+    if (operatorRelativeToSystem.startsWith("..") || operatorRelativeToSystem === ".." || !operatorRelativeToSystem.startsWith(`operators${sep}`)) {
+      errors.push({
+        code: "roster.operator_path_escape",
+        path: `roster.operator_paths.${index}`,
+        message: `Operator path '${operatorPath}' must stay under .als/operators/.`,
+      });
+      continue;
+    }
+
+    const loadedOperator = loadAuthoredSourceExport(
+      operatorFilePath,
+      "operator",
+      "operator_profile",
+      codes.SHAPE_INVALID,
+      null,
+    );
+    if (!loadedOperator.success) {
+      errors.push(...authoredDiagnosticsToIssues(loadedOperator.diagnostics));
+      continue;
+    }
+
+    const parsedOperator = operatorConfigSchema.safeParse(loadedOperator.data);
+    if (!parsedOperator.success) {
+      errors.push(...zodIssuesToOperatorIssues(parsedOperator.error.issues, `operator:${operatorPath}`));
+      continue;
+    }
+
+    const operatorConfig = parsedOperator.data;
+    const expectedBasename = `${operatorConfig.id}.ts`;
+    if (basename(operatorFilePath) !== expectedBasename) {
+      errors.push({
+        code: "operator.basename_mismatch",
+        path: `operator:${operatorPath}`,
+        message: `Operator file basename '${basename(operatorFilePath)}' must match id '${operatorConfig.id}' as '${expectedBasename}'.`,
+      });
+    }
+
+    const existingPath = seenIds.get(operatorConfig.id);
+    if (existingPath) {
+      errors.push({
+        code: "operator.id_duplicate",
+        path: `operator:${operatorPath}`,
+        message: `Duplicate operator id '${operatorConfig.id}' appears in '${existingPath}' and '${operatorPath}'.`,
+      });
+    } else {
+      seenIds.set(operatorConfig.id, operatorPath);
+    }
+
+    warnings.push(...collectCredentialWarnings(operatorConfig, "").map((issue) => ({
+      ...issue,
+      path: issue.path.length > 0 ? `operator:${operatorPath}.${issue.path}` : `operator:${operatorPath}`,
+    })));
+    operators.push({
+      file_path: operatorFilePath,
+      config: operatorConfig,
+    });
+  }
+
+  return {
+    file_path: filePath,
+    exists: true,
+    roster: parsedRoster.data,
+    operators,
+    errors,
+    warnings,
+  };
+}
+
+function inspectActiveSelection(systemRoot: string): ActiveSelectionInspection {
+  const filePath = resolveActiveOperatorSelectionPathFromSystemRoot(systemRoot);
+  if (!existsSync(filePath)) {
+    return {
+      file_path: filePath,
+      exists: false,
+      schema: null,
+      operator_id: null,
+      selection: null,
+      errors: [],
+    };
+  }
+
+  let parsedJson: unknown;
+  try {
+    parsedJson = JSON.parse(readFileSync(filePath, "utf-8"));
+  } catch (error) {
+    return {
+      file_path: filePath,
+      exists: true,
+      schema: null,
+      operator_id: null,
+      selection: null,
+      errors: [{
+        code: "active_selection.parse_error",
+        path: "active_selection",
+        message: `Failed to parse ${filePath}: ${error instanceof Error ? error.message : String(error)}`,
+      }],
+    };
+  }
+
+  const parsedSelection = activeOperatorSelectionSchema.safeParse(parsedJson);
+  if (!parsedSelection.success) {
+    return {
+      file_path: filePath,
+      exists: true,
+      schema: typeof parsedJson === "object" && parsedJson !== null && "schema" in (parsedJson as Record<string, unknown>)
+        ? String((parsedJson as Record<string, unknown>).schema)
+        : null,
+      operator_id: typeof parsedJson === "object" && parsedJson !== null && "operator_id" in (parsedJson as Record<string, unknown>)
+        ? String((parsedJson as Record<string, unknown>).operator_id)
+        : null,
+      selection: null,
+      errors: zodIssuesToOperatorIssues(parsedSelection.error.issues, "active_selection"),
+    };
+  }
+
+  return {
+    file_path: filePath,
+    exists: true,
+    schema: parsedSelection.data.schema,
+    operator_id: parsedSelection.data.operator_id,
+    selection: parsedSelection.data,
+    errors: [],
+  };
+}
+
+function writeActiveOperatorSelectionFile(systemRoot: string, operatorId: string): ActiveOperatorSelectionWriteResult {
+  const filePath = resolveActiveOperatorSelectionPathFromSystemRoot(systemRoot);
+  mkdirSync(dirname(filePath), { recursive: true });
+  writeFileSync(filePath, serializeActiveOperatorSelection({
+    schema: ACTIVE_OPERATOR_SELECTION_SCHEMA,
+    operator_id: operatorId,
+  }), "utf-8");
+
+  return {
+    status: "pass",
+    file_path: filePath,
+    operator_id: operatorId,
+    error: null,
+  };
+}
+
+function authoredDiagnosticsToIssues(
+  diagnostics: Array<{
+    code: string;
+    reason: string | null;
+    field: string | null;
+    file: string;
+    message: string;
+  }>,
+): OperatorConfigIssue[] {
+  return diagnostics.map((diagnostic) => ({
+    code: diagnostic.reason ?? diagnostic.code,
+    path: diagnostic.field ?? "",
+    message: `${diagnostic.file}: ${diagnostic.message}`,
+  }));
 }
 
 function normalizeMatterValue(value: unknown): unknown {
@@ -446,16 +1048,17 @@ function normalizeMatterValue(value: unknown): unknown {
   return value;
 }
 
-function zodIssuesToOperatorIssues(issues: z.ZodIssue[]): OperatorConfigIssue[] {
+function zodIssuesToOperatorIssues(issues: z.ZodIssue[], prefix = ""): OperatorConfigIssue[] {
   return issues.map((issue) => ({
     code: issue.code,
-    path: issue.path.map((segment) => String(segment)).join("."),
+    path: [prefix, issue.path.map((segment) => String(segment)).join(".")].filter(Boolean).join("."),
     message: issue.message,
   }));
 }
 
-function collectCredentialWarnings(config: OperatorConfig, body: string): OperatorConfigIssue[] {
+function collectCredentialWarnings(config: OperatorConfig | LegacyOperatorConfig, body: string): OperatorConfigIssue[] {
   const candidates: Array<{ path: string; value: string }> = [
+    ...("id" in config ? [{ path: "id", value: config.id }] : []),
     { path: "first_name", value: config.first_name },
     { path: "last_name", value: config.last_name },
     ...(config.display_name ? [{ path: "display_name", value: config.display_name }] : []),
@@ -492,7 +1095,7 @@ function collectCredentialWarnings(config: OperatorConfig, body: string): Operat
   return warnings;
 }
 
-function normalizeOperatorConfigBody(body: string): string {
+function normalizeLegacyOperatorConfigBody(body: string): string {
   return body.replace(/^\n/, "").trimEnd();
 }
 
@@ -500,7 +1103,11 @@ function resolveDisplayName(config: OperatorConfig): string {
   return config.display_name ?? `${config.first_name} ${config.last_name}`;
 }
 
-function formatCompanyType(config: OperatorConfig): string {
+function resolveLegacyDisplayName(config: LegacyOperatorConfig): string {
+  return config.display_name ?? `${config.first_name} ${config.last_name}`;
+}
+
+function formatCompanyType(config: Pick<OperatorConfig, "company_type" | "company_type_other">): string {
   if (config.company_type !== "other") {
     return config.company_type ?? "null";
   }

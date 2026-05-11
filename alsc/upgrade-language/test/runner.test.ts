@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import { loadAuthoredSourceExport } from "../../compiler/src/authored-load.ts";
 import { LANGUAGE_UPGRADE_RECIPE_SCHEMA_LITERAL } from "../../compiler/src/contracts.ts";
 import { inspectLanguageUpgradeRecipe } from "../../compiler/src/language-upgrade-recipe.ts";
+import { serializeLegacyOperatorConfigDocument, type LegacyOperatorConfig } from "../../compiler/src/operator-config.ts";
 import { TRANSIENT_RUNTIME_GITIGNORE_PATTERNS } from "../../shared/transient-runtime.ts";
 import { validateSystem } from "../../compiler/src/validate.ts";
 import type { LanguageUpgradeRecipe } from "../../compiler/src/types.ts";
@@ -25,9 +26,28 @@ const v1FixtureRoot = resolve(alsRepoRoot, "language-upgrades/fixtures/v1");
 const v2FixtureRoot = resolve(alsRepoRoot, "language-upgrades/fixtures/v2");
 const v3FixtureRoot = resolve(alsRepoRoot, "language-upgrades/fixtures/v3");
 const v4FixtureRoot = resolve(alsRepoRoot, "language-upgrades/fixtures/v4");
+const v5FixtureRoot = resolve(alsRepoRoot, "language-upgrades/fixtures/v5");
 const v1ToV2RecipeRoot = resolve(alsRepoRoot, "language-upgrades/recipes/v1-to-v2");
 const v2ToV3RecipeRoot = resolve(alsRepoRoot, "language-upgrades/recipes/v2-to-v3");
 const v3ToV4RecipeRoot = resolve(alsRepoRoot, "language-upgrades/recipes/v3-to-v4");
+const v4ToV5RecipeRoot = resolve(alsRepoRoot, "language-upgrades/recipes/v4-to-v5");
+
+const VALID_LEGACY_OPERATOR: LegacyOperatorConfig = {
+  config_version: 1,
+  created: "2026-04-25",
+  updated: "2026-04-25",
+  first_name: "Nick",
+  last_name: "Frith",
+  display_name: "0xnfrith",
+  primary_email: "nick@example.com",
+  role: "Founder",
+  profiles: ["edgerunner"],
+  owns_company: true,
+  company_name: "Example Co",
+  company_type: "llc",
+  company_type_other: null,
+  revenue_band: "100k-1M",
+};
 
 interface UpgradeHarness {
   root: string;
@@ -799,6 +819,108 @@ test("shipped v3-to-v4 recipe verifies against the frozen fixtures", async () =>
     expect(verification.status).toBe("pass");
     expect(verification.mismatches).toEqual([]);
     expect(verification.step_results.map((step) => step.status)).toEqual(["completed"]);
+  } finally {
+    await rm(workingRoot, { recursive: true, force: true });
+  }
+});
+
+test("shipped v4-to-v5 recipe verifies against the frozen fixtures", async () => {
+  const inspection = inspectLanguageUpgradeRecipe(v4ToV5RecipeRoot);
+  expect(inspection.status).toBe("pass");
+  if (inspection.status !== "pass" || !inspection.recipe) {
+    return;
+  }
+
+  const workingRoot = await mkdtemp(join(tmpdir(), "als-upgrade-language-v4-to-v5-fixture-"));
+  const fromFixtureRoot = join(workingRoot, "from");
+  const expectedFixtureRoot = join(workingRoot, "expected");
+
+  try {
+    await prepareRunnableFixture(v4FixtureRoot, fromFixtureRoot);
+    await prepareRunnableFixture(v5FixtureRoot, expectedFixtureRoot);
+
+    const verification = await verifyLanguageUpgradeRecipe({
+      from_fixture_path: fromFixtureRoot,
+      expected_fixture_path: expectedFixtureRoot,
+      hop: {
+        hop_id: "v4-to-v5",
+        recipe: inspection.recipe,
+        recipe_path: inspection.recipe_path,
+        bundle_root: inspection.bundle_root,
+      },
+      services: {
+        inspect_system(systemRoot) {
+          const validation = validateSystem(systemRoot);
+          return {
+            als_version: validation.als_version,
+            status: validation.status,
+          };
+        },
+      },
+    });
+
+    expect(verification.status).toBe("pass");
+    expect(verification.mismatches).toEqual([]);
+    expect(verification.step_results.map((step) => step.status)).toEqual(["completed"]);
+  } finally {
+    await rm(workingRoot, { recursive: true, force: true });
+  }
+});
+
+test("v4-to-v5 recipe slugifies first and last name when legacy display_name is null", async () => {
+  const inspection = inspectLanguageUpgradeRecipe(v4ToV5RecipeRoot);
+  expect(inspection.status).toBe("pass");
+  if (inspection.status !== "pass" || !inspection.recipe) {
+    return;
+  }
+
+  const workingRoot = await mkdtemp(join(tmpdir(), "als-upgrade-language-v4-to-v5-legacy-operator-"));
+  const systemRoot = join(workingRoot, "system");
+  const statePath = join(workingRoot, "runtime-state.json");
+
+  try {
+    await prepareRunnableFixture(v4FixtureRoot, systemRoot);
+    await writeFile(
+      join(systemRoot, ".als", "operator.md"),
+      serializeLegacyOperatorConfigDocument({
+        config: {
+          ...VALID_LEGACY_OPERATOR,
+          display_name: null,
+        },
+        body: "",
+      }),
+      "utf-8",
+    );
+    initializeGitRepository(systemRoot);
+
+    const result = await executeLanguageUpgradeChain({
+      system_root: systemRoot,
+      hops: [{
+        hop_id: "v4-to-v5",
+        recipe: inspection.recipe,
+        recipe_path: inspection.recipe_path,
+        bundle_root: inspection.bundle_root,
+      }],
+      target_als_version: 5,
+      services: {
+        inspect_system(currentSystemRoot) {
+          const validation = validateSystem(currentSystemRoot);
+          return {
+            als_version: validation.als_version,
+            status: validation.status,
+          };
+        },
+      },
+      options: {
+        state_path: statePath,
+      },
+    });
+
+    expect(result.status).toBe("completed");
+    await expect(readFile(join(systemRoot, ".als", "operator.md"), "utf-8")).rejects.toThrow();
+    expect(await readFile(join(systemRoot, ".als", "operator-roster.ts"), "utf-8")).toContain("./operators/nick-frith.ts");
+    expect(await readFile(join(systemRoot, ".als", "operators", "nick-frith.ts"), "utf-8")).toContain('"id": "nick-frith"');
+    expect(await readFile(join(systemRoot, ".als", ".gitignore"), "utf-8")).toContain("/local/");
   } finally {
     await rm(workingRoot, { recursive: true, force: true });
   }

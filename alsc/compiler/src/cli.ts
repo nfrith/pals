@@ -10,8 +10,10 @@ import {
 import { buildOperatorConfigSessionStart } from "./hook-runtime.ts";
 import { inspectLanguageUpgradeRecipe } from "./language-upgrade-recipe.ts";
 import {
-  inspectOperatorConfigFile,
+  inspectOperatorConfig,
   resolveOperatorConfigPath,
+  selectSingletonActiveOperator,
+  writeActiveOperatorSelection,
 } from "./operator-config.ts";
 import { resolveOwningModuleForPath } from "./module-owner.ts";
 import { validateSystem } from "./validate.ts";
@@ -25,8 +27,10 @@ const MAIN_USAGE = `Usage:
   alsc changelog inspect [als-repo-or-changelog-path]
   alsc system module-owner <system-root> <file-path>
   alsc operator-config path [system-root-or-cwd]
-  alsc operator-config inspect [system-root-or-cwd-or-operator-config-path]
+  alsc operator-config inspect [system-root-or-cwd]
   alsc operator-config session-start [cwd]
+  alsc operator-config set-active [system-root-or-cwd] <operator-id>
+  alsc operator-config select-singleton [system-root-or-cwd]
 
 Commands:
   validate        Validate an ALS system and emit JSON.
@@ -48,8 +52,10 @@ const CHANGELOG_USAGE = "Usage: alsc changelog inspect [als-repo-or-changelog-pa
 const SYSTEM_USAGE = "Usage: alsc system module-owner <system-root> <file-path>";
 const OPERATOR_CONFIG_USAGE = `Usage:
   alsc operator-config path [system-root-or-cwd]
-  alsc operator-config inspect [system-root-or-cwd-or-operator-config-path]
-  alsc operator-config session-start [cwd]`;
+  alsc operator-config inspect [system-root-or-cwd]
+  alsc operator-config session-start [cwd]
+  alsc operator-config set-active [system-root-or-cwd] <operator-id>
+  alsc operator-config select-singleton [system-root-or-cwd]`;
 
 export interface CliIo {
   stdout(value: string): void;
@@ -270,13 +276,12 @@ function runOperatorConfigCommand(
       return 2;
     }
 
-    const filePath = resolveOperatorConfigPath(rest[0] ?? process.cwd());
-    if (!filePath) {
+    const inspection = inspectOperatorConfig(rest[0] ?? process.cwd());
+    if (!inspection) {
       writeStderr(io, "Unable to resolve operator config path: no ALS system root found.\n");
       return 1;
     }
 
-    const inspection = inspectOperatorConfigFile(filePath);
     writeStdout(io, JSON.stringify(inspection, null, 2));
     return inspection.status === "fail" ? 1 : 0;
   }
@@ -294,6 +299,30 @@ function runOperatorConfigCommand(
       writeStdout(io, output);
     }
     return 0;
+  }
+
+  if (subcommand === "set-active") {
+    if (rest.length < 1 || rest.length > 2) {
+      writeStderr(io, `${OPERATOR_CONFIG_USAGE}\n`);
+      return 2;
+    }
+
+    const operatorId = rest.length === 1 ? rest[0]! : rest[1]!;
+    const startPath = rest.length === 1 ? process.cwd() : rest[0]!;
+    const result = writeActiveOperatorSelection(startPath, operatorId);
+    writeStdout(io, JSON.stringify(result, null, 2));
+    return result.status === "pass" ? 0 : 1;
+  }
+
+  if (subcommand === "select-singleton") {
+    if (rest.length > 1) {
+      writeStderr(io, `${OPERATOR_CONFIG_USAGE}\n`);
+      return 2;
+    }
+
+    const result = selectSingletonActiveOperator(rest[0] ?? process.cwd());
+    writeStdout(io, JSON.stringify(result, null, 2));
+    return result.status === "pass" ? 0 : 1;
   }
 
   writeStderr(io, `${OPERATOR_CONFIG_USAGE}\n`);

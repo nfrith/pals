@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import {
@@ -11,7 +11,9 @@ import {
   SYSTEM_BREADCRUMB_ID,
 } from "../src/hook-runtime.ts";
 import {
-  serializeOperatorConfigDocument,
+  serializeActiveOperatorSelection,
+  serializeOperatorConfigSource,
+  serializeOperatorRosterSource,
   type OperatorConfig,
 } from "../src/operator-config.ts";
 import {
@@ -27,12 +29,10 @@ import {
 } from "./helpers/deprecation-fixture.ts";
 
 const VALID_OPERATOR_CONFIG: OperatorConfig = {
-  config_version: 1,
-  created: "2026-04-25",
-  updated: "2026-04-25",
+  id: "nick-frith",
   first_name: "Nick",
   last_name: "Frith",
-  display_name: null,
+  display_name: "0xnfrith",
   primary_email: "nick@example.com",
   role: "Founder",
   profiles: ["edgerunner"],
@@ -74,11 +74,25 @@ async function configureSyntheticDeprecationFixture(root: string): Promise<void>
 test("buildOperatorConfigSessionStart reuses the compiler-owned session-start semantics", async () => {
   await withFixtureSandbox("hook-runtime-session-start", async ({ root }) => {
     await removePath(root, ".als/skip-operator-config");
+    await mkdir(join(root, ".als", "operators"), { recursive: true });
     await writeFile(
-      join(root, ".als", "operator.md"),
-      serializeOperatorConfigDocument({
-        config: VALID_OPERATOR_CONFIG,
-        body: "",
+      join(root, ".als", "operator-roster.ts"),
+      serializeOperatorRosterSource({
+        operator_paths: ["./operators/nick-frith.ts"],
+      }),
+      "utf-8",
+    );
+    await writeFile(
+      join(root, ".als", "operators", "nick-frith.ts"),
+      serializeOperatorConfigSource(VALID_OPERATOR_CONFIG),
+      "utf-8",
+    );
+    await mkdir(join(root, ".als", "local"), { recursive: true });
+    await writeFile(
+      join(root, ".als", "local", "active-operator.json"),
+      serializeActiveOperatorSelection({
+        schema: "als-active-operator-selection@1",
+        operator_id: "nick-frith",
       }),
       "utf-8",
     );

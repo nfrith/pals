@@ -5,6 +5,8 @@ ALS authored source is TypeScript.
 The canonical entrypoints are:
 
 - `.als/system.ts`
+- `.als/operator-roster.ts`
+- `.als/operators/{operator_id}.ts`
 - `.als/modules/{module_id}/v{version}/module.ts`
 - `.als/modules/{module_id}/v{version}/delamains/{name}/delamain.ts` for authored Delamain definitions referenced from the module bundle
 
@@ -17,7 +19,13 @@ Use `as const` on authored definitions so literal ids, enum values, and path fra
 Use the typed helper surface through the ALS-reserved virtual specifiers:
 
 ```ts
-import { defineSystem, defineModule, defineDelamain } from "als:authoring";
+import {
+  defineSystem,
+  defineOperatorRoster,
+  defineOperator,
+  defineModule,
+  defineDelamain,
+} from "als:authoring";
 import { COMPATIBILITY_CLASSES } from "als:contracts";
 ```
 
@@ -33,7 +41,7 @@ The helpers are identity functions. Their job is to give TypeScript a stable typ
 import { defineSystem } from "als:authoring";
 
 export const system = defineSystem({
-  als_version: 4,
+  als_version: 5,
   system_id: "reference-system",
   modules: {
     backlog: {
@@ -64,6 +72,60 @@ Rules:
 - `modules.{module_id}.skills` lists the active operator-facing skill ids for that mounted version.
 - Active skill ids must stay globally unique across the system.
 - Module mount paths must stay normalized, relative, and non-overlapping.
+
+## operator-roster.ts
+
+`operator-roster.ts` declares the committed shared operator roster for the ALS system.
+
+```ts
+import { defineOperatorRoster } from "als:authoring";
+
+export const operatorRoster = defineOperatorRoster({
+  operator_paths: ["./operators/nick-frith.ts"],
+} as const);
+
+export default operatorRoster;
+```
+
+Rules:
+
+- `operator_paths` is required and lists one or more committed authored operator entrypoints.
+- Every entry must be a relative `./operators/{operator_id}.ts` path.
+- `operator_paths` stays declarative. Do not inline full operator objects here.
+- ALS loads each operator entrypoint separately; generic local-import composition is not part of this contract.
+
+## operators/{operator_id}.ts
+
+Each operator entrypoint declares one stable operator profile.
+
+```ts
+import { defineOperator } from "als:authoring";
+
+export const operator = defineOperator({
+  id: "nick-frith",
+  first_name: "Nick",
+  last_name: "Frith",
+  display_name: "0xnfrith",
+  primary_email: "nick@example.com",
+  role: "Founder",
+  profiles: ["edgerunner", "als_developer"],
+  owns_company: true,
+  company_name: "Example Co",
+  company_type: "llc",
+  company_type_other: null,
+  revenue_band: "100k-1M",
+} as const);
+
+export default operator;
+```
+
+Rules:
+
+- `id` is required and must use lowercase slug tokens joined by hyphens.
+- The file basename must match the authored `id`: `nick-frith.ts` for `id: "nick-frith"`.
+- `display_name` may be `null`; SessionStart falls back to `first_name + " " + last_name`.
+- `profiles`, `company_type`, and `revenue_band` use the same enums as the operator-config reference surface.
+- Machine-local active selection does not live here. It lives in `.als/local/active-operator.json`, which must be gitignored through `.als/.gitignore`.
 
 ## module.ts
 

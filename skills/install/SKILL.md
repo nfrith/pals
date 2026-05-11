@@ -95,7 +95,7 @@ Do not interview for modules, entities, skills, or delamains here. Those belong 
 With `system_id` chosen, write the authored skeleton. Follow `references/bootstrap-templates.md` for exact contents.
 
 1. Create `.als/` and `.als/modules/` (the latter an empty directory).
-2. Write `.als/system.ts` with `als_version: 3`, the chosen `system_id`, and an empty `modules: {}` block.
+2. Write `.als/system.ts` with `als_version: 5`, the chosen `system_id`, and an empty `modules: {}` block.
 
 Do not author any modules, skills, or delamains. Those arrive via `/new` or `/foundry` in Phase 9.
 
@@ -166,7 +166,7 @@ CONFIG_PATH="$(bun ${CLAUDE_PLUGIN_ROOT}/alsc/compiler/src/cli.ts operator-confi
 Interpret the result:
 
 - If the config exists, do not ask profile questions again. Record `existing operator config — no change` and continue.
-- If the config is missing, invoke `als:configure-operator` via the Skill tool. No args. Wait for it to finish, then record `created operator config`.
+- If the config is missing, invoke `als:configure-operator` via the Skill tool. No args. Wait for it to finish, then record `created operator roster + local selector`.
 
 This phase happens only on first-time bootstrap. Re-running `/install` still refuses in Phase 3.
 
@@ -208,7 +208,7 @@ Report:
 - Authored skeleton files (Phase 5)
 - Validation and deploy results (Phase 6)
 - Git repo outcome (Phase 7) — `initialized new repo` with commit SHA, or `existing git working tree — no change`
-- Operator-config outcome (Phase 8) — `created operator config` or `existing operator config — no change`
+- Operator-config outcome (Phase 8) — `created operator roster + local selector` or `existing operator config — no change`
 - Phase 9 outcome — which skill was invoked, or "stopped at skeleton"
 
 Next commands the operator can reach for any time: `/new`, `/foundry`, `/change`, `/validate`, `/configure-operator`.

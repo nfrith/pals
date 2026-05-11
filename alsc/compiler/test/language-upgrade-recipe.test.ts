@@ -13,6 +13,7 @@ import {
 
 const alsRepoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
 const v3ToV4RecipeRoot = resolve(alsRepoRoot, "language-upgrades/recipes/v3-to-v4");
+const v4ToV5RecipeRoot = resolve(alsRepoRoot, "language-upgrades/recipes/v4-to-v5");
 
 function captureCli(args: string[]): { exitCode: number; stdout: string; stderr: string } {
   let stdout = "";
@@ -215,6 +216,25 @@ test("inspection accepts the shipped v3-to-v4 Delamain metadata recipe", () => {
   expect(inspection.recipe?.steps[0]).toEqual(expect.objectContaining({
     type: "script",
     path: "scripts/generate-state-labels-and-outcomes.sh",
+    args: [],
+    preconditions: ["als-version-matches-from", "validates-as-from-version"],
+    postconditions: ["als-version-matches-to", "validates-as-to-version"],
+  }));
+});
+
+test("inspection accepts the shipped v4-to-v5 operator roster recipe", () => {
+  const inspection = inspectLanguageUpgradeRecipe(v4ToV5RecipeRoot);
+
+  expect(inspection.status).toBe("pass");
+  expect(inspection.errors).toEqual([]);
+  expect(inspection.recipe?.from.als_version).toBe(4);
+  expect(inspection.recipe?.to.als_version).toBe(5);
+  expect(inspection.recipe?.steps.map((step) => step.id)).toEqual([
+    "migrate-operator-config-to-roster",
+  ]);
+  expect(inspection.recipe?.steps[0]).toEqual(expect.objectContaining({
+    type: "script",
+    path: "scripts/migrate-operator-config-to-roster.sh",
     args: [],
     preconditions: ["als-version-matches-from", "validates-as-from-version"],
     postconditions: ["als-version-matches-to", "validates-as-to-version"],

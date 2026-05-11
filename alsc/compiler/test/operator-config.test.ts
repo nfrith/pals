@@ -2,22 +2,25 @@ import { expect, test } from "bun:test";
 import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import type { OperatorConfig } from "../src/operator-config.ts";
+import type { LegacyOperatorConfig, OperatorConfig } from "../src/operator-config.ts";
 import {
   buildOperatorConfigSessionStartOutput,
-  inspectOperatorConfigSource,
+  inspectLegacyOperatorConfigSource,
+  inspectOperatorConfig,
   resolveOperatorConfigPath,
-  serializeOperatorConfigDocument,
+  serializeActiveOperatorSelection,
+  serializeLegacyOperatorConfigDocument,
+  serializeOperatorConfigSource,
+  serializeOperatorRosterSource,
+  selectSingletonActiveOperator,
 } from "../src/operator-config.ts";
 import { runCli } from "../src/cli.ts";
 
-const VALID_OPERATOR_CONFIG: OperatorConfig = {
-  config_version: 1,
-  created: "2026-04-25",
-  updated: "2026-04-25",
+const VALID_OPERATOR: OperatorConfig = {
+  id: "nick-frith",
   first_name: "Nick",
   last_name: "Frith",
-  display_name: null,
+  display_name: "0xnfrith",
   primary_email: "nick@example.com",
   role: "Founder",
   profiles: ["edgerunner"],
@@ -28,154 +31,178 @@ const VALID_OPERATOR_CONFIG: OperatorConfig = {
   revenue_band: "100k-1M",
 };
 
-test("resolveOperatorConfigPath resolves the system-scoped operator config path", async () => {
+const VALID_LEGACY_OPERATOR: LegacyOperatorConfig = {
+  config_version: 1,
+  created: "2026-04-25",
+  updated: "2026-04-25",
+  first_name: "Nick",
+  last_name: "Frith",
+  display_name: "0xnfrith",
+  primary_email: "nick@example.com",
+  role: "Founder",
+  profiles: ["edgerunner"],
+  owns_company: true,
+  company_name: "Example Co",
+  company_type: "llc",
+  company_type_other: null,
+  revenue_band: "100k-1M",
+};
+
+test("resolveOperatorConfigPath resolves the system-scoped operator roster path", async () => {
   await withTempDir("operator-config-path-resolution", async (root) => {
     const systemRoot = join(root, "system");
     await createAlsSystem(systemRoot);
 
-    expect(resolveOperatorConfigPath(systemRoot)).toBe(join(systemRoot, ".als", "operator.md"));
-    expect(resolveOperatorConfigPath(join(systemRoot, "nested", "path"))).toBe(join(systemRoot, ".als", "operator.md"));
-    expect(resolveOperatorConfigPath(join(systemRoot, ".als", "operator.md"))).toBe(join(systemRoot, ".als", "operator.md"));
+    expect(resolveOperatorConfigPath(systemRoot)).toBe(join(systemRoot, ".als", "operator-roster.ts"));
+    expect(resolveOperatorConfigPath(join(systemRoot, "nested", "path"))).toBe(join(systemRoot, ".als", "operator-roster.ts"));
   });
 });
 
-test("operator config round-trips through markdown serialization and inspection", () => {
-  const source = serializeOperatorConfigDocument({
-    config: VALID_OPERATOR_CONFIG,
+test("legacy operator config round-trips through markdown serialization and inspection", () => {
+  const source = serializeLegacyOperatorConfigDocument({
+    config: VALID_LEGACY_OPERATOR,
     body: "## Notes\n\nStable operator context.\n",
   });
-  const inspection = inspectOperatorConfigSource(source, "/tmp/operator.md");
+  const inspection = inspectLegacyOperatorConfigSource(source, "/tmp/operator.md");
 
   expect(inspection.status).toBe("pass");
   expect(inspection.errors).toEqual([]);
   expect(inspection.warnings).toEqual([]);
-  expect(inspection.config).toEqual(VALID_OPERATOR_CONFIG);
+  expect(inspection.config).toEqual(VALID_LEGACY_OPERATOR);
   expect(inspection.body).toContain("Stable operator context.");
 });
 
-test("operator config inspection rejects the legacy profile literal", () => {
-  const legacyProfile = ["op", "erator"].join("");
-  const inspection = inspectOperatorConfigSource(
-    serializeOperatorConfigDocument({
-      config: VALID_OPERATOR_CONFIG,
-      body: "",
-    }).replace("edgerunner", legacyProfile),
-    "/tmp/operator.md",
-  );
-
-  expect(inspection.status).toBe("fail");
-  expect(inspection.errors).toEqual(expect.arrayContaining([expect.objectContaining({ path: "profiles.0" })]));
-});
-
-test("operator config inspection blocks credential-like values", () => {
-  const source = serializeOperatorConfigDocument({
-    config: {
-      ...VALID_OPERATOR_CONFIG,
-      company_name: "sk-abcdefghijklmnopqrstuvwx123456",
-    },
-    body: "",
-  });
-  const inspection = inspectOperatorConfigSource(source, "/tmp/operator.md");
-
-  expect(inspection.status).toBe("fail");
-  expect(inspection.errors).toEqual([]);
-  expect(inspection.warnings).toHaveLength(1);
-  expect(inspection.warnings[0]?.path).toBe("company_name");
-});
-
-test("session-start output injects the operator reminder when the config is valid", async () => {
+test("session-start output injects the operator reminder when roster and selector are valid", async () => {
   await withTempDir("operator-config-session-start", async (root) => {
     const systemRoot = join(root, "system");
     const projectDir = join(systemRoot, "nested", "project");
-    const operatorConfigPath = join(systemRoot, ".als", "operator.md");
 
     await createAlsSystem(systemRoot);
     await mkdir(projectDir, { recursive: true });
-    await writeFile(
-      operatorConfigPath,
-      serializeOperatorConfigDocument({
-        config: VALID_OPERATOR_CONFIG,
-        body: "",
-      }),
-    );
+    await writeOperatorSurface(systemRoot, [VALID_OPERATOR], VALID_OPERATOR.id);
 
     const output = buildOperatorConfigSessionStartOutput(projectDir);
     expect(output).toContain("<system-reminder>");
     expect(output).toContain("Stable operator context loaded");
-    expect(output).toContain("Revenue band: 100k-1M");
+    expect(output).toContain("Operator ID: nick-frith");
   });
 });
 
-test("session-start output is a no-op outside ALS systems", () => {
-  const output = buildOperatorConfigSessionStartOutput("/tmp/not-an-als-system");
-  expect(output).toBe("");
+test("session-start output remediates when no roster surface exists", async () => {
+  await withTempDir("operator-config-missing-roster", async (root) => {
+    const systemRoot = join(root, "system");
+    await createAlsSystem(systemRoot);
+
+    const output = buildOperatorConfigSessionStartOutput(systemRoot);
+    expect(output).toContain("Operator config is not usable");
+    expect(output).toContain("No operator roster found");
+  });
+});
+
+test("session-start output remediates when selector points at an unknown operator id", async () => {
+  await withTempDir("operator-config-unknown-selector", async (root) => {
+    const systemRoot = join(root, "system");
+    await createAlsSystem(systemRoot);
+    await writeOperatorSurface(systemRoot, [VALID_OPERATOR], "other-operator");
+
+    const output = buildOperatorConfigSessionStartOutput(systemRoot);
+    expect(output).toContain("does not exist in the roster");
+    expect(output).toContain("other-operator");
+  });
 });
 
 test("session-start output is suppressed when the current ALS system opts out", async () => {
   await withTempDir("operator-config-session-start-skip", async (root) => {
     const systemRoot = join(root, "system");
-    const operatorConfigPath = join(systemRoot, ".als", "operator.md");
 
     await createAlsSystem(systemRoot);
     await writeFile(join(systemRoot, ".als", "skip-operator-config"), "skip\n");
-    await writeFile(
-      operatorConfigPath,
-      serializeOperatorConfigDocument({
-        config: VALID_OPERATOR_CONFIG,
-        body: "",
-      }),
-    );
+    await writeOperatorSurface(systemRoot, [VALID_OPERATOR], VALID_OPERATOR.id);
 
     const output = buildOperatorConfigSessionStartOutput(systemRoot);
     expect(output).toBe("");
   });
 });
 
-test("different ALS systems keep independent operator configs", async () => {
-  await withTempDir("operator-config-multi-system", async (root) => {
-    const systemA = join(root, "system-a");
-    const systemB = join(root, "system-b");
-    await createAlsSystem(systemA);
-    await createAlsSystem(systemB);
+test("inspectOperatorConfig reports missing for untouched systems", async () => {
+  await withTempDir("operator-config-inspect-missing", async (root) => {
+    const systemRoot = join(root, "system");
+    await createAlsSystem(systemRoot);
 
-    await writeFile(
-      join(systemA, ".als", "operator.md"),
-      serializeOperatorConfigDocument({
-        config: {
-          ...VALID_OPERATOR_CONFIG,
-          first_name: "Alice",
-          last_name: "Operator",
-          company_name: "Alpha Co",
-        },
-        body: "",
-      }),
-    );
-    await writeFile(
-      join(systemB, ".als", "operator.md"),
-      serializeOperatorConfigDocument({
-        config: {
-          ...VALID_OPERATOR_CONFIG,
-          first_name: "Bob",
-          last_name: "Builder",
-          company_name: "Beta Co",
-        },
-        body: "",
-      }),
-    );
-
-    const outputA = buildOperatorConfigSessionStartOutput(join(systemA, "nested"));
-    const outputB = buildOperatorConfigSessionStartOutput(join(systemB, "nested"));
-
-    expect(outputA).toContain("Alpha Co");
-    expect(outputA).toContain("Alice Operator");
-    expect(outputA).not.toContain("Beta Co");
-    expect(outputB).toContain("Beta Co");
-    expect(outputB).toContain("Bob Builder");
-    expect(outputB).not.toContain("Alpha Co");
+    const inspection = inspectOperatorConfig(systemRoot);
+    expect(inspection?.status).toBe("missing");
+    expect(inspection?.exists).toBe(false);
+    expect(inspection?.file_path).toBe(join(systemRoot, ".als", "operator-roster.ts"));
   });
 });
 
-test("cli operator-config inspect reports missing system-scoped files without failing", async () => {
+test("inspectOperatorConfig fails on basename and id mismatches", async () => {
+  await withTempDir("operator-config-basename-mismatch", async (root) => {
+    const systemRoot = join(root, "system");
+    await createAlsSystem(systemRoot);
+
+    await mkdir(join(systemRoot, ".als", "operators"), { recursive: true });
+    await writeFile(
+      join(systemRoot, ".als", "operator-roster.ts"),
+      serializeOperatorRosterSource({
+        operator_paths: ["./operators/not-nick.ts"],
+      }),
+      "utf-8",
+    );
+    await writeFile(
+      join(systemRoot, ".als", "operators", "not-nick.ts"),
+      serializeOperatorConfigSource(VALID_OPERATOR),
+      "utf-8",
+    );
+
+    const inspection = inspectOperatorConfig(systemRoot);
+    expect(inspection?.status).toBe("fail");
+    expect(inspection?.errors.some((issue) => issue.code === "operator.basename_mismatch")).toBe(true);
+  });
+});
+
+test("inspectOperatorConfig fails on duplicate operator ids", async () => {
+  await withTempDir("operator-config-duplicate-ids", async (root) => {
+    const systemRoot = join(root, "system");
+    await createAlsSystem(systemRoot);
+
+    await writeOperatorSurface(systemRoot, [
+      VALID_OPERATOR,
+      {
+        ...VALID_OPERATOR,
+        id: VALID_OPERATOR.id,
+        first_name: "Alice",
+        last_name: "Operator",
+        display_name: "alice",
+      },
+    ], VALID_OPERATOR.id, [
+      "./operators/nick-frith.ts",
+      "./operators/alice-operator.ts",
+    ]);
+
+    const inspection = inspectOperatorConfig(systemRoot);
+    expect(inspection?.status).toBe("fail");
+    expect(inspection?.errors.some((issue) => issue.code === "operator.id_duplicate")).toBe(true);
+  });
+});
+
+test("selectSingletonActiveOperator writes the local selector for one-entry rosters", async () => {
+  await withTempDir("operator-config-select-singleton", async (root) => {
+    const systemRoot = join(root, "system");
+    await createAlsSystem(systemRoot);
+    await writeOperatorSurface(systemRoot, [VALID_OPERATOR], null);
+
+    const result = selectSingletonActiveOperator(systemRoot);
+    expect(result.status).toBe("pass");
+    expect(result.operator_id).toBe(VALID_OPERATOR.id);
+
+    const inspection = inspectOperatorConfig(systemRoot);
+    expect(inspection?.status).toBe("pass");
+    expect(inspection?.config?.id).toBe(VALID_OPERATOR.id);
+  });
+});
+
+test("cli operator-config inspect reports missing systems without failing", async () => {
   await withTempDir("operator-config-cli-missing", async (root) => {
     const systemRoot = join(root, "system");
     await createAlsSystem(systemRoot);
@@ -185,7 +212,7 @@ test("cli operator-config inspect reports missing system-scoped files without fa
     const output = JSON.parse(result.stdout) as { status: string; exists: boolean; file_path: string };
     expect(output.status).toBe("missing");
     expect(output.exists).toBe(false);
-    expect(output.file_path).toBe(join(systemRoot, ".als", "operator.md"));
+    expect(output.file_path).toBe(join(systemRoot, ".als", "operator-roster.ts"));
   });
 });
 
@@ -198,44 +225,21 @@ test("cli operator-config path resolves the current ALS system", async () => {
 
     const result = captureCli(["operator-config", "path", nestedDir]);
     expect(result.exitCode).toBe(0);
-    expect(result.stdout.trim()).toBe(join(systemRoot, ".als", "operator.md"));
+    expect(result.stdout.trim()).toBe(join(systemRoot, ".als", "operator-roster.ts"));
   });
 });
 
-test("cli operator-config session-start prints remediation for invalid configs", async () => {
-  await withTempDir("operator-config-cli-remediation", async (root) => {
+test("cli operator-config select-singleton writes the local selector", async () => {
+  await withTempDir("operator-config-cli-select-singleton", async (root) => {
     const systemRoot = join(root, "system");
-    const projectDir = join(systemRoot, "project");
-    const operatorConfigPath = join(systemRoot, ".als", "operator.md");
-
     await createAlsSystem(systemRoot);
-    await mkdir(projectDir, { recursive: true });
-    await writeFile(
-      operatorConfigPath,
-      `---
-config_version: 1
-created: 2026-04-25
-updated: 2026-04-25
-first_name: Nick
-last_name: Frith
-display_name: null
-primary_email: not-an-email
-role: Founder
-profiles:
-  - edgerunner
-owns_company: false
-company_name: null
-company_type: null
-company_type_other: null
-revenue_band: null
----
-`,
-    );
+    await writeOperatorSurface(systemRoot, [VALID_OPERATOR], null);
 
-    const result = captureCli(["operator-config", "session-start", projectDir]);
+    const result = captureCli(["operator-config", "select-singleton", systemRoot]);
     expect(result.exitCode).toBe(0);
-    expect(result.stdout).toContain("Run /configure-operator to repair it");
-    expect(result.stdout).toContain("primary_email");
+    const output = JSON.parse(result.stdout) as { status: string; operator_id: string | null };
+    expect(output.status).toBe("pass");
+    expect(output.operator_id).toBe(VALID_OPERATOR.id);
   });
 });
 
@@ -256,7 +260,44 @@ function captureCli(args: string[]): { exitCode: number; stdout: string; stderr:
 
 async function createAlsSystem(systemRoot: string): Promise<void> {
   await mkdir(join(systemRoot, ".als"), { recursive: true });
-  await writeFile(join(systemRoot, ".als", "system.ts"), "export const system = {};\n");
+  await writeFile(join(systemRoot, ".als", "system.ts"), "export const system = {};\n", "utf-8");
+}
+
+async function writeOperatorSurface(
+  systemRoot: string,
+  operators: OperatorConfig[],
+  activeOperatorId: string | null,
+  operatorPaths = operators.map((operator) => `./operators/${operator.id}.ts`),
+): Promise<void> {
+  await mkdir(join(systemRoot, ".als", "operators"), { recursive: true });
+  await writeFile(
+    join(systemRoot, ".als", "operator-roster.ts"),
+    serializeOperatorRosterSource({
+      operator_paths: operatorPaths,
+    }),
+    "utf-8",
+  );
+
+  for (const [index, operator] of operators.entries()) {
+    const operatorPath = operatorPaths[index]!;
+    await writeFile(
+      join(systemRoot, ".als", operatorPath.replace(/^\.\//, "")),
+      serializeOperatorConfigSource(operator),
+      "utf-8",
+    );
+  }
+
+  if (activeOperatorId) {
+    await mkdir(join(systemRoot, ".als", "local"), { recursive: true });
+    await writeFile(
+      join(systemRoot, ".als", "local", "active-operator.json"),
+      serializeActiveOperatorSelection({
+        schema: "als-active-operator-selection@1",
+        operator_id: activeOperatorId,
+      }),
+      "utf-8",
+    );
+  }
 }
 
 async function withTempDir(label: string, run: (root: string) => Promise<void>): Promise<void> {

@@ -25,6 +25,8 @@ export interface DeprecationDiagnosticPayload {
 export type ValidationPhase =
   | "system_config"
   | "module_shape"
+  | "operator_roster"
+  | "operator_profile"
   | "parse"
   | "record_frontmatter"
   | "record_rows"

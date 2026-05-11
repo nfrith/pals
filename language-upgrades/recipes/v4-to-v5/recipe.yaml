@@ -1,0 +1,21 @@
+schema: als-language-upgrade-recipe@1
+from:
+  als_version: 4
+to:
+  als_version: 5
+summary: Migrate legacy operator config into the authored roster surface and flip the system to ALS v5.
+steps:
+  - id: migrate-operator-config-to-roster
+    title: Rewrite operator config into the v5 roster surface
+    type: script
+    category: must-run
+    depends_on: []
+    preconditions:
+      - als-version-matches-from
+      - validates-as-from-version
+    postconditions:
+      - als-version-matches-to
+      - validates-as-to-version
+    trigger: auto
+    path: scripts/migrate-operator-config-to-roster.sh
+    args: []

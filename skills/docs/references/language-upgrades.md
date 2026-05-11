@@ -72,6 +72,7 @@ Notes:
 - Post-step `git diff` / status is the source of truth for the actual mutation set.
 - Recipe-owned rewrites must be deterministic and idempotent. Re-running a completed hop should produce no further diff beyond the already-migrated target shape.
 - Any residual non-`.als/` path change fails the step closed.
+- Some hops intentionally require live-machine follow-through after the tracked commit lands. The shipped `v4 -> v5` operator-config hop is the reference case: the recipe rewrites tracked `.als/` files, then `/upgrade-language` or `/update` calls `alsc operator-config select-singleton` to write `.als/local/active-operator.json` on the live machine.
 - Caller-owned checkpoints are same-plan only. A resume checkpoint must match the requested target version and hop chain; stale checkpoint state fails closed rather than counting as progress.
 - Preflight discovers every `operator-prompt` step that can fire for the selected hop chain and option set.
 - Execute consumes a pre-collected operator-answer map and fails closed if a required answer is missing.

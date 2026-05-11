@@ -66,6 +66,7 @@ bun ${CLAUDE_PLUGIN_ROOT}/alsc/compiler/src/cli.ts upgrade-recipe inspect <recip
    - operator-prompt steps
    - recommended and optional steps
    - whether the selected hop includes any shipped bootstrap hygiene outside `.als/` (currently the v1→v2 runtime-ephemera cleanup step)
+   - whether the selected hop includes post-commit live-machine follow-through (currently the v4→v5 operator-config selector write)
    - that rollback is not supported
 7. Gather every `operator-prompt` answer before execute begins. Execute must not stop for a mid-run AskUserQuestion.
 
@@ -109,7 +110,14 @@ bun ${CLAUDE_PLUGIN_ROOT}/alsc/compiler/src/cli.ts validate <system-root>
 ```
 
 2. Report the final per-hop outcome, the final `als_version`, and any future obligations acknowledged during `operator-prompt` steps.
-3. If `/upgrade-language` is being run through `/update`, let the SDR 039 transaction wrapper own the staged `alsc deploy claude` refresh. Do not restate a competing projection contract here.
+3. If the upgraded system now contains `.als/operator-roster.ts` and does not yet contain `.als/local/active-operator.json`, write the machine-local selector through the compiler helper:
+
+```bash
+bun ${CLAUDE_PLUGIN_ROOT}/alsc/compiler/src/cli.ts operator-config select-singleton <system-root>
+```
+
+This is the canonical post-commit follow-through for the shipped `v4 -> v5` operator-config migration. If it fails, surface that failure explicitly and tell the operator SessionStart will keep remediating until the local selector is written.
+4. If `/upgrade-language` is being run through `/update`, let the SDR 039 transaction wrapper own the staged `alsc deploy claude` refresh. Do not restate a competing projection contract here.
 
 ## Boundaries
 

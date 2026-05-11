@@ -1,116 +1,130 @@
 ---
 name: configure-operator
-description: Create or update the operator profile stored at <system_root>/.als/operator.md, validate it, and keep it ready for SessionStart injection.
+description: Create or update the ALS operator roster, per-operator authored profile, and machine-local active-operator selector under <system_root>/.als/.
 allowed-tools: AskUserQuestion, Bash(bash *)
 ---
 
 # configure-operator
 
-Create or update the ALS operator profile at `<system_root>/.als/operator.md`.
+Create or update ALS v5 operator config.
 
-For the file contract and sensitive-data boundary, see [`../docs/references/operator-config.md`](../docs/references/operator-config.md).
+Reference contract: [`../docs/references/operator-config.md`](../docs/references/operator-config.md)
 
-## When to use
+## Canonical outputs
 
-- First-time operator onboarding when `/install` detects no operator config yet
-- Updating stable operator facts such as name, role, email, or company context
-- Repairing an invalid operator config after a SessionStart remediation reminder
+Tracked:
 
-## Procedure
+- `<system_root>/.als/operator-roster.ts`
+- `<system_root>/.als/operators/{operator_id}.ts`
+- `<system_root>/.als/.gitignore` containing `/local/`
 
-### Step 1 — Resolve and inspect the current config
+Machine-local, untracked:
 
-Resolve the canonical path through the compiler helper:
+- `<system_root>/.als/local/active-operator.json`
+
+## Step 1 — Inspect the current surface
+
+Resolve and inspect through compiler helpers:
 
 ```bash
-CONFIG_PATH="$(bun ${CLAUDE_PLUGIN_ROOT}/alsc/compiler/src/cli.ts operator-config path)"
-bun ${CLAUDE_PLUGIN_ROOT}/alsc/compiler/src/cli.ts operator-config inspect "$CONFIG_PATH"
+ROSTER_PATH="$(bun ${CLAUDE_PLUGIN_ROOT}/alsc/compiler/src/cli.ts operator-config path)"
+bun ${CLAUDE_PLUGIN_ROOT}/alsc/compiler/src/cli.ts operator-config inspect "${PWD}"
 ```
 
 Interpret the result:
 
-- `status: "missing"` — create mode
-- `status: "pass"` — update mode; preload current values and only re-ask fields the operator wants to change
-- `status: "fail"` — repair mode; show the reported errors/warnings, then continue with the questionnaire so the rewritten file comes back valid
+- `status: "missing"` — no roster exists yet; create one
+- `status: "pass"` — roster and active selector are usable; update or switch the active operator
+- `status: "fail"` — repair the reported problems before finishing
 
-### Step 2 — Interview for the approved v1 fields
+If inspection shows `legacy.exists: true` and `exists: false`, the system is still on the v4 `operator.md` surface. Tell the operator to run `/update` or `/upgrade-language` first if they want the one-shot migration path.
 
-Use `AskUserQuestion` for every field interaction. For free-text fields, ask one field at a time and rely on the tool's open-input slot. Do not switch to bare conversation or ask for multiple free-text fields in a bullet list.
+## Step 2 — Determine the operator to write
+
+Use `AskUserQuestion` for every field interaction.
+
+When no roster exists:
+
+- Ask for `first_name`
+- Ask for `last_name`
+- Ask for `display_name` (allow blank/null)
+- Derive a suggested stable operator id by slugifying `display_name` when present, otherwise `first_name + " " + last_name"`
+- Ask the operator to confirm or edit that id
+- Use the confirmed id as both the authored `id` field and the operator filename basename
+
+When a roster already exists:
+
+- Show the current roster ids
+- Ask whether to:
+  - update the current active operator
+  - switch the active machine to another existing operator id
+  - add a new operator entry
+
+Rules:
+
+- Operator ids must use lowercase slug tokens joined by hyphens.
+- Operator ids must be unique within the roster.
+- Do not ask for profiles on first creation; default to `["edgerunner"]`.
+- If editing an existing operator, show current values and re-ask only fields the operator wants to change.
+
+## Step 3 — Interview for operator fields
 
 Always capture:
+
 - `first_name`
 - `last_name`
 - `display_name` (allow blank/null)
 - `primary_email`
-- `role` — title examples only, such as `founder`, `CEO`, `engineer`, `PM`; never use profile names such as `edgerunner` or `als_architect`
+- `role`
 - `owns_company`
 
 Only when `owns_company` is true, also capture:
+
 - `company_name`
-- `company_type` — AskUserQuestion with: `llc (Recommended)`, `sole_prop`, `corp`, `ltd`, `partnership`, `nonprofit`, `other`
+- `company_type` — `llc (Recommended)`, `sole_prop`, `corp`, `ltd`, `partnership`, `nonprofit`, `other`
 - `company_type_other` only when `company_type` is `other`
-- `revenue_band` — AskUserQuestion with: `100k-1M (Recommended)`, `<100k`, `1M-10M`, `10M+`
+- `revenue_band` — `100k-1M (Recommended)`, `<100k`, `1M-10M`, `10M+`
 
-`profiles` handling:
-- If the config is missing, do **not** ask. Set `profiles` to `["edgerunner"]`.
-- If the config already exists, show the current profile list and ask whether to keep it or edit it.
-- If the operator wants to edit, allow only: `edgerunner`, `als_developer`, `als_architect`.
+Profile handling:
 
-Never store secrets here. If the operator offers a token, API key, password, private key, or any other credential, stop and redirect that value to `.env`, 1Password, or the OS keychain instead.
+- Default a new operator to `["edgerunner"]`
+- If editing an existing operator, allow only `edgerunner`, `als_developer`, `als_architect`
 
-### Step 3 — Write the canonical markdown file
+Never store secrets here.
 
-Write one markdown file at `$CONFIG_PATH` with YAML frontmatter only. Use today's date for `created` on first write and always bump `updated` on rewrite. The body may stay empty.
+## Step 4 — Write the authored files
 
-Template:
-
-```yaml
----
-config_version: 1
-created: YYYY-MM-DD
-updated: YYYY-MM-DD
-first_name: ...
-last_name: ...
-display_name: null
-primary_email: ...
-role: ...
-profiles:
-  - edgerunner
-owns_company: false
-company_name: null
-company_type: null
-company_type_other: null
-revenue_band: null
----
-```
-
-Before writing, create the parent directory if needed:
+1. Ensure the directories exist:
 
 ```bash
-mkdir -p "$(dirname "$CONFIG_PATH")"
+mkdir -p "<system_root>/.als/operators" "<system_root>/.als/local"
 ```
 
-### Step 4 — Validate the written file
-
-Immediately validate the rewritten file:
+2. Write `<system_root>/.als/operators/{operator_id}.ts` using `defineOperator(...)`.
+3. Write or update `<system_root>/.als/operator-roster.ts` so `operator_paths` contains every committed operator file path exactly once.
+4. Write or update `<system_root>/.als/.gitignore` so it contains `/local/`.
+5. Write the machine-local selector through the compiler helper, not by hand:
 
 ```bash
-bun ${CLAUDE_PLUGIN_ROOT}/alsc/compiler/src/cli.ts operator-config inspect "$CONFIG_PATH"
+bun ${CLAUDE_PLUGIN_ROOT}/alsc/compiler/src/cli.ts operator-config set-active "<system-root>" "<operator-id>"
 ```
 
-If validation fails or reports credential warnings, do not stop with a broken file. Continue the repair loop until the inspect output returns `status: "pass"`.
+## Step 5 — Validate
 
-### Step 5 — Confirm the outcome
+Immediately validate through the compiler helper:
+
+```bash
+bun ${CLAUDE_PLUGIN_ROOT}/alsc/compiler/src/cli.ts operator-config inspect "<system-root>"
+```
+
+If validation fails or reports credential warnings, keep repairing until inspection returns `status: "pass"`.
+
+## Step 6 — Confirm the outcome
 
 Report:
-- the resolved config path
-- whether this was a create, update, or repair run
-- which fields changed
-- that SessionStart will now inject the profile unless the current ALS system contains `.als/skip-operator-config`
 
-## Notes
-
-- This file is system-scoped. Each ALS system keeps its own `.als/operator.md`.
-- `/install` invokes this skill only when the config is missing.
-- Re-running `/install` does not reopen this flow; `/configure-operator` is the ongoing edit surface.
-- The usual `.als/CLAUDE.md` "do not edit" warning does not block this file. `/configure-operator` is the approved managed writer for `.als/operator.md`.
+- the roster path
+- the authored operator file path
+- the active operator id
+- whether this was a create, update, switch, or repair run
+- that SessionStart will now inject the selected operator unless `.als/skip-operator-config` exists

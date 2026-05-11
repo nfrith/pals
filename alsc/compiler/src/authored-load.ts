@@ -12,8 +12,8 @@ import { diag, reasons } from "./diagnostics.ts";
 import { toRepoRelative } from "./system-paths.ts";
 import type { CompilerDiagnostic } from "./types.ts";
 
-type AuthoredSourcePhase = "system_config" | "module_shape";
-type AuthoredExportName = "system" | "module" | "delamain";
+type AuthoredSourcePhase = "system_config" | "module_shape" | "operator_roster" | "operator_profile";
+type AuthoredExportName = "system" | "module" | "delamain" | "operatorRoster" | "operator";
 
 interface AuthoredValueIssue {
   path: Array<string | number>;
@@ -35,6 +35,8 @@ const LEGACY_AUTHORING_IMPORT_PATHS = {
   system: "./authoring.ts",
   module: "../../../authoring.ts",
   delamain: "../../../../../authoring.ts",
+  operatorRoster: "./authoring.ts",
+  operator: "../authoring.ts",
 } as const satisfies Record<AuthoredExportName, string>;
 
 export function loadAuthoredSourceExport(
@@ -260,7 +262,7 @@ function cleanupMaterializedSource(source: MaterializedAuthoredSourceResult): vo
 
 function createLegacyAuthoringShim(): string {
   return [
-    `export { defineSystem, defineModule, defineDelamain } from ${JSON.stringify(AUTHORING_RUNTIME_PATH)};`,
+    `export { defineSystem, defineModule, defineDelamain, defineOperatorRoster, defineOperator } from ${JSON.stringify(AUTHORING_RUNTIME_PATH)};`,
     "export {",
     "  COMPATIBILITY_CLASSES,",
     "  COMPATIBILITY_CLASS_METADATA,",

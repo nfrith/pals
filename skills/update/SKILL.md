@@ -262,6 +262,14 @@ Write the AskUserQuestion answers back to `$ANSWERS_JSON` as one JSON object key
 }
 ```
 
+4. After a successful transaction execute, inspect whether the language phase landed the operator-config `v4 -> v5` hop without a local selector. If `.als/operator-roster.ts` exists and `.als/local/active-operator.json` does not, call the compiler-owned helper:
+
+```bash
+bun ${CLAUDE_PLUGIN_ROOT}/alsc/compiler/src/cli.ts operator-config select-singleton "$SYSTEM_ROOT"
+```
+
+If that helper fails, surface the failure as mandatory post-commit follow-up. Do not claim the operator-config migration is fully complete while the selector is still missing.
+
 If any answer is a cancel or abort choice, stop before execute.
 
 4. Execute the prepared transaction with the answer map.
