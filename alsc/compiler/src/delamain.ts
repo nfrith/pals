@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { ALS_VERSION_V4 } from "./contracts.ts";
+import { ALS_VERSION_V4, ALS_VERSION_V5 } from "./contracts.ts";
 import { reasons } from "./diagnostics.ts";
 import { fieldNameSchema, kebabNameSchema as delamainNameSchema, nonEmptyStringSchema as nonEmptyString } from "./naming.ts";
 
@@ -172,10 +172,18 @@ const delamainTransitionSchema = z.object({
   to: delamainNameSchema,
 }).strict();
 
+const activeOperatorAssignmentModeSchema = z.enum(["opportunistic", "strict"]);
+
+const activeOperatorAssignmentSchema = z.object({
+  field: fieldNameSchema,
+  mode: activeOperatorAssignmentModeSchema,
+}).strict();
+
 export const delamainShapeSchema = z.object({
   phases: phasesSchema,
   states: z.record(delamainNameSchema, delamainStateSchema),
   concurrency_pools: z.record(delamainNameSchema, delamainConcurrencyPoolSchema).optional(),
+  requires_active_operator: activeOperatorAssignmentSchema.optional(),
   transitions: z.array(delamainTransitionSchema),
 }).strict().superRefine((value, ctx) => {
   if (Object.keys(value.states).length === 0) {
@@ -191,6 +199,8 @@ export type DelamainShape = z.infer<typeof delamainShapeSchema>;
 export type DelamainStateShape = z.infer<typeof delamainStateSchema>;
 export type DelamainConcurrencyPoolShape = z.infer<typeof delamainConcurrencyPoolSchema>;
 export type DelamainTransitionShape = z.infer<typeof delamainTransitionSchema>;
+export type DelamainActiveOperatorAssignmentMode = z.infer<typeof activeOperatorAssignmentModeSchema>;
+export type DelamainActiveOperatorAssignmentShape = z.infer<typeof activeOperatorAssignmentSchema>;
 export type DelamainStateActor = NonNullable<DelamainStateShape["actor"]>;
 export type DelamainAgentProvider = NonNullable<DelamainStateShape["provider"]>;
 export type DelamainTerminalOutcome = (typeof DELAMAIN_TERMINAL_OUTCOMES)[number];
@@ -242,6 +252,14 @@ export function validateDelamainDefinition(delamain: DelamainShape, alsVersion: 
     issues.push({
       path: ["states"],
       message: "Delamain must declare exactly one initial state",
+    });
+  }
+
+  if (delamain.requires_active_operator && alsVersion < ALS_VERSION_V5) {
+    issues.push({
+      path: ["requires_active_operator"],
+      message: `requires_active_operator requires als_version >= ${ALS_VERSION_V5}`,
+      reason: reasons.DELAMAIN_ACTIVE_OPERATOR_VERSION_UNSUPPORTED,
     });
   }
 

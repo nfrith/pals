@@ -19,6 +19,7 @@ import { formatDispatcherVersionLine, loadDispatcherVersionInfo } from "./dispat
 import { appendTelemetryEvent, DISPATCH_TELEMETRY_SCHEMA } from "./telemetry.js";
 import { createDrainControlPlane, type DrainControlPlane } from "./drain-control.js";
 import { scan } from "./watcher.js";
+import { resolveDispatchActiveOperator } from "./active-operator.js";
 
 function findSystemRoot(start: string): string {
   let dir = start;
@@ -72,6 +73,11 @@ if (config.submodules.length > 0) {
 if (config.discriminatorField) {
   console.log(`[dispatcher] discriminator: ${config.discriminatorField}=${config.discriminatorValue}`);
 }
+if (config.activeOperatorAssignment) {
+  console.log(
+    `[dispatcher] active-operator assignment: field=${config.activeOperatorAssignment.field} mode=${config.activeOperatorAssignment.mode}`,
+  );
+}
 console.log(`[dispatcher] states: ${config.allStates.join(", ")}`);
 console.log(`[dispatcher] watching: ${config.dispatchTable.map((e) => e.state).join(", ")}`);
 console.log(`[dispatcher] polling every ${POLL_MS}ms`);
@@ -110,6 +116,7 @@ let lastRuntimeHeartbeat: DispatcherRuntimeHeartbeat = {
 let lifecycleMode: DispatcherLifecycleMode = "running";
 let drainRequestedAt: string | null = null;
 let drainControl: DrainControlPlane | null = null;
+let lastActiveOperatorRefusalSignature: string | null = null;
 
 async function writeHeartbeat(itemsScanned: number) {
   lastRuntimeHeartbeat = await runtime.heartbeat();
@@ -174,6 +181,16 @@ function logCounts(prefix: string) {
   console.log(
     `${prefix} (active=${lastRuntimeHeartbeat.active_dispatches} [anthropic=${lastRuntimeHeartbeat.active_by_provider.anthropic}, openai=${lastRuntimeHeartbeat.active_by_provider.openai}], blocked=${lastRuntimeHeartbeat.blocked_dispatches}, orphaned=${lastRuntimeHeartbeat.orphaned_dispatches})`,
   );
+}
+
+function logActiveOperatorRefusal(messages: string[]) {
+  const signature = messages.join("\n");
+  if (lastActiveOperatorRefusalSignature === signature) {
+    return;
+  }
+
+  messages.forEach((message) => console.warn(message));
+  lastActiveOperatorRefusalSignature = signature;
 }
 
 async function updateHeartbeat() {
@@ -377,12 +394,37 @@ async function tick() {
     return;
   }
 
+  const activeOperatorResolution = await resolveDispatchActiveOperator(
+    SYSTEM_ROOT,
+    config.delamainName,
+    config.activeOperatorAssignment,
+  );
+  if (activeOperatorResolution.status === "refuse") {
+    lastItemsScanned = 0;
+    logActiveOperatorRefusal(activeOperatorResolution.messages);
+
+    const retries = await runtime.retryBlockedDirtyDispatches();
+    for (const retry of retries) {
+      logRetry(retry);
+      await writeRetryTelemetry(retry);
+    }
+
+    if (await maybeExitForDrain()) {
+      return;
+    }
+
+    await updateHeartbeat();
+    return;
+  }
+  lastActiveOperatorRefusalSignature = null;
+
   const items = await scan(
     config.moduleRoot,
     config.entityPath,
     config.statusField,
     config.discriminatorField,
     config.discriminatorValue,
+    activeOperatorResolution.status === "ready" ? activeOperatorResolution.filter : undefined,
   );
   lastItemsScanned = items.length;
 

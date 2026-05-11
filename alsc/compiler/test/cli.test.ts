@@ -23,12 +23,15 @@ import {
   removePath,
   updateRecord,
   updateShapeYaml,
+  updateTextFile,
   withFixtureSandbox,
+  withFixtureSandboxFromSource,
 } from "./helpers/fixture.ts";
 
 const backlogRecordIds = ["ITEM-0001", "ITEM-0002", "ITEM-0003"] as const;
 const compilerRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const alsRepoRoot = resolve(compilerRoot, "../..");
+const v5FixtureRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../../../language-upgrades/fixtures/v5");
 const sessionStartHookPath = resolve(alsRepoRoot, "hooks/operator-config-session-start.ts");
 const postValidateHookPath = resolve(alsRepoRoot, "hooks/als-validate.ts");
 const stopHookPath = resolve(alsRepoRoot, "hooks/als-stop-gate.ts");
@@ -150,6 +153,80 @@ async function writeValidOperatorConfig(root: string): Promise<void> {
     "utf-8",
   );
 }
+
+async function configureFactoryOperatorAssignment(
+  root: string,
+  mode: "opportunistic" | "strict" = "opportunistic",
+): Promise<void> {
+  await updateShapeYaml(root, "factory", 1, (shape) => {
+    const entities = shape.entities as Record<string, Record<string, unknown>>;
+    const itemFields = entities["work-item"].fields as Record<string, Record<string, unknown>>;
+    itemFields.assigned_operator = {
+      type: "operator-ref",
+      allow_null: mode === "strict" ? false : true,
+    };
+  });
+  await updateTextFile(
+    root,
+    ".als/modules/factory/v1/delamains/development-pipeline/delamain.ts",
+    (current) => current.replace(
+      '  "transitions": [',
+      `  "requires_active_operator": {\n    "field": "assigned_operator",\n    "mode": "${mode}"\n  },\n  "transitions": [`,
+    ),
+  );
+}
+
+test("cli operator-config assignment inspect returns projected active-operator defaults", async () => {
+  await withFixtureSandboxFromSource("operator-config-assignment-pass", v5FixtureRoot, async ({ root }) => {
+    await writeValidOperatorConfig(root);
+    await configureFactoryOperatorAssignment(root, "opportunistic");
+
+    const result = captureCli(["operator-config", "assignment", "inspect", root, "factory", "work-item"]);
+    expect(result.exitCode).toBe(0);
+
+    const output = JSON.parse(result.stdout) as {
+      schema: string;
+      status: string;
+      delamain_name: string | null;
+      assignment_required: boolean;
+      assignment: {
+        field: string;
+        mode: string;
+        operator_id: string;
+      } | null;
+    };
+    expect(output.schema).toBe("als-active-operator-assignment-inspection@1");
+    expect(output.status).toBe("pass");
+    expect(output.delamain_name).toBe("development-pipeline");
+    expect(output.assignment_required).toBe(true);
+    expect(output.assignment).toEqual({
+      field: "assigned_operator",
+      mode: "opportunistic",
+      operator_id: "nick-frith",
+    });
+  });
+});
+
+test("cli operator-config assignment inspect fails with remediation when the local selector is missing", async () => {
+  await withFixtureSandboxFromSource("operator-config-assignment-missing-selector", v5FixtureRoot, async ({ root }) => {
+    await writeValidOperatorConfig(root);
+    await configureFactoryOperatorAssignment(root, "strict");
+    await removePath(root, ".als/local/active-operator.json");
+
+    const result = captureCli(["operator-config", "assignment", "inspect", root, "factory", "work-item"]);
+    expect(result.exitCode).toBe(1);
+
+    const output = JSON.parse(result.stdout) as {
+      status: string;
+      assignment_required: boolean;
+      error: string | null;
+    };
+    expect(output.status).toBe("fail");
+    expect(output.assignment_required).toBe(true);
+    expect(output.error).toContain("Machine-local active-operator selector is missing");
+    expect(output.error).toContain(".als/local/active-operator.json");
+  });
+});
 
 test("alsc validate emits the validation output contract", async () => {
   await withFixtureSandbox("cli-validate", async ({ root }) => {

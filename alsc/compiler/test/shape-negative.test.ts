@@ -1,4 +1,6 @@
 import { expect, test } from "bun:test";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { codes, reasons } from "../src/diagnostics.ts";
 import {
   expectModuleDiagnostic,
@@ -6,7 +8,82 @@ import {
   updateTextFile,
   validateFixture,
   withFixtureSandbox,
+  withFixtureSandboxFromSource,
+  writePath,
 } from "./helpers/fixture.ts";
+
+const v5FixtureRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../../../language-upgrades/fixtures/v5");
+
+async function writeValidOperatorRoster(root: string): Promise<void> {
+  await writePath(
+    root,
+    ".als/operator-roster.ts",
+    [
+      'import { defineOperatorRoster } from "als:authoring";',
+      "",
+      "export const operatorRoster = defineOperatorRoster({",
+      '  operator_paths: ["./operators/nick-frith.ts"],',
+      "} as const);",
+      "",
+      "export default operatorRoster;",
+      "",
+    ].join("\n"),
+  );
+  await writePath(
+    root,
+    ".als/operators/nick-frith.ts",
+    [
+      'import { defineOperator } from "als:authoring";',
+      "",
+      "export const operator = defineOperator({",
+      '  id: "nick-frith",',
+      '  first_name: "Nick",',
+      '  last_name: "Frith",',
+      '  display_name: "0xnfrith",',
+      '  primary_email: "nick@example.com",',
+      '  role: "Founder",',
+      '  profiles: ["edgerunner"],',
+      "  owns_company: false,",
+      "  company_name: null,",
+      "  company_type: null,",
+      "  company_type_other: null,",
+      "  revenue_band: null,",
+      "} as const);",
+      "",
+      "export default operator;",
+      "",
+    ].join("\n"),
+  );
+}
+
+async function configureFactoryOperatorAssignmentShape(
+  root: string,
+  fieldShape: Record<string, unknown>,
+  assignmentField = "assigned_operator",
+  mode: "opportunistic" | "strict" = "opportunistic",
+): Promise<void> {
+  await updateShapeYaml(root, "factory", 1, (shape) => {
+    const entities = shape.entities as Record<string, Record<string, unknown>>;
+    const itemFields = entities["work-item"].fields as Record<string, Record<string, unknown>>;
+    itemFields[assignmentField] = fieldShape as Record<string, unknown>;
+  });
+  await configureFactoryOperatorAssignmentRequirement(root, assignmentField, mode);
+}
+
+async function configureFactoryOperatorAssignmentRequirement(
+  root: string,
+  assignmentField = "assigned_operator",
+  mode: "opportunistic" | "strict" = "opportunistic",
+): Promise<void> {
+  await updateTextFile(
+    root,
+    ".als/modules/factory/v1/delamains/development-pipeline/delamain.ts",
+    (current) => current.replace(
+      '  "transitions": [',
+      `  "requires_active_operator": {\n    "field": "${assignmentField}",\n    "mode": "${mode}"\n  },\n  "transitions": [`,
+    ),
+  );
+}
 
 test.concurrent("stale top-level schema fields in shape files are rejected", async () => {
   await withFixtureSandbox("shape-stale-schema-field", async ({ root }) => {
@@ -229,6 +306,84 @@ test.concurrent("unsupported file path bases are rejected", async () => {
     const result = validateFixture(root);
     expect(result.status).toBe("fail");
     expectModuleDiagnostic(result, "backlog", codes.SHAPE_INVALID, ".als/modules/backlog/v1/module.ts");
+  });
+});
+
+test.concurrent("operator-ref fields are rejected before the v5 operator-roster contract", async () => {
+  await withFixtureSandbox("shape-operator-ref-pre-v5", async ({ root }) => {
+    await updateShapeYaml(root, "backlog", 1, (shape) => {
+      const entities = shape.entities as Record<string, Record<string, unknown>>;
+      const itemFields = entities.item.fields as Record<string, Record<string, unknown>>;
+      itemFields.assigned_operator = {
+        type: "operator-ref",
+        allow_null: true,
+      };
+    });
+
+    const result = validateFixture(root);
+    expect(result.status).toBe("fail");
+    const diagnostic = expectModuleDiagnostic(result, "backlog", codes.SHAPE_CONTRACT_INVALID, ".als/modules/backlog/v1/module.ts");
+    expect(diagnostic.reason).toBe(reasons.OPERATOR_REF_VERSION_UNSUPPORTED);
+  });
+});
+
+test.concurrent("operator-ref fields require a valid v5 operator roster", async () => {
+  await withFixtureSandboxFromSource("shape-operator-ref-missing-roster", v5FixtureRoot, async ({ root }) => {
+    await updateShapeYaml(root, "backlog", 1, (shape) => {
+      const entities = shape.entities as Record<string, Record<string, unknown>>;
+      const itemFields = entities.item.fields as Record<string, Record<string, unknown>>;
+      itemFields.assigned_operator = {
+        type: "operator-ref",
+        allow_null: true,
+      };
+    });
+
+    const result = validateFixture(root);
+    expect(result.status).toBe("fail");
+    const diagnostic = expectModuleDiagnostic(result, "backlog", codes.SHAPE_CONTRACT_INVALID, ".als/modules/backlog/v1/module.ts");
+    expect(diagnostic.reason).toBe(reasons.OPERATOR_REF_ROSTER_UNAVAILABLE);
+  });
+});
+
+test.concurrent("requires_active_operator rejects missing effective assignment fields", async () => {
+  await withFixtureSandboxFromSource("shape-active-operator-contract-missing-field", v5FixtureRoot, async ({ root }) => {
+    await writeValidOperatorRoster(root);
+    await configureFactoryOperatorAssignmentRequirement(root, "assigned_operator", "opportunistic");
+
+    const result = validateFixture(root);
+    expect(result.status).toBe("fail");
+    const diagnostic = expectModuleDiagnostic(result, "factory", codes.DELAMAIN_CONTRACT_INVALID, ".als/modules/factory/v1/module.ts");
+    expect(diagnostic.reason).toBe(reasons.DELAMAIN_ACTIVE_OPERATOR_FIELD_MISSING);
+  });
+});
+
+test.concurrent("requires_active_operator rejects non-operator-ref bindings", async () => {
+  await withFixtureSandboxFromSource("shape-active-operator-contract-invalid-type", v5FixtureRoot, async ({ root }) => {
+    await writeValidOperatorRoster(root);
+    await configureFactoryOperatorAssignmentShape(root, {
+      type: "string",
+      allow_null: true,
+    }, "assigned_operator", "opportunistic");
+
+    const result = validateFixture(root);
+    expect(result.status).toBe("fail");
+    const diagnostic = expectModuleDiagnostic(result, "factory", codes.DELAMAIN_CONTRACT_INVALID, ".als/modules/factory/v1/module.ts");
+    expect(diagnostic.reason).toBe(reasons.DELAMAIN_ACTIVE_OPERATOR_FIELD_INVALID);
+  });
+});
+
+test.concurrent("requires_active_operator strict mode rejects nullable operator-ref bindings", async () => {
+  await withFixtureSandboxFromSource("shape-active-operator-contract-strict-nullable", v5FixtureRoot, async ({ root }) => {
+    await writeValidOperatorRoster(root);
+    await configureFactoryOperatorAssignmentShape(root, {
+      type: "operator-ref",
+      allow_null: true,
+    }, "assigned_operator", "strict");
+
+    const result = validateFixture(root);
+    expect(result.status).toBe("fail");
+    const diagnostic = expectModuleDiagnostic(result, "factory", codes.DELAMAIN_CONTRACT_INVALID, ".als/modules/factory/v1/module.ts");
+    expect(diagnostic.reason).toBe(reasons.DELAMAIN_ACTIVE_OPERATOR_STRICT_NULLABLE);
   });
 });
 

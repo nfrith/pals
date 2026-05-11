@@ -5,6 +5,7 @@ import { ZodError } from "zod";
 import { loadAuthoredSourceExport } from "./authored-load.ts";
 import {
   ALS_VERSION_V2,
+  ALS_VERSION_V5,
   ALS_UPGRADE_ASSISTANCE,
   ALS_UPGRADE_MODE,
   SUPPORTED_ALS_VERSIONS,
@@ -52,6 +53,7 @@ import {
   type DelamainShape,
   validateDelamainDefinition,
 } from "./delamain.ts";
+import { loadOperatorRoster, type LoadedOperatorRoster } from "./operator-config.ts";
 import {
   inferredMigrationsPath,
   inferredModuleBundlePath,
@@ -76,6 +78,7 @@ interface LoadedModuleContext {
   module_version: number;
   shape: ModuleShape;
   delamains: Map<string, LoadedDelamainBundle>;
+  operator_roster: LoadedOperatorRoster;
   templates: Map<string, ParsedPathTemplate>;
 }
 
@@ -459,6 +462,7 @@ function loadModuleState(systemRootAbs: string, systemConfig: SystemConfig, modu
     shapeResult.data,
     systemConfig.als_version,
   );
+  const operatorRoster = loadOperatorRoster(systemRootAbs);
 
   const context: LoadedModuleContext = {
     system_id: systemConfig.system_id,
@@ -473,6 +477,7 @@ function loadModuleState(systemRootAbs: string, systemConfig: SystemConfig, modu
     module_version: registryEntry.version,
     shape: shapeResult.data,
     delamains: delamainLoad.bundles,
+    operator_roster: operatorRoster,
     templates: new Map(Object.entries(shapeResult.data.entities).map(([entityName, entity]) => [entityName, parsePathTemplate(entity.path, entityName)])),
   };
 
@@ -1382,6 +1387,10 @@ function validateFieldValue(
       }
       break;
 
+    case "operator-ref":
+      diagnostics.push(...validateOperatorRefValue(record, context, fieldName, value));
+      break;
+
     case "ref":
       diagnostics.push(...validateRefContract(record, context, fieldName, fieldShape, value));
       break;
@@ -1531,6 +1540,63 @@ function validateJsonlRows(record: ParsedRecord): CompilerDiagnostic[] {
   }
 
   return diagnostics;
+}
+
+function validateOperatorRefValue(
+  record: ParsedRecord,
+  context: LoadedModuleContext,
+  fieldName: string,
+  value: unknown,
+): CompilerDiagnostic[] {
+  if (typeof value !== "string" || value.length === 0) {
+    return [
+      diag(codes.FM_TYPE_MISMATCH, "error", "record_frontmatter", record.file_rel, `Field '${fieldName}' must be a non-empty operator id`, {
+        module_id: record.module_id,
+        entity: record.entity_name,
+        field: fieldName,
+        expected: "non-empty operator id",
+        actual: typeof value,
+      }),
+    ];
+  }
+
+  const roster = context.operator_roster;
+  if (!roster.exists || roster.errors.length > 0 || !roster.roster) {
+    return [
+      diag(
+        codes.SHAPE_CONTRACT_INVALID,
+        "error",
+        "record_frontmatter",
+        record.file_rel,
+        `Field '${fieldName}' cannot validate operator-ref values because the operator roster is missing or invalid`,
+        {
+          module_id: record.module_id,
+          entity: record.entity_name,
+          field: fieldName,
+          reason: reasons.OPERATOR_REF_ROSTER_UNAVAILABLE,
+          expected: ".als/operator-roster.ts plus valid operator entries",
+          actual: roster.file_path,
+          hint: "Upgrade to the v5 operator-roster contract and repair roster errors before using operator-ref fields.",
+        },
+      ),
+    ];
+  }
+
+  const knownOperatorIds = new Set(roster.operators.map((entry) => entry.config.id));
+  if (!knownOperatorIds.has(value)) {
+    return [
+      diag(codes.FM_ENUM_INVALID, "error", "record_frontmatter", record.file_rel, `Field '${fieldName}' references unknown operator id '${value}'`, {
+        module_id: record.module_id,
+        entity: record.entity_name,
+        field: fieldName,
+        reason: reasons.OPERATOR_REF_UNKNOWN,
+        expected: [...knownOperatorIds].sort(),
+        actual: value,
+      }),
+    ];
+  }
+
+  return [];
 }
 
 function validateJsonlRowFieldValue(
@@ -3043,14 +3109,14 @@ function validateShapeContracts(
     }
 
     for (const [fieldName, fieldShape] of Object.entries(entityShape.fields)) {
-      diagnostics.push(...validateFieldContract(context, dependencySet, entityName, fieldName, fieldShape));
+      diagnostics.push(...validateFieldContract(context, systemConfig, dependencySet, entityName, fieldName, fieldShape));
     }
 
     if (isVariantEntityShape(entityShape)) {
       for (const [variantName, variant] of Object.entries(entityShape.variants)) {
         for (const [fieldName, fieldShape] of Object.entries(variant.fields)) {
           diagnostics.push(
-            ...validateFieldContract(context, dependencySet, entityName, `${variantName}.${fieldName}`, fieldShape),
+            ...validateFieldContract(context, systemConfig, dependencySet, entityName, `${variantName}.${fieldName}`, fieldShape),
           );
         }
       }
@@ -3064,6 +3130,7 @@ function validateShapeContracts(
 
 function validateFieldContract(
   context: LoadedModuleContext,
+  systemConfig: SystemConfig,
   dependencySet: Set<string>,
   entityName: string,
   fieldName: string,
@@ -3116,6 +3183,49 @@ function validateFieldContract(
     }
   }
 
+  if (fieldShape.type === "operator-ref") {
+    if (systemConfig.als_version < ALS_VERSION_V5) {
+      diagnostics.push(
+        diag(
+          codes.SHAPE_CONTRACT_INVALID,
+          "error",
+          "module_shape",
+          context.shape_path_rel,
+          `Field '${fieldName}' requires als_version >= ${ALS_VERSION_V5} because operator-ref resolves against the v5 operator roster contract`,
+          {
+            module_id: context.module_id,
+            entity: entityName,
+            field: fieldName,
+            reason: reasons.OPERATOR_REF_VERSION_UNSUPPORTED,
+            expected: `als_version >= ${ALS_VERSION_V5}`,
+            actual: systemConfig.als_version,
+          },
+        ),
+      );
+    }
+
+    if (!context.operator_roster.exists || context.operator_roster.errors.length > 0 || !context.operator_roster.roster) {
+      diagnostics.push(
+        diag(
+          codes.SHAPE_CONTRACT_INVALID,
+          "error",
+          "module_shape",
+          context.shape_path_rel,
+          `Field '${fieldName}' cannot use operator-ref without a valid operator roster at ${context.operator_roster.file_path}`,
+          {
+            module_id: context.module_id,
+            entity: entityName,
+            field: fieldName,
+            reason: reasons.OPERATOR_REF_ROSTER_UNAVAILABLE,
+            expected: ".als/operator-roster.ts plus valid operator entries",
+            actual: context.operator_roster.file_path,
+            hint: "Upgrade the system to the v5 operator-roster contract and repair any roster errors before using operator-ref fields.",
+          },
+        ),
+      );
+    }
+  }
+
   return diagnostics;
 }
 
@@ -3156,6 +3266,13 @@ function validatePlainEntityDelamainContracts(
       entityName,
       null,
       Object.keys(entityShape.fields),
+      rootBindings[0].delamain_name,
+    ));
+    diagnostics.push(...validateEffectiveSchemaActiveOperatorContract(
+      context,
+      entityName,
+      null,
+      entityShape.fields,
       rootBindings[0].delamain_name,
     ));
   }
@@ -3219,6 +3336,16 @@ function validateVariantEntityDelamainContracts(
       entityName,
       variantName,
       Object.keys(entityShape.fields).concat(Object.keys(variant.fields)),
+      effectiveBinding.delamain_name,
+    ));
+    diagnostics.push(...validateEffectiveSchemaActiveOperatorContract(
+      context,
+      entityName,
+      variantName,
+      {
+        ...entityShape.fields,
+        ...variant.fields,
+      },
       effectiveBinding.delamain_name,
     ));
   }
@@ -3310,6 +3437,83 @@ function validateEffectiveSchemaSessionFieldCollisions(
   }
 
   return diagnostics;
+}
+
+function validateEffectiveSchemaActiveOperatorContract(
+  context: LoadedModuleContext,
+  entityName: string,
+  variantName: string | null,
+  effectiveFields: Record<string, FieldShape>,
+  delamainName: string,
+): CompilerDiagnostic[] {
+  const bundle = context.delamains.get(delamainName);
+  const assignment = bundle?.shape.requires_active_operator;
+  if (!assignment) {
+    return [];
+  }
+
+  const fieldShape = effectiveFields[assignment.field];
+  if (!fieldShape) {
+    return [
+      diag(
+        codes.DELAMAIN_CONTRACT_INVALID,
+        "error",
+        "module_shape",
+        context.shape_path_rel,
+        `Delamain '${delamainName}' requires operator assignment field '${assignment.field}' on every effective entity schema`,
+        {
+          module_id: context.module_id,
+          entity: entityName,
+          field: assignment.field,
+          reason: reasons.DELAMAIN_ACTIVE_OPERATOR_FIELD_MISSING,
+          expected: `explicit operator-ref field '${assignment.field}'`,
+          actual: variantName ? `variant '${variantName}' does not declare it` : "field missing",
+        },
+      ),
+    ];
+  }
+
+  if (fieldShape.type !== "operator-ref") {
+    return [
+      diag(
+        codes.DELAMAIN_CONTRACT_INVALID,
+        "error",
+        "module_shape",
+        context.shape_path_rel,
+        `Delamain '${delamainName}' requires '${assignment.field}' to use field type 'operator-ref'`,
+        {
+          module_id: context.module_id,
+          entity: entityName,
+          field: assignment.field,
+          reason: reasons.DELAMAIN_ACTIVE_OPERATOR_FIELD_INVALID,
+          expected: "operator-ref",
+          actual: fieldShape.type,
+        },
+      ),
+    ];
+  }
+
+  if (assignment.mode === "strict" && fieldShape.allow_null) {
+    return [
+      diag(
+        codes.DELAMAIN_CONTRACT_INVALID,
+        "error",
+        "module_shape",
+        context.shape_path_rel,
+        `Delamain '${delamainName}' strict operator assignment requires '${assignment.field}' to declare allow_null: false`,
+        {
+          module_id: context.module_id,
+          entity: entityName,
+          field: assignment.field,
+          reason: reasons.DELAMAIN_ACTIVE_OPERATOR_STRICT_NULLABLE,
+          expected: "allow_null: false",
+          actual: true,
+        },
+      ),
+    ];
+  }
+
+  return [];
 }
 
 function validateSystemLayout(

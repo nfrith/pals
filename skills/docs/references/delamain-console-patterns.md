@@ -114,6 +114,22 @@ The operator selects an item to act on (entering the universal action pattern), 
 
 After every action completes, the console returns to the attention queue. Re-scan, re-present. The operator stays in the console until they exit or no items remain.
 
+## Create-Time Active Operator Stamping
+
+When a console creates a markdown record that may be bound to a Delamain, it should not re-implement assignment inference in prompt logic. Call the compiler-owned helper first:
+
+```bash
+alsc operator-config assignment inspect . <module-id> <entity-name> [discriminator-value]
+```
+
+Interpret the result this way:
+
+- `status: "fail"` — stop the create flow and surface the returned `error` remediation.
+- `assignment_required: false` — continue without writing any operator-assignment field.
+- `assignment_required: true` — stamp the returned `assignment.field` with the returned `assignment.operator_id` by default, and allow the operator to override that operator id before the file is written.
+
+This helper owns the roster lookup, the local active-operator selection lookup, the effective-entity binding resolution, and the remediation text for missing or invalid local selector state.
+
 ## Delamain-Driven vs Hand-Coded
 
 A hand-coded console defines a switch statement per operator state with custom actions for each. This works for small delamains but scales poorly — every new operator state requires new console code.

@@ -281,12 +281,12 @@ interface CredentialPattern {
   regex: RegExp;
 }
 
-interface LoadedOperatorEntry {
+export interface LoadedOperatorEntry {
   file_path: string;
   config: OperatorConfig;
 }
 
-interface LoadedOperatorRoster {
+export interface LoadedOperatorRoster {
   file_path: string;
   exists: boolean;
   roster: OperatorRoster | null;
@@ -822,7 +822,7 @@ function inspectOperatorConfigFromSystemRoot(systemRoot: string): OperatorConfig
   };
 }
 
-function loadOperatorRoster(systemRoot: string): LoadedOperatorRoster {
+export function loadOperatorRoster(systemRoot: string): LoadedOperatorRoster {
   const filePath = resolveOperatorConfigPathFromSystemRoot(systemRoot);
   if (!existsSync(filePath)) {
     return {
