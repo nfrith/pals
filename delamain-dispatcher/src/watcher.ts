@@ -6,6 +6,7 @@ import {
   readGitFileAtHead,
   readGitFileFromIndex,
 } from "./git.js";
+import type { DispatchActiveOperatorFilter } from "./active-operator.js";
 
 interface PathSegment {
   kind: "literal" | "placeholder";
@@ -194,6 +195,7 @@ export async function scan(
   statusField: string,
   discriminatorField?: string,
   discriminatorValue?: string,
+  activeOperatorFilter?: DispatchActiveOperatorFilter,
 ): Promise<WorkItem[]> {
   const requestedModuleRoot = resolve(moduleRoot);
   const moduleRootFromRepo = trimTrailingSlash(
@@ -223,6 +225,15 @@ export async function scan(
 
       if (discriminatorField && discriminatorValue) {
         if (frontmatter[discriminatorField] !== discriminatorValue) continue;
+      }
+
+      if (activeOperatorFilter) {
+        const assignmentValue = frontmatter[activeOperatorFilter.field];
+        if (assignmentValue === undefined || assignmentValue === null || assignmentValue === "") {
+          if (activeOperatorFilter.mode === "strict") continue;
+        } else if (typeof assignmentValue !== "string" || assignmentValue !== activeOperatorFilter.operatorId) {
+          continue;
+        }
       }
 
       const pending = await readPendingStatusChange(

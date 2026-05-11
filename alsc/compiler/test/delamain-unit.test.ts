@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { ALS_VERSION_V3, ALS_VERSION_V4 } from "../src/contracts.ts";
+import { ALS_VERSION_V3, ALS_VERSION_V4, ALS_VERSION_V5 } from "../src/contracts.ts";
 import { delamainShapeSchema, projectDelamainForDeploy, validateDelamainDefinition, type DelamainShape } from "../src/delamain.ts";
 
 function makeValidDelamain(): DelamainShape {
@@ -182,6 +182,42 @@ test("delamain shape schema accepts top-level concurrency pools", () => {
   });
 
   expect(result.success).toBe(true);
+});
+
+test("delamain shape schema accepts requires_active_operator object literals", () => {
+  const delamain = makeValidDelamain();
+  delamain.requires_active_operator = {
+    field: "assigned_operator",
+    mode: "opportunistic",
+  };
+
+  const result = delamainShapeSchema.safeParse(delamain);
+  expect(result.success).toBe(true);
+});
+
+test("delamain shape schema rejects requires_active_operator shorthand booleans", () => {
+  const delamain = {
+    ...makeValidDelamain(),
+    requires_active_operator: true,
+  };
+
+  const result = delamainShapeSchema.safeParse(delamain);
+  expect(result.success).toBe(false);
+});
+
+test("requires_active_operator is rejected before ALS v5 and accepted at v5", () => {
+  const delamain = makeValidDelamain();
+  delamain.requires_active_operator = {
+    field: "assigned_operator",
+    mode: "strict",
+  };
+
+  expect(validateDelamainDefinition(delamain, ALS_VERSION_V4)).toEqual([
+    expect.objectContaining({
+      path: ["requires_active_operator"],
+    }),
+  ]);
+  expect(validateDelamainDefinition(delamain, ALS_VERSION_V5)).toEqual([]);
 });
 
 test("delamain shape schema rejects duplicate states inside one concurrency pool", () => {

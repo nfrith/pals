@@ -210,6 +210,10 @@ const fieldSchema = z.discriminatedUnion("type", [
     delamain: entityName,
   }),
   z.object({
+    type: z.literal("operator-ref"),
+    ...commonFieldShape,
+  }),
+  z.object({
     type: z.literal("ref"),
     ...commonFieldShape,
     target: targetSchema,

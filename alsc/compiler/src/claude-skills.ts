@@ -3,7 +3,7 @@ import { dirname, resolve } from "node:path";
 import { stringify as stringifyYaml } from "yaml";
 import { loadAuthoredSourceExport } from "./authored-load.ts";
 import { DEPLOY_OUTPUT_SCHEMA_LITERAL } from "./contracts.ts";
-import type { DelamainAgentProvider, DelamainShape } from "./delamain.ts";
+import type { DelamainActiveOperatorAssignmentShape, DelamainAgentProvider, DelamainShape } from "./delamain.ts";
 import { delamainShapeSchema, projectDelamainForDeploy } from "./delamain.ts";
 import type { FieldShape, ModuleShape, SystemConfig } from "./schema.ts";
 import { moduleShapeSchema } from "./schema.ts";
@@ -47,6 +47,7 @@ interface ClaudeDelamainProjectionWorkPlan extends ClaudeDelamainProjectionPlan 
   status_field: string;
   discriminator_field: string | null;
   discriminator_value: string | null;
+  active_operator_assignment?: DelamainActiveOperatorAssignmentShape;
   submodules: string[];
   state_providers: Record<string, DelamainAgentProvider>;
   limits?: DelamainRuntimeLimits;
@@ -490,6 +491,9 @@ function buildProjectionPlans(
         status_field: binding.status_field,
         discriminator_field: binding.discriminator_field,
         discriminator_value: binding.discriminator_value,
+        ...(loadedDelamain.shape.requires_active_operator
+          ? { active_operator_assignment: loadedDelamain.shape.requires_active_operator }
+          : {}),
         submodules: runtimeManifestConfig.config.submodules,
         state_providers: collectStateProviders(loadedDelamain.shape),
         limits: runtimeManifestConfig.config.limits,
@@ -941,6 +945,7 @@ function writeDelamainRuntimeManifest(plan: ClaudeDelamainProjectionWorkPlan): v
     status_field: plan.status_field,
     discriminator_field: plan.discriminator_field,
     discriminator_value: plan.discriminator_value,
+    ...(plan.active_operator_assignment ? { active_operator_assignment: plan.active_operator_assignment } : {}),
     submodules: plan.submodules,
     state_providers: plan.state_providers,
     ...(plan.limits ? { limits: plan.limits } : {}),

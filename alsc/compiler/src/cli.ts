@@ -3,6 +3,7 @@
 import { resolve } from "node:path";
 import { inspectChangelogFile } from "./changelog.ts";
 import { deployClaudeSkills } from "./claude-skills.ts";
+import { inspectActiveOperatorAssignment } from "./active-operator-assignment.ts";
 import {
   inspectConstructActionManifest,
   inspectConstructManifest,
@@ -31,6 +32,7 @@ const MAIN_USAGE = `Usage:
   alsc operator-config session-start [cwd]
   alsc operator-config set-active [system-root-or-cwd] <operator-id>
   alsc operator-config select-singleton [system-root-or-cwd]
+  alsc operator-config assignment inspect <system-root-or-cwd> <module-id> <entity-name> [discriminator-value]
 
 Commands:
   validate        Validate an ALS system and emit JSON.
@@ -55,7 +57,8 @@ const OPERATOR_CONFIG_USAGE = `Usage:
   alsc operator-config inspect [system-root-or-cwd]
   alsc operator-config session-start [cwd]
   alsc operator-config set-active [system-root-or-cwd] <operator-id>
-  alsc operator-config select-singleton [system-root-or-cwd]`;
+  alsc operator-config select-singleton [system-root-or-cwd]
+  alsc operator-config assignment inspect <system-root-or-cwd> <module-id> <entity-name> [discriminator-value]`;
 
 export interface CliIo {
   stdout(value: string): void;
@@ -323,6 +326,23 @@ function runOperatorConfigCommand(
     const result = selectSingletonActiveOperator(rest[0] ?? process.cwd());
     writeStdout(io, JSON.stringify(result, null, 2));
     return result.status === "pass" ? 0 : 1;
+  }
+
+  if (subcommand === "assignment") {
+    if (rest.length < 4 || rest.length > 5 || rest[0] !== "inspect") {
+      writeStderr(io, `${OPERATOR_CONFIG_USAGE}\n`);
+      return 2;
+    }
+
+    const [, startPath, moduleId, entityName, discriminatorValue] = rest;
+    const inspection = inspectActiveOperatorAssignment(startPath!, moduleId!, entityName!, discriminatorValue);
+    if (!inspection) {
+      writeStderr(io, "Unable to resolve ALS system root for active-operator assignment inspection.\n");
+      return 1;
+    }
+
+    writeStdout(io, JSON.stringify(inspection, null, 2));
+    return inspection.status === "pass" ? 0 : 1;
   }
 
   writeStderr(io, `${OPERATOR_CONFIG_USAGE}\n`);

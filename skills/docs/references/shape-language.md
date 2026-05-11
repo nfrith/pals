@@ -237,6 +237,7 @@ Supported field types:
 - `date`
 - `enum`
 - `delamain`
+- `operator-ref`
 - `ref`
 - `file_path`
 - `list`
@@ -269,6 +270,22 @@ owner: {
 ```
 
 Cross-module refs require a declared dependency on the target module.
+
+### operator-ref
+
+```ts
+assigned_operator: {
+  type: "operator-ref",
+  allow_null: true,
+}
+```
+
+Rules:
+
+- `operator-ref` requires `als_version >= 5`.
+- `operator-ref` requires a valid committed operator roster at `.als/operator-roster.ts`.
+- Persisted values must be non-empty operator ids present in that roster.
+- Use `allow_null: false` when the bound Delamain requires strict assignment.
 
 ### file_path
 
@@ -578,6 +595,18 @@ Rules:
 - Delamain registry paths in `module.ts` are module-bundle-relative.
 - Delamain-local agent asset paths inside `delamain.ts` are Delamain-bundle-relative.
 - Delamain prompt assets stay filesystem assets beside the authored definition.
+- `requires_active_operator` is optional and, when present, must stay explicit:
+
+  ```ts
+  requires_active_operator: {
+    field: "assigned_operator",
+    mode: "opportunistic", // or "strict"
+  }
+  ```
+
+- `requires_active_operator.field` must exist on every effective entity schema bound to that Delamain and must use `type: "operator-ref"`.
+- `requires_active_operator.mode: "strict"` additionally requires the bound field to declare `allow_null: false`.
+- `requires_active_operator` requires `als_version >= 5`.
 - Every authored state declares `label`.
 - Every terminal authored state declares `outcome: "success" | "stopped" | "errored"`.
 - Authors do not declare `customer_bucket`; the compiler projects it into deployed `delamain.yaml`.
@@ -622,7 +651,7 @@ Authored Delamains are TypeScript, but Claude deploy still writes a runtime `del
 ### system.ts Detailed Rules
 
 - `als_version` is required and must be a positive integer.
-- ALS currently supports `als_version` values 1, 2, 3, and 4.
+- ALS currently supports `als_version` values 1, 2, 3, 4, and 5.
 - ALS language-version upgrades remain whole-system cutovers. Mixed authored ALS versions inside one system are not part of the v1 contract.
 - `system_id` is required and must be a non-empty string.
 - Module ids must match `^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$`.
@@ -734,6 +763,21 @@ status: {
 - Must not also declare `allowed_values`.
 - May appear at most once per effective entity schema. For plain entities, at most one `type: delamain` field on the entity. For variant entities, if root/base fields declare one, variants declare none; if root/base fields declare none, each variant may declare at most one.
 - Invalid persisted Delamain state values are reported through the same invalid-value diagnostic family used for plain enums.
+
+#### operator-ref
+
+```ts
+assigned_operator: {
+  type: "operator-ref",
+  allow_null: true,
+}
+```
+
+- Requires `als_version >= 5`.
+- Requires a valid authored operator roster at `.als/operator-roster.ts`.
+- Persisted values must be non-empty operator ids present in that roster.
+- When a bound Delamain declares `requires_active_operator`, the referenced field must use `type: "operator-ref"`.
+- `requires_active_operator.mode: "strict"` requires the field to declare `allow_null: false`.
 
 #### ref
 

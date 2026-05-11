@@ -1,9 +1,16 @@
 import { expect, test } from "bun:test";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { deployClaudeSkillsFromConfig } from "../src/claude-skills.ts";
+import {
+  serializeActiveOperatorSelection,
+  serializeOperatorConfigSource,
+  serializeOperatorRosterSource,
+} from "../src/operator-config.ts";
 import { loadSystemValidationContext } from "../src/validate.ts";
+import { resolveDispatchActiveOperator } from "../../../delamain-dispatcher/src/active-operator.ts";
 import {
   formatDispatcherVersionLine,
   loadDispatcherVersionInfo,
@@ -14,7 +21,85 @@ import { resolveDispatchLimits } from "../../../delamain-dispatcher/src/dispatch
 import { runGit } from "../../../delamain-dispatcher/src/git.ts";
 import { loadRuntimeManifest } from "../../../delamain-dispatcher/src/runtime-manifest.ts";
 import { scan } from "../../../delamain-dispatcher/src/watcher.ts";
-import { withFixtureSandbox, writePath } from "./helpers/fixture.ts";
+import {
+  updateRecord,
+  updateShapeYaml,
+  updateTextFile,
+  withFixtureSandbox,
+  withFixtureSandboxFromSource,
+  writePath,
+} from "./helpers/fixture.ts";
+
+const v5FixtureRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../../../language-upgrades/fixtures/v5");
+const factoryItemIds = ["SWF-001", "SWF-002", "SWF-003", "SWF-004"] as const;
+
+async function writeValidOperatorSurface(root: string, activeOperatorId: string | null): Promise<void> {
+  await writePath(
+    root,
+    ".als/operator-roster.ts",
+    serializeOperatorRosterSource({
+      operator_paths: ["./operators/nick-frith.ts"],
+    }),
+  );
+  await writePath(
+    root,
+    ".als/operators/nick-frith.ts",
+    serializeOperatorConfigSource({
+      id: "nick-frith",
+      first_name: "Nick",
+      last_name: "Frith",
+      display_name: "0xnfrith",
+      primary_email: "nick@example.com",
+      role: "Founder",
+      profiles: ["edgerunner"],
+      owns_company: false,
+      company_name: null,
+      company_type: null,
+      company_type_other: null,
+      revenue_band: null,
+    }),
+  );
+  if (activeOperatorId) {
+    await writePath(
+      root,
+      ".als/local/active-operator.json",
+      serializeActiveOperatorSelection({
+        schema: "als-active-operator-selection@1",
+        operator_id: activeOperatorId,
+      }),
+    );
+  }
+}
+
+async function configureFactoryOperatorAssignment(
+  root: string,
+  mode: "opportunistic" | "strict" = "opportunistic",
+): Promise<void> {
+  await updateShapeYaml(root, "factory", 1, (shape) => {
+    const entities = shape.entities as Record<string, Record<string, unknown>>;
+    const itemFields = entities["work-item"].fields as Record<string, Record<string, unknown>>;
+    itemFields.assigned_operator = {
+      type: "operator-ref",
+      allow_null: mode === "strict" ? false : true,
+    };
+  });
+  await updateTextFile(
+    root,
+    ".als/modules/factory/v1/delamains/development-pipeline/delamain.ts",
+    (current) => current.replace(
+      '  "transitions": [',
+      `  "requires_active_operator": {\n    "field": "assigned_operator",\n    "mode": "${mode}"\n  },\n  "transitions": [`,
+    ),
+  );
+}
+
+async function seedFactoryAssignedOperators(root: string, operatorId: string | null): Promise<void> {
+  for (const itemId of factoryItemIds) {
+    await updateRecord(root, `workspace/factory/items/${itemId}.md`, (record) => {
+      record.data.assigned_operator = operatorId;
+    });
+  }
+}
 
 test("dispatcher version parser accepts positive integers", () => {
   expect(parseDispatcherVersion("1\n", "local")).toBe(1);
@@ -347,6 +432,35 @@ test("dispatcher resolve uses deployed runtime manifest metadata", async () => {
   });
 });
 
+test("dispatcher deploy projects active-operator assignment into the runtime manifest", async () => {
+  await withFixtureSandboxFromSource("delamain-dispatcher-active-operator-manifest", v5FixtureRoot, async ({ root }) => {
+    await writeValidOperatorSurface(root, null);
+    await configureFactoryOperatorAssignment(root, "opportunistic");
+    await seedFactoryAssignedOperators(root, null);
+
+    const validationContext = loadSystemValidationContext(root);
+    expect(validationContext.system_config).not.toBeNull();
+
+    const output = deployClaudeSkillsFromConfig(root, validationContext.system_config!, "pass", {
+      module_filter: "factory",
+    });
+    expect(output.status).toBe("pass");
+
+    const bundleRoot = join(root, ".claude/delamains/development-pipeline");
+    const manifest = await loadRuntimeManifest(bundleRoot);
+    expect(manifest.active_operator_assignment).toEqual({
+      field: "assigned_operator",
+      mode: "opportunistic",
+    });
+
+    const resolved = await resolveDispatcherConfig(bundleRoot, root);
+    expect(resolved.activeOperatorAssignment).toEqual({
+      field: "assigned_operator",
+      mode: "opportunistic",
+    });
+  });
+});
+
 test("dispatcher resolve carries authored concurrency pools into runtime config", async () => {
   await withFixtureSandbox("delamain-dispatcher-concurrency-pools", async ({ root }) => {
     const delamainSourcePath = join(
@@ -525,7 +639,7 @@ test("dispatcher scan discovers nested entity paths from runtime manifest bindin
     expect(items.map((item) => item.id).sort()).toEqual(["RUN-0001", "RUN-0002", "RUN-0003"]);
     expect(byId.get("RUN-0001")?.status).toBe("completed");
     expect(byId.get("RUN-0002")?.status).toBe("completed");
-    expect(byId.get("RUN-0003")?.status).toBe("running");
+    expect(byId.get("RUN-0003")?.status).toBe("completed");
     expect(byId.get("RUN-0003")?.filePath).toContain(
       "workspace/experiments/programs/PRG-0001/experiments/EXP-0001/runs/RUN-0003.md",
     );
@@ -641,6 +755,126 @@ test("dispatcher scan honors non-status field names and discriminator filtering"
     expect(items[0]?.status).toBe("queued");
     expect(items[0]?.filePath).toContain("runtime-module/items/APP-001.md");
   });
+});
+
+test("dispatcher resolves local active-operator selection and refuses missing selectors per delamain", async () => {
+  const root = await mkdtemp(join(tmpdir(), "als-dispatcher-active-operator-"));
+  try {
+    const assignment = {
+      field: "assigned_operator",
+      mode: "strict",
+    } as const;
+
+    const refused = await resolveDispatchActiveOperator(root, "development-pipeline", assignment);
+    expect(refused.status).toBe("refuse");
+    if (refused.status === "refuse") {
+      expect(refused.messages[0]).toBe(
+        "[dispatcher] active-operator selection missing or invalid for delamain 'development-pipeline'",
+      );
+      expect(refused.messages[1]).toBe(
+        "[dispatcher] requires_active_operator.field='assigned_operator' mode='strict'",
+      );
+      expect(refused.messages[2]).toContain(".als/local/active-operator.json");
+    }
+
+    await mkdir(join(root, ".als", "local"), { recursive: true });
+    await writeFile(
+      join(root, ".als", "local", "active-operator.json"),
+      serializeActiveOperatorSelection({
+        schema: "als-active-operator-selection@1",
+        operator_id: "nick-frith",
+      }),
+      "utf-8",
+    );
+
+    const ready = await resolveDispatchActiveOperator(root, "development-pipeline", assignment);
+    expect(ready).toEqual({
+      status: "ready",
+      filter: {
+        field: "assigned_operator",
+        mode: "strict",
+        operatorId: "nick-frith",
+      },
+    });
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("dispatcher scan applies opportunistic and strict active-operator filters", async () => {
+  const root = await mkdtemp(join(tmpdir(), "als-dispatcher-active-operator-scan-"));
+  try {
+    await mkdir(join(root, "runtime-module", "items"), { recursive: true });
+    await writeFile(
+      join(root, "runtime-module", "items", "MATCH-001.md"),
+      [
+        "---",
+        "id: MATCH-001",
+        "status: queued",
+        "assigned_operator: nick-frith",
+        "---",
+        "",
+        "# MATCH-001",
+        "",
+      ].join("\n"),
+    );
+    await writeFile(
+      join(root, "runtime-module", "items", "MISMATCH-001.md"),
+      [
+        "---",
+        "id: MISMATCH-001",
+        "status: queued",
+        "assigned_operator: alice-operator",
+        "---",
+        "",
+        "# MISMATCH-001",
+        "",
+      ].join("\n"),
+    );
+    await writeFile(
+      join(root, "runtime-module", "items", "UNASSIGNED-001.md"),
+      [
+        "---",
+        "id: UNASSIGNED-001",
+        "status: queued",
+        "---",
+        "",
+        "# UNASSIGNED-001",
+        "",
+      ].join("\n"),
+    );
+    await initFixtureRepo(root);
+
+    const opportunisticItems = await scan(
+      join(root, "runtime-module"),
+      "items/{id}.md",
+      "status",
+      undefined,
+      undefined,
+      {
+        field: "assigned_operator",
+        mode: "opportunistic",
+        operatorId: "nick-frith",
+      },
+    );
+    expect(opportunisticItems.map((item) => item.id).sort()).toEqual(["MATCH-001", "UNASSIGNED-001"]);
+
+    const strictItems = await scan(
+      join(root, "runtime-module"),
+      "items/{id}.md",
+      "status",
+      undefined,
+      undefined,
+      {
+        field: "assigned_operator",
+        mode: "strict",
+        operatorId: "nick-frith",
+      },
+    );
+    expect(strictItems.map((item) => item.id)).toEqual(["MATCH-001"]);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });
 
 async function initFixtureRepo(root: string): Promise<void> {

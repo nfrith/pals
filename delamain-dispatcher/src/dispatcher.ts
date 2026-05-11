@@ -15,7 +15,10 @@ import { parseMd, readFrontmatterField, setFrontmatterField } from "./frontmatte
 import type { AgentProvider } from "./provider.js";
 import { buildSessionRuntimeState, shouldPersistDispatcherSession } from "./session-runtime.js";
 import { recoverFreshDispatchAfterMissingResumeSession } from "./resume-recovery.js";
-import { loadRuntimeManifest } from "./runtime-manifest.js";
+import {
+  loadRuntimeManifest,
+  type RuntimeManifestActiveOperatorAssignment,
+} from "./runtime-manifest.js";
 import {
   appendTelemetryEvent,
   DISPATCH_TELEMETRY_SCHEMA,
@@ -84,6 +87,7 @@ export interface ResolvedConfig {
   maxBudgetUsdByProvider: Record<AgentProvider, number>;
   discriminatorField?: string;
   discriminatorValue?: string;
+  activeOperatorAssignment?: RuntimeManifestActiveOperatorAssignment;
   agents: Record<string, AgentDef>;
   allStates: string[];
   concurrencyPools: Record<string, ResolvedConcurrencyPool>;
@@ -230,6 +234,7 @@ export async function resolve(
     maxBudgetUsdByProvider: effectiveLimits.maxBudgetUsdByProvider,
     discriminatorField: manifest.discriminator_field ?? undefined,
     discriminatorValue: manifest.discriminator_value ?? undefined,
+    activeOperatorAssignment: manifest.active_operator_assignment,
     agents,
     allStates: Object.keys(delamain.states),
     concurrencyPools,

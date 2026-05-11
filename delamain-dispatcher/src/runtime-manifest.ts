@@ -13,9 +13,15 @@ export interface RuntimeManifest {
   status_field: string;
   discriminator_field: string | null;
   discriminator_value: string | null;
+  active_operator_assignment?: RuntimeManifestActiveOperatorAssignment;
   submodules: string[];
   state_providers: Record<string, AgentProvider>;
   limits?: RuntimeManifestLimits;
+}
+
+export interface RuntimeManifestActiveOperatorAssignment {
+  field: string;
+  mode: "opportunistic" | "strict";
 }
 
 export interface RuntimeManifestLimits {
@@ -117,6 +123,11 @@ export async function loadRuntimeManifest(bundleRoot: string): Promise<RuntimeMa
     }
   }
 
+  const activeOperatorAssignment = normalizeActiveOperatorAssignment(
+    bundleRoot,
+    manifest.active_operator_assignment,
+  );
+
   const submodules = normalizeSubmodules(bundleRoot, manifest.submodules);
   const stateProviders = normalizeStateProviders(bundleRoot, manifest.state_providers);
   const limits = normalizeLimits(bundleRoot, manifest.limits);
@@ -132,9 +143,42 @@ export async function loadRuntimeManifest(bundleRoot: string): Promise<RuntimeMa
     status_field: requireStringField(manifest, "status_field"),
     discriminator_field: manifest.discriminator_field ?? null,
     discriminator_value: manifest.discriminator_value ?? null,
+    ...(activeOperatorAssignment ? { active_operator_assignment: activeOperatorAssignment } : {}),
     submodules,
     state_providers: stateProviders,
     limits,
+  };
+}
+
+function normalizeActiveOperatorAssignment(
+  bundleRoot: string,
+  value: unknown,
+): RuntimeManifestActiveOperatorAssignment | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error(
+      `Invalid runtime-manifest.json in '${bundleRoot}': 'active_operator_assignment' must be an object`,
+    );
+  }
+
+  const assignment = value as Record<string, unknown>;
+  if (typeof assignment.field !== "string" || assignment.field.trim().length === 0) {
+    throw new Error(
+      `Invalid runtime-manifest.json in '${bundleRoot}': 'active_operator_assignment.field' must be a non-empty string`,
+    );
+  }
+  if (assignment.mode !== "opportunistic" && assignment.mode !== "strict") {
+    throw new Error(
+      `Invalid runtime-manifest.json in '${bundleRoot}': 'active_operator_assignment.mode' must be 'opportunistic' or 'strict'`,
+    );
+  }
+
+  return {
+    field: assignment.field,
+    mode: assignment.mode,
   };
 }
 

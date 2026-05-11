@@ -26,6 +26,7 @@ The deployed bundle root also receives `runtime-manifest.json`. That manifest is
 - which entity path template to match
 - which frontmatter field is the Delamain-bound status field
 - which discriminator field/value, if any, constrain the binding
+- which active-operator assignment field/mode, if any, gates dispatch on this machine
 - which effective dispatch limits to apply for this bundle
 - which repo-relative submodules, if any, should be mounted as nested worktrees inside the host worktree
 
@@ -37,6 +38,10 @@ Authored manifest-sidecar declarations come from an optional `runtime-manifest.c
 - `limits.maxBudgetUsdByProvider?: { anthropic?: positive number; openai?: positive number }`
 - `submodules` values are repo-relative paths such as `nfrith-repos/als`
 - `limits` are module-authored only in this release; there is no operator-local override layer yet
+
+`active_operator_assignment` is not authored in `runtime-manifest.config.json`. The compiler projects it into `runtime-manifest.json` from `delamain.ts -> requires_active_operator` when declared.
+
+When `runtime-manifest.json.active_operator_assignment` is present, the dispatcher reads `.als/local/active-operator.json` on each tick. Missing or invalid local selection refuses dispatch for that Delamain only and emits explicit remediation. With a valid local selection, mismatched assignments skip silently, `mode: "opportunistic"` still allows unassigned items through, and `mode: "strict"` skips unassigned items.
 
 Budget resolution is hybrid for backward compatibility: `maxBudgetUsdByProvider[provider] ?? maxBudgetUsd ?? providerDefault`. The canonical defaults are `openai: 50` and `anthropic: 20`, which intentionally give Codex-heavy dev dispatches more headroom than Anthropic reviewer-style runs.
 
@@ -107,9 +112,10 @@ Entry point. Handles:
 - **Template version check**: reads local `dispatcher/VERSION` and canonical `${CLAUDE_PLUGIN_ROOT}/delamain-dispatcher/VERSION`, logs the current/latest versions, and fails before polling when either source is missing or malformed.
 - **Startup**: calls `resolve()` once to load `runtime-manifest.json`, local `delamain.yaml`, and state-agent files, then enters the poll loop.
 - **Effective limits**: resolves `runtime-manifest.json.limits` once at startup, applies `maxBudgetUsdByProvider[provider] ?? maxBudgetUsd ?? providerDefault`, falls back to canonical defaults `anthropic: 20` / `openai: 50` when absent, and logs `maxTurns` plus the active per-provider budget map before polling.
+- **Active operator gating**: keeps any projected `runtime-manifest.json.active_operator_assignment` in resolved config, then re-reads `.als/local/active-operator.json` on each tick before scanning so machine identity changes take effect without redeploy.
 - **Runtime boot**: creates one `DispatcherRuntime`, runs orphan sweep at startup, and keeps the persisted dispatch registry as the source of truth for active, blocked, orphaned, and guarded ownership.
 - **Drain control plane**: acknowledges `dispatcher/control/drain-request.json` outside the heavy scan tick. Startup reconciliation checks for a pre-existing request before the first scan tick, `fs.watch` on the control directory provides the low-latency path, and a lightweight control poll (`CONTROL_POLL_MS`, default 250ms) re-checks the file and re-arms the watcher if the watch path drops.
-- **Poll loop**: scans items at a configurable interval (`POLL_MS`, default 30s). Reads committed `HEAD` state only, warns when a status transition exists in the checkout but not in `HEAD`, reconciles registry records against current item status, retries blocked `dirty_integration_checkout` merge-backs under the existing repo-mutation lease, suppresses redispatch for all other unresolved incidents, runs periodic orphan sweeping, and refreshes the heartbeat after dispatch completions. Drain acknowledgement is no longer phase-coupled to this loop.
+- **Poll loop**: scans items at a configurable interval (`POLL_MS`, default 30s). Reads committed `HEAD` state only, warns when a status transition exists in the checkout but not in `HEAD`, applies the optional active-operator filter before dispatch, reconciles registry records against current item status, retries blocked `dirty_integration_checkout` merge-backs under the existing repo-mutation lease, suppresses redispatch for all other unresolved incidents, runs periodic orphan sweeping, and refreshes the heartbeat after dispatch completions. Drain acknowledgement is no longer phase-coupled to this loop.
 - **Blocked merge taxonomy**: keeps `dirty_integration_checkout` as the only automatic retry path. Orthogonal publish-time non-fast-forward is absorbed inside the merge-back transaction with up to 3 replay attempts. Residual merge-back failures stay preserved and cause-specific, including `tracked_path_conflict`, `submodule_concurrent_advance`, terminal `merge_back_publish_failed`, `canonical_upstream_unsynced`, and `submodule_pointer_invariant_violation`.
 - **Runtime hardening**: keeps the event loop alive with an internal keepalive server, logs tick and process lifecycle events, and ignores stray `SIGTERM` so dispatcher children do not accidentally kill the parent runtime.
 
@@ -181,7 +187,7 @@ Legacy in-memory lifecycle helper retained for compatibility tests. The persiste
 
 ### `src/watcher.ts`
 
-Generic frontmatter parser and item scanner. Recursively walks the bound module root, matches concrete markdown file paths against the bound entity path template, and reads the Delamain-bound status field named in `runtime-manifest.json`.
+Generic frontmatter parser and item scanner. Recursively walks the bound module root, matches concrete markdown file paths against the bound entity path template, reads the Delamain-bound status field named in `runtime-manifest.json`, and optionally filters items by the projected active-operator assignment contract.
 
 ### `src/dispatcher.ts`
 
@@ -192,7 +198,7 @@ The core logic. Two main functions:
 1. Reads `runtime-manifest.json` from the deployed Delamain bundle root
 2. Reads local `delamain.yaml`
 3. Loads state-agent and sub-agent markdown files from the same deployed bundle
-4. Builds a dispatch table from `actor: agent` states plus any resolved pool metadata
+4. Builds a dispatch table from `actor: agent` states plus any resolved pool metadata, while carrying through any projected `active_operator_assignment`
 
 **`dispatch(itemId, itemFile, entry, agents, config, bundleRoot, runtime)`** — invokes an agent:
 
@@ -202,12 +208,23 @@ The core logic. Two main functions:
 4. Handles provider-owned session behavior: reads session metadata, resumes Anthropic sessions or OpenAI threads when the state is resumable, and persists new provider session ids back to the item's `session-field`
 5. Finalizes through the runtime: auto-commit worktree changes, merge back under the repo-mutation lease, clean up on success, or preserve blocked/orphaned worktrees when integration is unsafe
 
+### `src/active-operator.ts`
+
+Machine-local active-operator selector loader.
+
+- Reads `.als/local/active-operator.json`
+- Validates schema `als-active-operator-selection@1` plus a non-empty `operator_id`
+- Returns `not-required` when the manifest carries no assignment contract
+- Returns `ready` with `{ field, mode, operatorId }` when local selection is valid
+- Returns `refuse` with explicit remediation lines when local selection is missing or invalid
+
 ### `src/runtime-manifest.ts`
 
 Runtime manifest loader and validator.
 
 - Reads `runtime-manifest.json` from the deployed bundle root
 - Validates the manifest schema and required binding fields
+- Validates optional `active_operator_assignment.field` and `active_operator_assignment.mode`
 - Normalizes the optional `submodules` list to `[]` when absent
 - Validates the optional `limits.maxTurns`, legacy `limits.maxBudgetUsd`, and `limits.maxBudgetUsdByProvider` fields when present
 - Fails closed with a redeploy message when the manifest is missing or malformed
@@ -269,6 +286,7 @@ The dispatcher reads one generated runtime manifest plus the local Delamain bund
 | Entity path template | `runtime-manifest.json` → `entity_path` |
 | Status field | `runtime-manifest.json` → `status_field` |
 | Variant discriminator | `runtime-manifest.json` → `discriminator_field` + `discriminator_value` |
+| Active-operator assignment | `runtime-manifest.json` → `active_operator_assignment.field` + `active_operator_assignment.mode`, resolved against `.als/local/active-operator.json` at tick time |
 | Mounted nested repos | `runtime-manifest.json` → `submodules[]` |
 | Effective dispatch limits | `runtime-manifest.json` → `limits.maxTurns`, `limits.maxBudgetUsdByProvider`, and legacy `limits.maxBudgetUsd`; budget precedence is `byProvider[p] ?? maxBudgetUsd ?? default`, with defaults `anthropic: 20`, `openai: 50` |
 | Legal states | Delamain primary definition → `states` |
