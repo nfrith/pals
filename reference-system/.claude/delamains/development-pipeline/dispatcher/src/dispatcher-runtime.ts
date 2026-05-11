@@ -7,6 +7,7 @@ import {
   type MountedSubmoduleWorktree,
 } from "./git-worktree-isolation.js";
 import { OrphanSweeper, type OrphanSweepSummary } from "./orphan-sweeper.js";
+import { ensurePrimaryClonePreCommitGuards } from "./primary-clone-convergence.js";
 import { RepoMutationLock } from "./repo-mutation-lock.js";
 import type {
   RuntimeDispatchRecord,
@@ -15,6 +16,8 @@ import type {
 } from "./runtime-state.js";
 import type { ProviderDispatchCounts } from "./provider.js";
 import type { DispatchEntry } from "./dispatcher.js";
+import { fileURLToPath } from "node:url";
+import { resolve } from "node:path";
 
 export interface DispatcherRuntimeConfig {
   bundleRoot: string;
@@ -64,6 +67,9 @@ export const DIRTY_INTEGRATION_RETRY_LIMIT = 60;
 
 const DIRTY_INTEGRATION_INCIDENT = "dirty_integration_checkout";
 const PRIMARY_DIRTY_TIMEOUT_INCIDENT = "primary_dirty_timeout";
+const PRIMARY_CLONE_HELPER_PATH = fileURLToPath(
+  new URL("./primary-clone-convergence.ts", import.meta.url),
+);
 
 interface MergeBackPreparedDispatch {
   dispatchId: string;
@@ -137,16 +143,20 @@ export class DispatcherRuntime {
   private readonly orphanSweeper: OrphanSweeper;
   private readonly statusField: string;
   private readonly delamainName: string;
+  private readonly systemRoot: string;
+  private readonly submodules: string[];
 
   constructor(config: DispatcherRuntimeConfig) {
+    this.systemRoot = resolve(config.systemRoot);
+    this.submodules = [...config.submodules ?? []];
     this.registry = new DispatchRegistry(config.bundleRoot);
     this.isolation = new GitWorktreeIsolationStrategy({
-      systemRoot: config.systemRoot,
+      systemRoot: this.systemRoot,
       delamainName: config.delamainName,
       worktreeRoot: config.worktreeRoot,
-      submodules: config.submodules ?? [],
+      submodules: this.submodules,
     });
-    this.repoMutationLock = new RepoMutationLock(config.systemRoot, {
+    this.repoMutationLock = new RepoMutationLock(this.systemRoot, {
       staleMs: Math.max(config.pollMs * 4, 60_000),
     });
     this.orphanSweeper = new OrphanSweeper(
@@ -398,6 +408,17 @@ export class DispatcherRuntime {
     return this.orphanSweeper.sweep();
   }
 
+  async ensurePrimaryCloneCommitGuards(): Promise<void> {
+    const repoRoots = [
+      this.systemRoot,
+      ...this.submodules.map((entry) => resolve(this.systemRoot, entry)),
+    ];
+    await ensurePrimaryClonePreCommitGuards({
+      repoRoots,
+      helperScriptPath: PRIMARY_CLONE_HELPER_PATH,
+    });
+  }
+
   private async retryBlockedDirtyDispatch(
     record: RuntimeDispatchRecord,
   ): Promise<BlockedDirtyRetryResult> {
@@ -574,6 +595,7 @@ export class DispatcherRuntime {
             mountedSubmodules: refreshedMountedSubmodules,
             error: error instanceof Error ? error.message : String(error),
             incidentKind: "merge_back_failed",
+            retryCount: 0,
           };
         }
 
@@ -585,6 +607,7 @@ export class DispatcherRuntime {
             mountedSubmodules: refreshedMountedSubmodules,
             error: refreshResult.error,
             incidentKind: refreshResult.incidentKind,
+            retryCount: 0,
           };
         }
 
@@ -707,6 +730,7 @@ export class DispatcherRuntime {
       integratedCommit: string | null;
       error: string | null;
       incidentKind: string | null;
+      retryCount: number;
     };
     mountedSubmodules: RuntimeMountedSubmoduleRecord[];
     dirtyRetryCount: number;
@@ -716,6 +740,7 @@ export class DispatcherRuntime {
       input.mergeResult.incidentKind,
       input.mergeResult.error,
       input.dirtyRetryCount,
+      input.mergeResult.retryCount,
     );
 
     await this.registry.updateByItemId(input.itemId, (record) => ({
@@ -932,6 +957,7 @@ function buildBlockedIncident(
   incidentKind: string | null,
   incidentMessage: string | null,
   dirtyRetryCount: number,
+  incidentRetryCount: number,
 ): {
   kind: string;
   message: string;
@@ -959,7 +985,7 @@ function buildBlockedIncident(
   return {
     kind: incidentKind ?? "merge_blocked",
     message: incidentMessage ?? "Merge back blocked",
-    retry_count: 0,
+    retry_count: incidentRetryCount,
   };
 }
 
