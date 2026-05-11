@@ -7,19 +7,46 @@ import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { runCli } from "../src/cli.ts";
 import {
+  serializeOperatorConfigDocument,
+  type OperatorConfig,
+} from "../src/operator-config.ts";
+import {
   acquireSyntheticDeprecationFixture,
   releaseSyntheticDeprecationFixture,
   SYNTHETIC_DEPRECATION_CONTRACT,
   SYNTHETIC_DEPRECATION_VALUES,
   syntheticDeprecationFixtureEnv,
 } from "./helpers/deprecation-fixture.ts";
-import { updateRecord, updateShapeYaml, withFixtureSandbox } from "./helpers/fixture.ts";
+import {
+  removePath,
+  updateRecord,
+  updateShapeYaml,
+  withFixtureSandbox,
+} from "./helpers/fixture.ts";
 
 const backlogRecordIds = ["ITEM-0001", "ITEM-0002", "ITEM-0003"] as const;
 const compilerRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const alsRepoRoot = resolve(compilerRoot, "../..");
-const postValidateHookPath = resolve(alsRepoRoot, "hooks/als-validate.sh");
-const stopHookPath = resolve(alsRepoRoot, "hooks/als-stop-gate.sh");
+const sessionStartHookPath = resolve(alsRepoRoot, "hooks/operator-config-session-start.ts");
+const postValidateHookPath = resolve(alsRepoRoot, "hooks/als-validate.ts");
+const stopHookPath = resolve(alsRepoRoot, "hooks/als-stop-gate.ts");
+
+const VALID_OPERATOR_CONFIG: OperatorConfig = {
+  config_version: 1,
+  created: "2026-04-25",
+  updated: "2026-04-25",
+  first_name: "Nick",
+  last_name: "Frith",
+  display_name: null,
+  primary_email: "nick@example.com",
+  role: "Founder",
+  profiles: ["edgerunner"],
+  owns_company: true,
+  company_name: "Example Co",
+  company_type: "llc",
+  company_type_other: null,
+  revenue_band: "100k-1M",
+};
 
 beforeAll(() => {
   acquireSyntheticDeprecationFixture();
@@ -69,16 +96,24 @@ function captureCli(args: string[]): { exitCode: number; stdout: string; stderr:
 function runHook(
   scriptPath: string,
   payload: unknown,
-  env: Record<string, string> = {},
+  options: {
+    env?: Record<string, string>;
+    includePluginRootEnv?: boolean;
+  } = {},
 ): { exitCode: number; stdout: string; stderr: string } {
+  const env = {
+    ...process.env,
+    ...options.env,
+  };
+
+  if (options.includePluginRootEnv) {
+    env.CLAUDE_PLUGIN_ROOT = alsRepoRoot;
+  }
+
   const result = Bun.spawnSync({
-    cmd: ["bash", scriptPath],
+    cmd: ["bun", scriptPath],
     cwd: alsRepoRoot,
-    env: {
-      ...process.env,
-      ...env,
-      CLAUDE_PLUGIN_ROOT: alsRepoRoot,
-    },
+    env,
     stdin: new TextEncoder().encode(JSON.stringify(payload)),
     stdout: "pipe",
     stderr: "pipe",
@@ -89,6 +124,17 @@ function runHook(
     stdout: new TextDecoder().decode(result.stdout),
     stderr: new TextDecoder().decode(result.stderr),
   };
+}
+
+async function writeValidOperatorConfig(root: string): Promise<void> {
+  await writeFile(
+    join(root, ".als", "operator.md"),
+    serializeOperatorConfigDocument({
+      config: VALID_OPERATOR_CONFIG,
+      body: "",
+    }),
+    "utf-8",
+  );
 }
 
 test("alsc validate emits the validation output contract", async () => {
@@ -207,7 +253,9 @@ test("als post-edit hook surfaces warn-only context without blocking", async () 
       tool_input: {
         file_path: `${root}/workspace/backlog/items/ITEM-0001.md`,
       },
-    }, syntheticDeprecationFixtureEnv());
+    }, {
+      env: syntheticDeprecationFixtureEnv(),
+    });
 
     expect(process.exitCode).toBe(0);
     expect(process.stderr).toBe("");
@@ -223,6 +271,85 @@ test("als post-edit hook surfaces warn-only context without blocking", async () 
   });
 });
 
+test("operator-config session-start hook resolves plugin root without CLAUDE_PLUGIN_ROOT", async () => {
+  await withFixtureSandbox("cli-hook-session-start", async ({ root }) => {
+    await removePath(root, ".als/skip-operator-config");
+    await writeValidOperatorConfig(root);
+
+    const process = runHook(sessionStartHookPath, {
+      cwd: join(root, "workspace"),
+    });
+
+    expect(process.exitCode).toBe(0);
+    expect(process.stderr).toBe("");
+    expect(process.stdout).toContain("<system-reminder>");
+    expect(process.stdout).toContain("Stable operator context loaded");
+  });
+});
+
+test("als post-edit hook stays silent on clean success", async () => {
+  await withFixtureSandbox("cli-hook-post-pass", async ({ root }) => {
+    const process = runHook(postValidateHookPath, {
+      tool_input: {
+        file_path: `${root}/workspace/backlog/items/ITEM-0001.md`,
+      },
+    });
+
+    expect(process.exitCode).toBe(0);
+    expect(process.stdout).toBe("");
+    expect(process.stderr).toBe("");
+  });
+});
+
+test("als post-edit hook blocks further edits when validation fails", async () => {
+  await withFixtureSandbox("cli-hook-post-fail", async ({ root }) => {
+    await updateRecord(root, "workspace/backlog/items/ITEM-0001.md", (record) => {
+      delete record.data.title;
+    });
+
+    const process = runHook(postValidateHookPath, {
+      tool_input: {
+        file_path: `${root}/workspace/backlog/items/ITEM-0001.md`,
+      },
+    });
+
+    expect(process.exitCode).toBe(2);
+    expect(process.stderr).toBe("");
+    const output = JSON.parse(process.stdout) as {
+      decision: string;
+      reason: string;
+      hookSpecificOutput?: {
+        additionalContext?: string;
+      };
+    };
+    expect(output.decision).toBe("block");
+    expect(output.reason).toContain("STOP: fix all errors");
+    expect(output.hookSpecificOutput?.additionalContext).toContain("\"status\": \"fail\"");
+  });
+});
+
+test("als post-edit hook bypasses validation in demo mode", async () => {
+  await withFixtureSandbox("cli-hook-post-demo", async ({ root }) => {
+    await updateRecord(root, "workspace/backlog/items/ITEM-0001.md", (record) => {
+      delete record.data.title;
+    });
+
+    const process = runHook(postValidateHookPath, {
+      tool_input: {
+        file_path: `${root}/workspace/backlog/items/ITEM-0001.md`,
+      },
+    }, {
+      env: {
+        ALS_DEMO_MODE: "1",
+      },
+    });
+
+    expect(process.exitCode).toBe(0);
+    expect(process.stdout).toBe("");
+    expect(process.stderr).toBe("");
+  });
+});
+
 test("als stop hook surfaces a final warn-only reminder without blocking", async () => {
   await withFixtureSandbox("cli-hook-stop-warn", async ({ root }) => {
     await configureSyntheticDeprecationFixture(root);
@@ -234,7 +361,9 @@ test("als stop hook surfaces a final warn-only reminder without blocking", async
       await Bun.write(breadcrumbPath, `${root}:backlog\n`);
       const process = runHook(stopHookPath, {
         session_id: sessionId,
-      }, syntheticDeprecationFixtureEnv());
+      }, {
+        env: syntheticDeprecationFixtureEnv(),
+      });
 
       expect(process.exitCode).toBe(0);
       expect(process.stderr).toBe("");
@@ -252,6 +381,61 @@ test("als stop hook surfaces a final warn-only reminder without blocking", async
       if (existsSync(breadcrumbPath)) {
         rmSync(breadcrumbPath, { force: true });
       }
+    }
+  });
+});
+
+test("als stop hook blocks stop when validation errors remain", async () => {
+  await withFixtureSandbox("cli-hook-stop-fail", async ({ root }) => {
+    await updateRecord(root, "workspace/backlog/items/ITEM-0001.md", (record) => {
+      delete record.data.title;
+    });
+
+    const sessionId = `als099-stop-${randomUUID()}`;
+    const breadcrumbPath = `/tmp/als-touched-${sessionId}`;
+
+    try {
+      await Bun.write(breadcrumbPath, `${root}:backlog\n`);
+      const process = runHook(stopHookPath, {
+        session_id: sessionId,
+      });
+
+      expect(process.exitCode).toBe(2);
+      expect(process.stderr).toBe("");
+      const output = JSON.parse(process.stdout) as {
+        decision: string;
+        reason: string;
+      };
+      expect(output.decision).toBe("block");
+      expect(output.reason).toContain("still have errors");
+      expect(existsSync(breadcrumbPath)).toBe(true);
+    } finally {
+      rmSync(breadcrumbPath, { force: true });
+    }
+  });
+});
+
+test("als stop hook bypasses validation in demo mode", async () => {
+  await withFixtureSandbox("cli-hook-stop-demo", async ({ root }) => {
+    const sessionId = `als099-demo-${randomUUID()}`;
+    const breadcrumbPath = `/tmp/als-touched-${sessionId}`;
+
+    try {
+      await Bun.write(breadcrumbPath, `${root}:backlog\n`);
+      const process = runHook(stopHookPath, {
+        session_id: sessionId,
+      }, {
+        env: {
+          ALS_DEMO_MODE: "1",
+        },
+      });
+
+      expect(process.exitCode).toBe(0);
+      expect(process.stdout).toBe("");
+      expect(process.stderr).toBe("");
+      expect(existsSync(breadcrumbPath)).toBe(true);
+    } finally {
+      rmSync(breadcrumbPath, { force: true });
     }
   });
 });

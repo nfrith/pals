@@ -7,9 +7,9 @@ import {
   inspectConstructActionManifest,
   inspectConstructManifest,
 } from "./construct-upgrade.ts";
+import { buildOperatorConfigSessionStart } from "./hook-runtime.ts";
 import { inspectLanguageUpgradeRecipe } from "./language-upgrade-recipe.ts";
 import {
-  buildOperatorConfigSessionStartOutput,
   inspectOperatorConfigFile,
   resolveOperatorConfigPath,
 } from "./operator-config.ts";
@@ -287,7 +287,9 @@ function runOperatorConfigCommand(
       return 2;
     }
 
-    const output = buildOperatorConfigSessionStartOutput(resolve(rest[0] ?? process.cwd()));
+    const output = buildOperatorConfigSessionStart({
+      cwd: resolve(rest[0] ?? process.cwd()),
+    });
     if (output.length > 0) {
       writeStdout(io, output);
     }

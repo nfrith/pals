@@ -2,7 +2,7 @@
 
 Bun-based validator for ALS systems. Validates module shapes, records, refs, and body structure, and manages Claude harness deploy artifacts under both `.als/` and `.claude/`.
 
-This compiler is part of the [ALS plugin](../../README.md) and is invoked by plugin skills and hooks. It is not published as a standalone package.
+This compiler is part of the [ALS plugin](../../README.md) and is invoked by plugin skills and hooks. It is not published as a standalone package, but it now carries one formal public hook-runtime boundary for compiler-owned hook semantics.
 
 ## Commands
 
@@ -22,14 +22,22 @@ bun src/cli.ts deploy claude --dry-run --require-empty-targets <system-root> <mo
 
 When invoked through the plugin, skills call validation via `bun ${CLAUDE_PLUGIN_ROOT}/alsc/compiler/src/index.ts validate <system-root> [module-id]`.
 
+## Public Hook Runtime
+
+The compiler-owned Claude hook cohort uses the public hook-runtime boundary at `src/hook-runtime.ts`.
+
+- The public surface is semantic-intent based: SessionStart operator-config rendering, touched-path ownership, breadcrumb recording, post-edit validation, and stop-gate evaluation.
+- Claude stdin/stdout, exit-code translation, and plugin-root derivation live in thin adapters under `../../hooks/`.
+- The normative contract is [SDR 053](../../sdr/053-public-hook-runtime-api-and-harness-adapter-contract.md).
+
 ## Current Contract
 
-- ALS currently supports `als_version: 1` only.
+- Supported ALS language versions are declared in `src/contracts.ts`.
 - Validation output is versioned as `als-validation-output@1`.
 - Filtered validation remains trustworthy for the selected module by loading its declared dependency closure.
 - Claude deploy is the only harness projection surfaced by this preview.
 - Claude deploy manages one generated system-root file at `.als/CLAUDE.md` plus skill and Delamain projections under `.claude/`.
-- ALS does not yet ship a language-version upgrade CLI or a real warning and deprecation lifecycle.
+- The hook-runtime API is shared by CLI callers and hook adapters; transport-specific hook JSON is not part of the stable compiler contract.
 
 ## Output Contract
 

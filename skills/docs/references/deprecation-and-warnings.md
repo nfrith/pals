@@ -66,10 +66,12 @@ Consumers should read this payload directly instead of parsing the human `messag
 ## Hook Surfacing
 
 Warn-only validation is non-blocking everywhere:
-- `als-validate.sh` emits immediate context after an edit so the warning shows up during normal work
-- `als-stop-gate.sh` emits a final reminder summary if the touched system/module still carries warnings at stop time
+- `als-validate.ts` emits immediate context after an edit so the warning shows up during normal work
+- `als-stop-gate.ts` emits a final reminder summary if the touched system/module still carries warnings at stop time
 
 Neither hook turns warn-only output into a block.
+
+Those Claude adapters are transport shims above the public compiler hook-runtime boundary defined by [SDR 053](../../../sdr/053-public-hook-runtime-api-and-harness-adapter-contract.md). The warning contract stays compiler-owned; the hook files only translate it into Claude's hook JSON.
 
 ## Lifecycle
 

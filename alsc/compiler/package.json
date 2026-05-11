@@ -5,6 +5,11 @@
   "description": "ALS compiler — validates ALS systems and projects Claude skill bundles.",
   "license": "Elastic-2.0",
   "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./cli": "./src/cli.ts",
+    "./hook-runtime": "./src/hook-runtime.ts"
+  },
   "scripts": {
     "cli": "bun src/cli.ts",
     "validate": "bun src/index.ts validate",

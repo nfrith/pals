@@ -7,7 +7,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash $CLAUDE_PLUGIN_ROOT/hooks/als-breadcrumb.sh",
+            "command": "bun $CLAUDE_PLUGIN_ROOT/hooks/als-breadcrumb.ts",
             "timeout": 5
           }
         ]

@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash $CLAUDE_PLUGIN_ROOT/hooks/als-stop-gate.sh",
+            "command": "bun $CLAUDE_PLUGIN_ROOT/hooks/als-stop-gate.ts",
             "timeout": 30
           }
         ]
