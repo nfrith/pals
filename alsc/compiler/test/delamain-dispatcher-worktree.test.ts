@@ -8,13 +8,14 @@ import {
   DispatcherRuntime,
 } from "../../../delamain-dispatcher/src/dispatcher-runtime.ts";
 import { RepoMutationLock } from "../../../delamain-dispatcher/src/repo-mutation-lock.ts";
-import { scan } from "../../../delamain-dispatcher/src/watcher.ts";
+import { scan, scanWithDiagnostics } from "../../../delamain-dispatcher/src/watcher.ts";
 import {
   readRuntimeState,
   writeRuntimeState,
   type RuntimeDispatchState,
 } from "../../../delamain-dispatcher/src/runtime-state.ts";
 import { runCommand, runGit } from "../../../delamain-dispatcher/src/git.ts";
+import { readTelemetryEvents } from "../../../delamain-dispatcher/src/telemetry.ts";
 import type { DispatchEntry } from "../../../delamain-dispatcher/src/dispatcher.ts";
 
 const ENTRY: DispatchEntry = {
@@ -250,6 +251,14 @@ test("runtime blocks host publication replay when origin moves on overlapping pa
     expect(state.records[0]?.status).toBe("blocked");
     expect(state.records[0]?.incident?.kind).toBe("merge_back_publish_failed");
     expect(state.records[0]?.incident?.retry_count).toBe(1);
+    expect(state.records[0]?.incident?.incident_context?.phase).toBe("publish");
+    expect(state.records[0]?.incident?.incident_context?.cause).toBe("merge_back_publish_failed");
+
+    const telemetry = await readTelemetryEvents(bundleRoot, 50);
+    expect(telemetry.events.some((event) => event.event_type === "merge_attempt_start")).toBe(true);
+    expect(telemetry.events.some((event) => event.event_type === "publish_attempt")).toBe(true);
+    expect(telemetry.events.some((event) => event.event_type === "publish_replay")).toBe(true);
+    expect(telemetry.events.some((event) => event.event_type === "rollback")).toBe(true);
   });
 });
 
@@ -1056,6 +1065,40 @@ test("dispatcher scan ignores staged status transitions until they are committed
   });
 });
 
+test("dispatcher scan diagnostics record active-operator accept and skip outcomes", async () => {
+  await withWorktreeSandbox("scan-active-operator", async ({ systemRoot, itemFile }) => {
+    const raw = await readFile(itemFile, "utf-8");
+    await writeFile(
+      itemFile,
+      raw.replace("status: in-dev", "status: in-dev\noperator: nick"),
+      "utf-8",
+    );
+    await gitCommit(systemRoot, "fixture: add operator assignment");
+
+    const accepted = await scanWithDiagnostics(
+      join(systemRoot, "als-factory"),
+      "jobs/{id}.md",
+      "status",
+      undefined,
+      undefined,
+      { field: "operator", mode: "strict", operatorId: "nick" },
+    );
+    expect(accepted.items).toHaveLength(1);
+    expect(accepted.decisions[0]?.active_operator.outcome).toBe("accepted");
+
+    const skipped = await scanWithDiagnostics(
+      join(systemRoot, "als-factory"),
+      "jobs/{id}.md",
+      "status",
+      undefined,
+      undefined,
+      { field: "operator", mode: "strict", operatorId: "other" },
+    );
+    expect(skipped.items).toHaveLength(0);
+    expect(skipped.decisions[0]?.active_operator.outcome).toBe("skipped_operator_mismatch");
+  });
+});
+
 test("runCommand resolves concurrent git probes against a real repo", async () => {
   await withWorktreeSandbox("run-command-concurrency", async ({ systemRoot }) => {
     const results = await Promise.all(
@@ -1103,7 +1146,7 @@ test("runtime squashes agent-authored worktree commits into the audited merge co
 });
 
 test("runtime preserves blocked worktrees when stale-base refresh hits a conflict", async () => {
-  await withWorktreeSandbox("merge-conflict", async ({ runtime, systemRoot, itemFile }) => {
+  await withWorktreeSandbox("merge-conflict", async ({ runtime, bundleRoot, systemRoot, itemFile }) => {
     const prepared = await runtime.prepareDispatch("ALS-001", itemFile, ENTRY);
     expect(prepared).not.toBeNull();
 
@@ -1129,11 +1172,17 @@ test("runtime preserves blocked worktrees when stale-base refresh hits a conflic
     expect(await readFrontmatterStatus(itemFile)).toBe("operator-edit");
     expect(prepared!.baseCommit).toBe(operatorHead);
 
-    const state = await readRuntimeState(join(systemRoot, "..", ".claude", "delamains", "factory-jobs"));
+    const state = await readRuntimeState(bundleRoot);
     expect(state.records[0]?.status).toBe("blocked");
     expect(state.records[0]?.incident?.kind).toBe("tracked_path_conflict");
+    expect(state.records[0]?.incident?.incident_context?.phase).toBe("integration");
+    expect(state.records[0]?.incident?.incident_context?.cause).toBe("tracked_path_conflict");
     expect(state.records[0]?.base_commit).toBe(operatorHead);
     expect(state.records[0]?.worktree_commit).not.toBeNull();
+
+    const telemetry = await readTelemetryEvents(bundleRoot, 50);
+    expect(telemetry.events.some((event) => event.event_type === "merge_attempt_start")).toBe(true);
+    expect(telemetry.events.some((event) => event.event_type === "refresh_decision")).toBe(true);
   });
 });
 

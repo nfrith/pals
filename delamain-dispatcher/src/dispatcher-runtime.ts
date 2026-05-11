@@ -18,11 +18,23 @@ import type { ProviderDispatchCounts } from "./provider.js";
 import type { DispatchEntry } from "./dispatcher.js";
 import { fileURLToPath } from "node:url";
 import { resolve } from "node:path";
+import {
+  buildIncidentContext,
+  sanitizeJsonObject,
+  type DispatchPhaseTelemetry,
+  type DispatchIncidentContext,
+} from "./forensics.js";
+import {
+  appendTelemetryEvent,
+  DISPATCH_TELEMETRY_SCHEMA,
+  type DispatchTelemetryEvent,
+} from "./telemetry.js";
 
 export interface DispatcherRuntimeConfig {
   bundleRoot: string;
   systemRoot: string;
   delamainName: string;
+  moduleId?: string;
   statusField: string;
   pollMs: number;
   worktreeRoot?: string;
@@ -31,6 +43,7 @@ export interface DispatcherRuntimeConfig {
 
 export interface PreparedDispatch extends IsolatedDispatch {
   startedAt: string;
+  tickId?: string | null;
 }
 
 export interface FinalizeDispatchInput {
@@ -53,6 +66,7 @@ export interface FinalizeDispatchResult {
   mountedSubmodules: RuntimeMountedSubmoduleRecord[];
   incidentKind: string | null;
   incidentMessage: string | null;
+  incidentContext: DispatchIncidentContext | null;
 }
 
 export interface DispatcherRuntimeHeartbeat {
@@ -79,6 +93,7 @@ interface MergeBackPreparedDispatch {
   worktreePath: string;
   branchName: string;
   baseCommit: string;
+  tickId?: string | null;
   mountedSubmodules: MountedSubmoduleWorktree[];
 }
 
@@ -100,11 +115,32 @@ interface MergeBackAttemptInput {
   hostWorktreeCommit: string | null;
   mountedSubmodules: MountedSubmoduleMergeMetadata[];
   dirtyRetryCount: number;
+  telemetryBase: RuntimeTelemetryBase;
 }
 
 interface MergeBackAttemptOutcome {
   treeState: "clean" | "dirty";
   result: FinalizeDispatchResult;
+}
+
+interface RuntimeTelemetryBase {
+  tickId: string | null;
+  dispatchId: string;
+  itemId: string;
+  itemFile: string;
+  isolatedItemFile: string | null;
+  state: string;
+  agentName: string;
+  provider: RuntimeDispatchRecord["provider"];
+  resumable: boolean;
+  sessionField: string | null;
+  sessionId: string | null;
+  durationMs: number | null;
+  numTurns: number | null;
+  costUsd: number | null;
+  worktreePath: string | null;
+  branchName: string | null;
+  transitionTargets: string[];
 }
 
 export interface BlockedDirtyRetryResult {
@@ -134,6 +170,7 @@ export interface BlockedDirtyRetryResult {
   mountedSubmodules: RuntimeMountedSubmoduleRecord[];
   incidentKind: string | null;
   incidentMessage: string | null;
+  incidentContext: DispatchIncidentContext | null;
 }
 
 export class DispatcherRuntime {
@@ -141,12 +178,15 @@ export class DispatcherRuntime {
   private readonly isolation: GitWorktreeIsolationStrategy;
   private readonly repoMutationLock: RepoMutationLock;
   private readonly orphanSweeper: OrphanSweeper;
+  private readonly bundleRoot: string;
   private readonly statusField: string;
   private readonly delamainName: string;
+  private readonly moduleId: string;
   private readonly systemRoot: string;
   private readonly submodules: string[];
 
   constructor(config: DispatcherRuntimeConfig) {
+    this.bundleRoot = config.bundleRoot;
     this.systemRoot = resolve(config.systemRoot);
     this.submodules = [...config.submodules ?? []];
     this.registry = new DispatchRegistry(config.bundleRoot);
@@ -169,6 +209,7 @@ export class DispatcherRuntime {
     );
     this.statusField = config.statusField;
     this.delamainName = config.delamainName;
+    this.moduleId = config.moduleId ?? "unknown";
   }
 
   async prepareDispatch(
@@ -241,6 +282,7 @@ export class DispatcherRuntime {
           mountedSubmodules: [],
           incidentKind: null,
           incidentMessage: null,
+          incidentContext: null,
         };
       }
 
@@ -253,6 +295,19 @@ export class DispatcherRuntime {
           integratedCommit: null,
         })),
       );
+      const incidentContext = buildRuntimeIncidentContext({
+        incidentKind: "dispatch_failed_dirty",
+        dispatchId: input.prepared.dispatchId,
+        tickId: input.prepared.tickId ?? null,
+        worktreePath: input.prepared.worktreePath,
+        baseCommit: input.prepared.baseCommit,
+        worktreeCommit: inspection.headCommit,
+        mountedSubmodules,
+        phaseOverride: "provider_run",
+        repoRole: "worktree",
+        repoPath: ".",
+        dirtyPaths: [input.prepared.itemFile],
+      });
       await this.registry.updateByItemId(input.prepared.itemId, (record) => ({
         ...record,
         status: "blocked",
@@ -269,6 +324,7 @@ export class DispatcherRuntime {
           message: incidentMessage,
           detected_at: new Date().toISOString(),
           retry_count: 0,
+          incident_context: incidentContext,
         },
       }));
 
@@ -282,6 +338,7 @@ export class DispatcherRuntime {
         mountedSubmodules,
         incidentKind: "dispatch_failed_dirty",
         incidentMessage,
+        incidentContext,
       };
     }
 
@@ -310,6 +367,7 @@ export class DispatcherRuntime {
         mountedSubmodules: [],
         incidentKind: null,
         incidentMessage: null,
+        incidentContext: null,
       };
     }
 
@@ -359,6 +417,25 @@ export class DispatcherRuntime {
         hostWorktreeCommit,
         mountedSubmodules: mountedSubmoduleCommits,
         dirtyRetryCount: 0,
+        telemetryBase: {
+          tickId: input.prepared.tickId ?? null,
+          dispatchId: input.prepared.dispatchId,
+          itemId: input.prepared.itemId,
+          itemFile: input.prepared.itemFile,
+          isolatedItemFile: input.prepared.isolatedItemFile,
+          state: input.entry.state,
+          agentName: input.entry.agentName,
+          provider: input.entry.provider,
+          resumable: input.entry.resumable,
+          sessionField: input.entry.sessionField ?? null,
+          sessionId: input.sessionId,
+          durationMs: input.durationMs,
+          numTurns: input.numTurns,
+          costUsd: input.costUsd,
+          worktreePath: input.prepared.worktreePath,
+          branchName: input.prepared.branchName,
+          transitionTargets: input.entry.transitions.map((transition) => transition.to),
+        },
       })
     ).result;
   }
@@ -463,6 +540,25 @@ export class DispatcherRuntime {
           integratedCommit: entry.integrated_commit,
         })),
         dirtyRetryCount: attempt,
+        telemetryBase: {
+          tickId: record.incident?.incident_context?.correlation_ids.tick_id ?? null,
+          dispatchId: record.dispatch_id,
+          itemId: record.item_id,
+          itemFile: record.item_file,
+          isolatedItemFile: record.isolated_item_file,
+          state: record.state,
+          agentName: record.agent_name,
+          provider: record.provider,
+          resumable: record.resumable,
+          sessionField: record.session_field,
+          sessionId: record.latest_session_id,
+          durationMs: record.latest_duration_ms,
+          numTurns: record.latest_num_turns,
+          costUsd: record.latest_cost_usd,
+          worktreePath: record.worktree_path,
+          branchName: record.branch_name,
+          transitionTargets: [...record.transition_targets],
+        },
       });
 
       return {
@@ -496,10 +592,21 @@ export class DispatcherRuntime {
         mountedSubmodules: outcome.result.mountedSubmodules,
         incidentKind: outcome.result.incidentKind,
         incidentMessage: outcome.result.incidentMessage,
+        incidentContext: outcome.result.incidentContext,
       };
     } catch (error) {
       const incidentMessage = error instanceof Error ? error.message : String(error);
       const now = new Date().toISOString();
+      const incidentContext = buildRuntimeIncidentContext({
+        incidentKind: "merge_back_failed",
+        dispatchId: record.dispatch_id,
+        tickId: record.incident?.incident_context?.correlation_ids.tick_id ?? null,
+        worktreePath: record.worktree_path,
+        baseCommit: record.base_commit,
+        worktreeCommit: record.worktree_commit,
+        integratedCommit: record.integrated_commit,
+        mountedSubmodules: record.mounted_submodules,
+      });
       await this.registry.updateByItemId(record.item_id, (current) => ({
         ...current,
         status: "blocked",
@@ -512,6 +619,7 @@ export class DispatcherRuntime {
           message: incidentMessage,
           detected_at: now,
           retry_count: 0,
+          incident_context: incidentContext,
         },
       }));
 
@@ -542,6 +650,7 @@ export class DispatcherRuntime {
         mountedSubmodules: record.mounted_submodules,
         incidentKind: "merge_back_failed",
         incidentMessage,
+        incidentContext,
       };
     }
   }
@@ -552,6 +661,24 @@ export class DispatcherRuntime {
     let hostWorktreeCommit = input.hostWorktreeCommit;
     let refreshedMountedSubmodules = input.mountedSubmodules;
     let treeState: "clean" | "dirty" = "clean";
+
+    await this.appendRuntimeTelemetry(input.telemetryBase, [
+      {
+        event_type: "merge_attempt_start",
+        phase: "merge_back",
+        cause: null,
+        retryable: false,
+        recommended_next_actor: "none",
+        relevant_shas: {
+          base_commit: input.prepared.baseCommit,
+          worktree_commit: input.hostWorktreeCommit,
+        },
+        attributes: sanitizeJsonObject({
+          final_state: input.finalState,
+          dirty_retry_count: input.dirtyRetryCount,
+        }),
+      },
+    ]);
 
     const mergeResult = await this.repoMutationLock.withLease(
       {
@@ -569,6 +696,10 @@ export class DispatcherRuntime {
         });
         hostWorktreeCommit = refreshResult.hostWorktreeCommit;
         refreshedMountedSubmodules = refreshResult.mountedSubmodules;
+        await this.appendRuntimeTelemetry(input.telemetryBase, refreshResult.telemetry ?? [], {
+          worktreeCommit: hostWorktreeCommit,
+          mountedSubmodules: refreshedMountedSubmodules,
+        });
         treeState = refreshResult.status === "blocked"
           && refreshResult.incidentKind === DIRTY_INTEGRATION_INCIDENT
           ? "dirty"
@@ -620,6 +751,18 @@ export class DispatcherRuntime {
       },
     );
 
+    await this.appendRuntimeTelemetry(input.telemetryBase, mergeResult.telemetry ?? [], {
+      worktreeCommit: mergeResult.worktreeCommit,
+      integratedCommit: mergeResult.integratedCommit,
+      mountedSubmodules: mergeMountedSubmoduleMetadata(
+        input.prepared.mountedSubmodules,
+        mergeResult.mountedSubmodules,
+      ),
+      mergeOutcome: mergeResult.status === "merged" ? "merged" : "blocked",
+      incidentKind: mergeResult.incidentKind,
+      error: mergeResult.error,
+    });
+
     const mergedMountedSubmodules = mergeMountedSubmoduleMetadata(
       input.prepared.mountedSubmodules,
       mergeResult.mountedSubmodules,
@@ -629,7 +772,11 @@ export class DispatcherRuntime {
       return {
         treeState,
         result: await this.persistBlockedMergeResult({
+          dispatchId: input.prepared.dispatchId,
           itemId: input.prepared.itemId,
+          tickId: input.prepared.tickId ?? null,
+          worktreePath: input.prepared.worktreePath,
+          baseCommit: input.prepared.baseCommit,
           finalState: input.finalState,
           sessionId: input.sessionId,
           durationMs: input.durationMs,
@@ -652,6 +799,17 @@ export class DispatcherRuntime {
     } catch (error) {
       const incidentMessage = error instanceof Error ? error.message : String(error);
       const now = new Date().toISOString();
+      const incidentContext = buildRuntimeIncidentContext({
+        incidentKind: "cleanup_failed",
+        dispatchId: input.prepared.dispatchId,
+        tickId: input.prepared.tickId ?? null,
+        worktreePath: input.prepared.worktreePath,
+        baseCommit: input.prepared.baseCommit,
+        worktreeCommit: mergeResult.worktreeCommit,
+        integratedCommit: mergeResult.integratedCommit,
+        mountedSubmodules: mergedMountedSubmodules,
+        phaseOverride: "cleanup",
+      });
       await this.registry.updateByItemId(input.prepared.itemId, (record) => ({
         ...record,
         status: "blocked",
@@ -672,6 +830,7 @@ export class DispatcherRuntime {
           message: incidentMessage,
           detected_at: now,
           retry_count: 0,
+          incident_context: incidentContext,
         },
       }));
 
@@ -687,6 +846,7 @@ export class DispatcherRuntime {
           mountedSubmodules: mergedMountedSubmodules,
           incidentKind: "cleanup_failed",
           incidentMessage,
+          incidentContext,
         },
       };
     }
@@ -713,12 +873,17 @@ export class DispatcherRuntime {
         mountedSubmodules: mergedMountedSubmodules,
         incidentKind: null,
         incidentMessage: null,
+        incidentContext: null,
       },
     };
   }
 
   private async persistBlockedMergeResult(input: {
+    dispatchId: string;
     itemId: string;
+    tickId: string | null;
+    worktreePath: string;
+    baseCommit: string;
     finalState: string;
     sessionId: string | null;
     durationMs: number | null;
@@ -742,6 +907,18 @@ export class DispatcherRuntime {
       input.dirtyRetryCount,
       input.mergeResult.retryCount,
     );
+    const incidentContext = buildRuntimeIncidentContext({
+      incidentKind: blockedIncident.kind,
+      dispatchId: input.dispatchId,
+      tickId: input.tickId,
+      worktreePath: input.worktreePath,
+      baseCommit: input.baseCommit,
+      worktreeCommit: input.mergeResult.worktreeCommit,
+      integratedCommit: input.mergeResult.integratedCommit,
+      mountedSubmodules: input.mountedSubmodules,
+      phaseOverride: inferBlockedIncidentPhase(blockedIncident.kind),
+      retryableOverride: blockedIncident.kind === DIRTY_INTEGRATION_INCIDENT,
+    });
 
     await this.registry.updateByItemId(input.itemId, (record) => ({
       ...record,
@@ -761,6 +938,7 @@ export class DispatcherRuntime {
       incident: {
         ...blockedIncident,
         detected_at: incidentDetectedAt,
+        incident_context: incidentContext,
       },
     }));
 
@@ -774,6 +952,7 @@ export class DispatcherRuntime {
       mountedSubmodules: input.mountedSubmodules,
       incidentKind: blockedIncident.kind,
       incidentMessage: blockedIncident.message,
+      incidentContext,
     };
   }
 
@@ -818,6 +997,84 @@ export class DispatcherRuntime {
       latest_cost_usd: input.costUsd,
       incident: null,
     }));
+  }
+
+  private async appendRuntimeTelemetry(
+    base: RuntimeTelemetryBase,
+    events: ReadonlyArray<DispatchPhaseTelemetry>,
+    overrides: {
+      worktreeCommit?: string | null;
+      integratedCommit?: string | null;
+      mountedSubmodules?: RuntimeMountedSubmoduleRecord[];
+      mergeOutcome?: FinalizeDispatchResult["mergeOutcome"] | null;
+      incidentKind?: string | null;
+      error?: string | null;
+    } = {},
+  ): Promise<void> {
+    for (const event of events) {
+      try {
+        const normalizedEvent: DispatchTelemetryEvent = {
+          schema: DISPATCH_TELEMETRY_SCHEMA,
+          event_id: crypto.randomUUID(),
+          event_type: event.event_type,
+          timestamp: new Date().toISOString(),
+          dispatcher_name: this.delamainName,
+          module_id: this.moduleId,
+          tick_id: base.tickId,
+          dispatch_id: base.dispatchId,
+          merge_attempt_id: event.merge_attempt_id ?? null,
+          repo_attempt_id: event.repo_attempt_id ?? null,
+          item_id: base.itemId,
+          item_file: base.itemFile,
+          isolated_item_file: base.isolatedItemFile,
+          state: base.state,
+          agent_name: base.agentName,
+          sub_agent_name: null,
+          provider: base.provider,
+          resumable: base.resumable,
+          resume_requested: false,
+          session_field: base.sessionField,
+          runtime_session_id: base.sessionId,
+          resume_session_id: null,
+          worker_session_id: base.sessionId,
+          worktree_path: base.worktreePath,
+          branch_name: base.branchName,
+          mounted_submodules: overrides.mountedSubmodules ?? [],
+          worktree_commit: overrides.worktreeCommit ?? event.worktree_commit ?? null,
+          integrated_commit: overrides.integratedCommit ?? event.integrated_commit ?? null,
+          merge_outcome: overrides.mergeOutcome ?? event.merge_outcome ?? null,
+          incident_kind: overrides.incidentKind ?? event.incident_kind ?? null,
+          phase: event.phase ?? null,
+          cause: event.cause ?? null,
+          retryable: event.retryable ?? null,
+          recommended_next_actor: event.recommended_next_actor ?? null,
+          command_label: event.command_label ?? null,
+          command_result: event.command_result ?? null,
+          relevant_shas: {
+            base_commit: event.relevant_shas?.base_commit ?? null,
+            current_head: event.relevant_shas?.current_head ?? null,
+            worktree_commit: event.relevant_shas?.worktree_commit ?? overrides.worktreeCommit ?? null,
+            integrated_commit: event.relevant_shas?.integrated_commit ?? overrides.integratedCommit ?? null,
+            remote_head_before: event.relevant_shas?.remote_head_before ?? null,
+            remote_head_after: event.relevant_shas?.remote_head_after ?? null,
+            theirs_commit: event.relevant_shas?.theirs_commit ?? null,
+            pre_integration_head: event.relevant_shas?.pre_integration_head ?? null,
+          },
+          transition_targets: base.transitionTargets,
+          duration_ms: base.durationMs,
+          num_turns: base.numTurns,
+          cost_usd: base.costUsd,
+          error: event.error ?? overrides.error ?? null,
+          incident_context: event.incident_context ?? null,
+          attributes: sanitizeJsonObject(event.attributes),
+        };
+        await appendTelemetryEvent(this.bundleRoot, normalizedEvent);
+      } catch (error) {
+        console.warn(
+          `[dispatcher] ${base.itemId} runtime telemetry write failed: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    }
   }
 }
 
@@ -991,4 +1248,239 @@ function buildBlockedIncident(
 
 function buildPrimaryDirtyTimeoutMessage(message: string, retryCount: number): string {
   return `${message} (timed out after ${retryCount} retry checks)`;
+}
+
+function buildRuntimeIncidentContext(input: {
+  incidentKind: string;
+  dispatchId: string;
+  tickId?: string | null;
+  mergeAttemptId?: string | null;
+  repoAttemptId?: string | null;
+  worktreePath?: string | null;
+  baseCommit?: string | null;
+  worktreeCommit?: string | null;
+  integratedCommit?: string | null;
+  mountedSubmodules?: ReadonlyArray<RuntimeMountedSubmoduleRecord>;
+  phaseOverride?: string | null;
+  repoRole?: string | null;
+  repoPath?: string | null;
+  commandLabel?: string | null;
+  dirtyPaths?: ReadonlyArray<string>;
+  touchedPaths?: ReadonlyArray<string>;
+  movedPaths?: ReadonlyArray<string>;
+  overlappingPaths?: ReadonlyArray<string>;
+  unmergedPaths?: ReadonlyArray<string>;
+  retryableOverride?: boolean;
+  recommendedNextActor?: "operator" | "automation" | "none";
+  recoveryHint?: string | null;
+  canonicalRef?: string | null;
+}): DispatchIncidentContext {
+  const descriptor = describeIncidentKind(input.incidentKind);
+
+  return buildIncidentContext({
+    phase: input.phaseOverride ?? descriptor.phase,
+    cause: descriptor.cause,
+    retryable: input.retryableOverride ?? descriptor.retryable,
+    recommended_next_actor: input.recommendedNextActor ?? descriptor.recommendedNextActor,
+    repo_role: input.repoRole ?? descriptor.repoRole,
+    repo_path: input.repoPath ?? ".",
+    command_label: input.commandLabel ?? descriptor.commandLabel,
+    relevant_shas: {
+      base_commit: input.baseCommit ?? null,
+      current_head: null,
+      worktree_commit: input.worktreeCommit ?? null,
+      integrated_commit: input.integratedCommit ?? null,
+      remote_head_before: null,
+      remote_head_after: null,
+      theirs_commit: null,
+      pre_integration_head: null,
+    },
+    touched_paths: [...input.touchedPaths ?? []],
+    moved_paths: [...input.movedPaths ?? []],
+    overlapping_paths: [...input.overlappingPaths ?? []],
+    dirty_paths: [...input.dirtyPaths ?? []],
+    unmerged_paths: [...input.unmergedPaths ?? []],
+    preserved_paths: buildPreservedPaths(input.worktreePath ?? null, input.mountedSubmodules ?? []),
+    recovery_hint: input.recoveryHint ?? descriptor.recoveryHint,
+    canonical_ref: input.canonicalRef ?? null,
+    correlation_ids: {
+      tick_id: input.tickId ?? null,
+      dispatch_id: input.dispatchId,
+      merge_attempt_id: input.mergeAttemptId ?? null,
+      repo_attempt_id: input.repoAttemptId ?? null,
+    },
+  });
+}
+
+function buildPreservedPaths(
+  worktreePath: string | null,
+  mountedSubmodules: ReadonlyArray<RuntimeMountedSubmoduleRecord>,
+): string[] {
+  const preserved = new Set<string>();
+  if (worktreePath) {
+    preserved.add(worktreePath);
+  }
+  for (const entry of mountedSubmodules) {
+    if (entry.worktree_path) {
+      preserved.add(entry.worktree_path);
+    }
+  }
+  return [...preserved];
+}
+
+function inferBlockedIncidentPhase(incidentKind: string): string {
+  return describeIncidentKind(incidentKind).phase;
+}
+
+function describeIncidentKind(incidentKind: string): {
+  phase: string;
+  cause: string;
+  retryable: boolean;
+  repoRole: string;
+  commandLabel: string | null;
+  recommendedNextActor: "operator" | "automation" | "none";
+  recoveryHint: string;
+} {
+  switch (incidentKind) {
+    case "dispatch_failed_dirty":
+      return {
+        phase: "provider_run",
+        cause: "dispatch_failed_dirty",
+        retryable: false,
+        repoRole: "worktree",
+        commandLabel: null,
+        recommendedNextActor: "operator",
+        recoveryHint: "Inspect the preserved dispatch worktree before retrying.",
+      };
+    case DIRTY_INTEGRATION_INCIDENT:
+      return {
+        phase: "dirty_check",
+        cause: DIRTY_INTEGRATION_INCIDENT,
+        retryable: true,
+        repoRole: "host",
+        commandLabel: "git.status.integration",
+        recommendedNextActor: "operator",
+        recoveryHint: "Clean the integration checkout so the dispatcher can retry the blocked merge-back.",
+      };
+    case PRIMARY_DIRTY_TIMEOUT_INCIDENT:
+      return {
+        phase: "dirty_check",
+        cause: PRIMARY_DIRTY_TIMEOUT_INCIDENT,
+        retryable: false,
+        repoRole: "host",
+        commandLabel: "git.status.integration",
+        recommendedNextActor: "operator",
+        recoveryHint: "Clean the integration checkout, then manually retry the preserved dispatch.",
+      };
+    case "tracked_path_conflict":
+      return {
+        phase: "integration",
+        cause: "tracked_path_conflict",
+        retryable: false,
+        repoRole: "host",
+        commandLabel: "git.merge.integration",
+        recommendedNextActor: "operator",
+        recoveryHint: "Resolve the overlapping path conflict from the preserved worktree before retrying.",
+      };
+    case "stale_base_conflict":
+      return {
+        phase: "host_refresh",
+        cause: "stale_base_conflict",
+        retryable: false,
+        repoRole: "host",
+        commandLabel: "git.merge-base.host_refresh",
+        recommendedNextActor: "operator",
+        recoveryHint: "Reconcile the preserved worktree against the rewritten primary history.",
+      };
+    case "merge_back_publish_failed":
+      return {
+        phase: "publish",
+        cause: "merge_back_publish_failed",
+        retryable: false,
+        repoRole: "host",
+        commandLabel: "git.push.canonical",
+        recommendedNextActor: "operator",
+        recoveryHint: "Inspect the preserved merge-back result and remote movement before retrying publication.",
+      };
+    case "canonical_upstream_unsynced":
+      return {
+        phase: "publish",
+        cause: "canonical_upstream_unsynced",
+        retryable: false,
+        repoRole: "host",
+        commandLabel: "git.push.canonical",
+        recommendedNextActor: "operator",
+        recoveryHint: "Verify the canonical upstream head before replaying or retrying the preserved dispatch.",
+      };
+    case "submodule_concurrent_advance":
+      return {
+        phase: "integration",
+        cause: "submodule_concurrent_advance",
+        retryable: false,
+        repoRole: "mounted_submodule",
+        commandLabel: "git.merge.integration",
+        recommendedNextActor: "operator",
+        recoveryHint: "Inspect the preserved mounted submodule worktree and reconcile the concurrent advance.",
+      };
+    case "submodule_pointer_invariant_violation":
+      return {
+        phase: "integration",
+        cause: "submodule_pointer_invariant_violation",
+        retryable: false,
+        repoRole: "mounted_submodule",
+        commandLabel: "git.verify.submodule_pointer",
+        recommendedNextActor: "operator",
+        recoveryHint: "Validate the preserved host and submodule pointers before retrying publication.",
+      };
+    case "cleanup_failed":
+      return {
+        phase: "cleanup",
+        cause: "cleanup_failed",
+        retryable: false,
+        repoRole: "worktree",
+        commandLabel: "git.worktree.remove",
+        recommendedNextActor: "operator",
+        recoveryHint: "Remove the preserved worktree and branch refs after review.",
+      };
+    case "merge_back_failed":
+      return {
+        phase: "merge_back",
+        cause: "merge_back_failed",
+        retryable: false,
+        repoRole: "host",
+        commandLabel: null,
+        recommendedNextActor: "operator",
+        recoveryHint: "Inspect the preserved merge-back state and retry only after resolving the underlying failure.",
+      };
+    case "orphan_cleanup_failed":
+      return {
+        phase: "orphan_cleanup",
+        cause: "orphan_cleanup_failed",
+        retryable: false,
+        repoRole: "worktree",
+        commandLabel: "git.worktree.remove",
+        recommendedNextActor: "operator",
+        recoveryHint: "Clean up the preserved orphaned worktree manually.",
+      };
+    case "stale_dispatch":
+      return {
+        phase: "orphan_cleanup",
+        cause: "stale_dispatch",
+        retryable: false,
+        repoRole: "worktree",
+        commandLabel: null,
+        recommendedNextActor: "operator",
+        recoveryHint: "Resume investigation from the preserved orphaned worktree.",
+      };
+    default:
+      return {
+        phase: "merge_back",
+        cause: incidentKind,
+        retryable: false,
+        repoRole: "host",
+        commandLabel: null,
+        recommendedNextActor: "operator",
+        recoveryHint: "Inspect the preserved dispatcher runtime state before retrying.",
+      };
+  }
 }

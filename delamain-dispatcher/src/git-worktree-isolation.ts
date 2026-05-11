@@ -3,6 +3,11 @@ import { mkdir, rm } from "fs/promises";
 import { homedir } from "os";
 import { dirname, join, relative, resolve } from "path";
 import {
+  buildCommandResult,
+  sanitizeJsonObject,
+  type DispatchPhaseTelemetry,
+} from "./forensics.js";
+import {
   gitAbortCherryPick,
   gitAbortMerge,
   gitAbortRebase,
@@ -79,6 +84,7 @@ export interface MergeBackResult {
   error: string | null;
   incidentKind: string | null;
   retryCount: number;
+  telemetry: DispatchPhaseTelemetry[];
 }
 
 export interface RefreshMergeBackResult {
@@ -87,6 +93,7 @@ export interface RefreshMergeBackResult {
   mountedSubmodules: MountedSubmoduleMergeState[];
   error: string | null;
   incidentKind: string | null;
+  telemetry: DispatchPhaseTelemetry[];
 }
 
 interface MountedSubmoduleMergeState {
@@ -278,8 +285,21 @@ export class GitWorktreeIsolationStrategy {
     mountedSubmodules: MountedSubmoduleMergeState[];
     commitMessage: string;
   }): Promise<RefreshMergeBackResult> {
+    const telemetry: DispatchPhaseTelemetry[] = [];
     const dirtyRepo = await this.findDirtyIntegrationRepo(input.prepared.mountedSubmodules);
     if (dirtyRepo) {
+      telemetry.push({
+        event_type: "dirty_check",
+        phase: "dirty_check",
+        cause: "dirty_integration_checkout",
+        retryable: true,
+        recommended_next_actor: "operator",
+        command_label: "git.status.integration",
+        error: `Integration checkout is dirty: ${dirtyRepo}`,
+        attributes: sanitizeJsonObject({
+          dirty_repo: dirtyRepo,
+        }),
+      });
       return {
         status: "blocked",
         hostWorktreeCommit: input.hostWorktreeCommit,
@@ -289,8 +309,21 @@ export class GitWorktreeIsolationStrategy {
         ),
         error: `Integration checkout is dirty: ${dirtyRepo}`,
         incidentKind: "dirty_integration_checkout",
+        telemetry,
       };
     }
+
+    telemetry.push({
+      event_type: "dirty_check",
+      phase: "dirty_check",
+      cause: null,
+      retryable: false,
+      recommended_next_actor: "none",
+      command_label: "git.status.integration",
+      attributes: sanitizeJsonObject({
+        dirty_repo: null,
+      }),
+    });
 
     const mountedSubmodules = buildMountedSubmoduleResults(
       input.prepared.mountedSubmodules,
@@ -314,6 +347,7 @@ export class GitWorktreeIsolationStrategy {
           worktreeCommit: current.worktreeCommit,
           commitMessage: input.commitMessage,
         });
+        telemetry.push(...refresh.telemetry);
 
         mounted.baseCommit = refresh.baseCommit;
         current.worktreeCommit = refresh.worktreeCommit;
@@ -326,6 +360,7 @@ export class GitWorktreeIsolationStrategy {
             mountedSubmodules,
             error: refresh.error,
             incidentKind: refresh.incidentKind,
+            telemetry,
           };
         }
       }
@@ -340,6 +375,7 @@ export class GitWorktreeIsolationStrategy {
         commitMessage: input.commitMessage,
         mountedSubmodules: input.prepared.mountedSubmodules,
       });
+      telemetry.push(...hostRefresh.telemetry);
       input.prepared.baseCommit = hostRefresh.baseCommit;
 
       if (hostRefresh.status !== "ready") {
@@ -349,6 +385,7 @@ export class GitWorktreeIsolationStrategy {
           mountedSubmodules,
           error: hostRefresh.error,
           incidentKind: hostRefresh.incidentKind,
+          telemetry,
         };
       }
 
@@ -358,15 +395,26 @@ export class GitWorktreeIsolationStrategy {
         mountedSubmodules,
         error: null,
         incidentKind: null,
+        telemetry,
       };
     } catch (error) {
       await this.abortRefreshMerges(input.prepared).catch(() => undefined);
+      telemetry.push({
+        event_type: "refresh_decision",
+        phase: "merge_back",
+        cause: "merge_back_failed",
+        retryable: false,
+        recommended_next_actor: "operator",
+        command_label: null,
+        error: error instanceof Error ? error.message : String(error),
+      });
       return {
         status: "blocked",
         hostWorktreeCommit: input.hostWorktreeCommit,
         mountedSubmodules,
         error: error instanceof Error ? error.message : String(error),
         incidentKind: "merge_back_failed",
+        telemetry,
       };
     }
   }
@@ -377,8 +425,19 @@ export class GitWorktreeIsolationStrategy {
     hostWorktreeCommit: string | null;
     mountedSubmodules: MountedSubmoduleMergeState[];
   }): Promise<MergeBackResult> {
+    const telemetry: DispatchPhaseTelemetry[] = [];
     const dirtyRepo = await this.findDirtyIntegrationRepo(input.prepared.mountedSubmodules);
     if (dirtyRepo) {
+      telemetry.push({
+        event_type: "dirty_check",
+        phase: "dirty_check",
+        cause: "dirty_integration_checkout",
+        retryable: true,
+        recommended_next_actor: "operator",
+        command_label: "git.status.integration",
+        error: `Integration checkout is dirty: ${dirtyRepo}`,
+        attributes: sanitizeJsonObject({ dirty_repo: dirtyRepo }),
+      });
       return {
         status: "blocked",
         worktreeCommit: await gitHeadCommit(input.prepared.worktreePath).catch(() => null),
@@ -390,6 +449,7 @@ export class GitWorktreeIsolationStrategy {
         error: `Integration checkout is dirty: ${dirtyRepo}`,
         incidentKind: "dirty_integration_checkout",
         retryCount: 0,
+        telemetry,
       };
     }
 
@@ -407,6 +467,16 @@ export class GitWorktreeIsolationStrategy {
 
         const mounted = mountedByPath.get(submoduleState.repoPath);
         if (!mounted) {
+          telemetry.push({
+            event_type: "integration_attempt",
+            phase: "integration",
+            cause: "merge_back_failed",
+            retryable: false,
+            recommended_next_actor: "operator",
+            command_label: null,
+            error: `Mounted submodule metadata missing for '${submoduleState.repoPath}'`,
+            attributes: sanitizeJsonObject({ repo_path: submoduleState.repoPath }),
+          });
           return {
             status: "blocked",
             worktreeCommit: await gitHeadCommit(input.prepared.worktreePath).catch(() => null),
@@ -418,11 +488,35 @@ export class GitWorktreeIsolationStrategy {
             error: `Mounted submodule metadata missing for '${submoduleState.repoPath}'`,
             incidentKind: "merge_back_failed",
             retryCount: 0,
+            telemetry,
           };
         }
 
         const preIntegrationHead = await gitHeadCommit(mounted.primaryRepoPath);
         const merge = await gitMergeFastForward(mounted.primaryRepoPath, submoduleState.worktreeCommit);
+        telemetry.push({
+          event_type: "integration_attempt",
+          phase: "integration",
+          cause: merge.exitCode === 0 ? null : "submodule_concurrent_advance",
+          retryable: false,
+          recommended_next_actor: merge.exitCode === 0 ? "none" : "operator",
+          command_label: "git.merge.integration",
+          command_result: buildCommandResult({
+            exitCode: merge.exitCode,
+            stdout: merge.stdout,
+            stderr: merge.stderr,
+            rawCommand: `git merge --ff-only ${submoduleState.worktreeCommit}`,
+          }),
+          relevant_shas: {
+            base_commit: mounted.baseCommit,
+            current_head: preIntegrationHead,
+            worktree_commit: submoduleState.worktreeCommit,
+          },
+          attributes: sanitizeJsonObject({
+            repo_path: mounted.repoPath,
+            repo_role: "mounted_submodule",
+          }),
+        });
         if (merge.exitCode !== 0) {
           await this.rollbackIntegratedRepos(integratedSubmodules);
           return {
@@ -440,6 +534,7 @@ export class GitWorktreeIsolationStrategy {
             ),
             incidentKind: INCIDENT_SUBMODULE_CONCURRENT_ADVANCE,
             retryCount: 0,
+            telemetry,
           };
         }
 
@@ -471,12 +566,26 @@ export class GitWorktreeIsolationStrategy {
           baseCommit: submodule.baseCommit,
           dispatchTouchedPaths,
         });
+        telemetry.push(...publishResult.telemetry);
         if (publishResult.status === "blocked") {
           await this.rollbackMergeTransaction({
             detachedWorktrees,
             integratedSubmodules,
             hostIntegrated,
             hostPreIntegrationHead,
+          });
+          telemetry.push({
+            event_type: "rollback",
+            phase: "rollback",
+            cause: publishResult.incidentKind,
+            retryable: false,
+            recommended_next_actor: "operator",
+            command_label: null,
+            error: publishResult.error,
+            attributes: sanitizeJsonObject({
+              repo_path: submodule.repoPath,
+              repo_role: "mounted_submodule",
+            }),
           });
           return {
             status: "blocked",
@@ -490,11 +599,29 @@ export class GitWorktreeIsolationStrategy {
             error: publishResult.error,
             incidentKind: publishResult.incidentKind,
             retryCount: publishResult.retryCount,
+            telemetry,
           };
         }
 
         submodule.integratedCommit = publishResult.publishedCommit;
-        await this.runPrimaryCloneFollowThrough(submodule.repoPath, submodule.primaryRepoPath);
+        const submoduleConvergence = await this.runPrimaryCloneFollowThrough(
+          submodule.repoPath,
+          submodule.primaryRepoPath,
+        );
+        telemetry.push({
+          event_type: "primary_convergence",
+          phase: "primary_convergence",
+          cause: submoduleConvergence.status === "converged" ? null : submoduleConvergence.status,
+          retryable: false,
+          recommended_next_actor: submoduleConvergence.status === "converged" ? "none" : "operator",
+          command_label: "git.primary_convergence",
+          error: submoduleConvergence.status === "converged" ? null : submoduleConvergence.message,
+          attributes: sanitizeJsonObject({
+            repo_path: submodule.repoPath,
+            repo_role: "mounted_submodule",
+            convergence_status: submoduleConvergence.status,
+          }),
+        });
         await runGit(submodule.worktreePath, ["checkout", "--detach", submodule.integratedCommit]);
         detachedWorktrees.push(submodule);
         await runGit(input.prepared.worktreePath, ["add", submodule.repoPath]);
@@ -518,6 +645,18 @@ export class GitWorktreeIsolationStrategy {
           hostIntegrated,
           hostPreIntegrationHead,
         });
+        telemetry.push({
+          event_type: "rollback",
+          phase: "rollback",
+          cause: "submodule_pointer_invariant_violation",
+          retryable: false,
+          recommended_next_actor: "operator",
+          command_label: null,
+          error: formatRepoScopedInvariantError(
+            ".",
+            "host worktree produced no final commit after mounted submodule publication",
+          ),
+        });
         return {
           status: "blocked",
           worktreeCommit: null,
@@ -533,14 +672,51 @@ export class GitWorktreeIsolationStrategy {
           ),
           incidentKind: INCIDENT_SUBMODULE_POINTER_INVARIANT_VIOLATION,
           retryCount: 0,
+          telemetry,
         };
       }
 
       hostPreIntegrationHead = await gitHeadCommit(this.systemRoot);
       const hostMerge = await gitMergeFastForward(this.systemRoot, hostWorktreeCommit);
+      telemetry.push({
+        event_type: "integration_attempt",
+        phase: "integration",
+        cause: hostMerge.exitCode === 0 ? null : "tracked_path_conflict",
+        retryable: false,
+        recommended_next_actor: hostMerge.exitCode === 0 ? "none" : "operator",
+        command_label: "git.merge.integration",
+        command_result: buildCommandResult({
+          exitCode: hostMerge.exitCode,
+          stdout: hostMerge.stdout,
+          stderr: hostMerge.stderr,
+          rawCommand: `git merge --ff-only ${hostWorktreeCommit}`,
+        }),
+        relevant_shas: {
+          base_commit: input.prepared.baseCommit,
+          current_head: hostPreIntegrationHead,
+          worktree_commit: hostWorktreeCommit,
+        },
+        attributes: sanitizeJsonObject({
+          repo_path: ".",
+          repo_role: "host",
+        }),
+      });
       if (hostMerge.exitCode !== 0) {
         await this.restoreDetachedMountedWorktrees(detachedWorktrees);
         await this.rollbackIntegratedRepos(integratedSubmodules);
+        telemetry.push({
+          event_type: "rollback",
+          phase: "rollback",
+          cause: "tracked_path_conflict",
+          retryable: false,
+          recommended_next_actor: "operator",
+          command_label: null,
+          error: formatRepoScopedIntegrationError(
+            ".",
+            hostMerge.stderr.trim() || hostMerge.stdout.trim() || "Fast-forward merge failed",
+            hostWorktreeCommit,
+          ),
+        });
         return {
           status: "blocked",
           worktreeCommit: hostWorktreeCommit,
@@ -557,6 +733,7 @@ export class GitWorktreeIsolationStrategy {
           ),
           incidentKind: INCIDENT_TRACKED_PATH_CONFLICT,
           retryCount: 0,
+          telemetry,
         };
       }
       hostIntegrated = true;
@@ -568,6 +745,15 @@ export class GitWorktreeIsolationStrategy {
           integratedSubmodules,
           hostIntegrated,
           hostPreIntegrationHead,
+        });
+        telemetry.push({
+          event_type: "rollback",
+          phase: "rollback",
+          cause: "submodule_pointer_invariant_violation",
+          retryable: false,
+          recommended_next_actor: "operator",
+          command_label: "git.verify.submodule_pointer",
+          error: pointerVerification.error,
         });
         return {
           status: "blocked",
@@ -581,6 +767,7 @@ export class GitWorktreeIsolationStrategy {
           error: pointerVerification.error,
           incidentKind: INCIDENT_SUBMODULE_POINTER_INVARIANT_VIOLATION,
           retryCount: 0,
+          telemetry,
         };
       }
 
@@ -598,12 +785,26 @@ export class GitWorktreeIsolationStrategy {
         baseCommit: input.prepared.baseCommit,
         dispatchTouchedPaths: hostDispatchTouchedPaths,
       });
+      telemetry.push(...hostPublishResult.telemetry);
       if (hostPublishResult.status === "blocked") {
         await this.rollbackMergeTransaction({
           detachedWorktrees,
           integratedSubmodules,
           hostIntegrated,
           hostPreIntegrationHead,
+        });
+        telemetry.push({
+          event_type: "rollback",
+          phase: "rollback",
+          cause: hostPublishResult.incidentKind,
+          retryable: false,
+          recommended_next_actor: "operator",
+          command_label: null,
+          error: hostPublishResult.error,
+          attributes: sanitizeJsonObject({
+            repo_path: ".",
+            repo_role: "host",
+          }),
         });
         return {
           status: "blocked",
@@ -617,11 +818,26 @@ export class GitWorktreeIsolationStrategy {
             error: hostPublishResult.error,
             incidentKind: hostPublishResult.incidentKind,
             retryCount: hostPublishResult.retryCount,
+            telemetry,
           };
         }
 
       hostIntegratedCommit = hostPublishResult.publishedCommit;
-      await this.runPrimaryCloneFollowThrough(".", this.systemRoot);
+      const hostConvergence = await this.runPrimaryCloneFollowThrough(".", this.systemRoot);
+      telemetry.push({
+        event_type: "primary_convergence",
+        phase: "primary_convergence",
+        cause: hostConvergence.status === "converged" ? null : hostConvergence.status,
+        retryable: false,
+        recommended_next_actor: hostConvergence.status === "converged" ? "none" : "operator",
+        command_label: "git.primary_convergence",
+        error: hostConvergence.status === "converged" ? null : hostConvergence.message,
+        attributes: sanitizeJsonObject({
+          repo_path: ".",
+          repo_role: "host",
+          convergence_status: hostConvergence.status,
+        }),
+      });
 
       return {
         status: "merged",
@@ -635,6 +851,7 @@ export class GitWorktreeIsolationStrategy {
         error: null,
         incidentKind: null,
         retryCount: 0,
+        telemetry,
       };
     } catch (error) {
       await this.restoreDetachedMountedWorktrees(detachedWorktrees);
@@ -642,6 +859,15 @@ export class GitWorktreeIsolationStrategy {
       if (hostIntegrated && hostPreIntegrationHead) {
         await this.rollbackHostIntegration(hostPreIntegrationHead);
       }
+      telemetry.push({
+        event_type: "rollback",
+        phase: "rollback",
+        cause: "merge_back_failed",
+        retryable: false,
+        recommended_next_actor: "operator",
+        command_label: null,
+        error: error instanceof Error ? error.message : String(error),
+      });
       return {
         status: "blocked",
         worktreeCommit: null,
@@ -653,6 +879,7 @@ export class GitWorktreeIsolationStrategy {
         error: error instanceof Error ? error.message : String(error),
         incidentKind: "merge_back_failed",
         retryCount: 0,
+        telemetry,
       };
     }
   }
@@ -766,7 +993,9 @@ export class GitWorktreeIsolationStrategy {
     worktreeCommit: string | null;
     error: string | null;
     incidentKind: string | null;
+    telemetry: DispatchPhaseTelemetry[];
   }> {
+    const telemetry: DispatchPhaseTelemetry[] = [];
     if (input.currentHead === input.baseCommit) {
       return {
         status: "ready",
@@ -774,6 +1003,7 @@ export class GitWorktreeIsolationStrategy {
         worktreeCommit: input.worktreeCommit,
         error: null,
         incidentKind: null,
+        telemetry,
       };
     }
 
@@ -783,6 +1013,23 @@ export class GitWorktreeIsolationStrategy {
       input.currentHead,
     );
     if (!baseStillReachable) {
+      telemetry.push({
+        event_type: "refresh_decision",
+        phase: "host_refresh",
+        cause: input.repoPath === "." ? "stale_base_conflict" : "submodule_concurrent_advance",
+        retryable: false,
+        recommended_next_actor: "operator",
+        command_label: "git.merge-base.host_refresh",
+        relevant_shas: {
+          base_commit: input.baseCommit,
+          current_head: input.currentHead,
+        },
+        attributes: sanitizeJsonObject({
+          repo_path: input.repoPath,
+          chosen_path: "block",
+          overlap_result: "not_ancestor",
+        }),
+      });
       return {
         status: "blocked",
         baseCommit: input.currentHead,
@@ -794,6 +1041,7 @@ export class GitWorktreeIsolationStrategy {
         incidentKind: input.repoPath === "."
           ? "stale_base_conflict"
           : INCIDENT_SUBMODULE_CONCURRENT_ADVANCE,
+        telemetry,
       };
     }
 
@@ -810,24 +1058,69 @@ export class GitWorktreeIsolationStrategy {
         input.currentHead,
       );
       if (!pathsOverlap(dispatchTouchedPaths, hostMovedPaths)) {
-        return this.refreshOrthogonalHostWorktree({
+        const orthogonal = await this.refreshOrthogonalHostWorktree({
           worktreePath: input.worktreePath,
           baseCommit: input.baseCommit,
           currentHead: input.currentHead,
           worktreeCommit: input.worktreeCommit,
           commitMessage: input.commitMessage,
         });
+        return {
+          ...orthogonal,
+          telemetry: [
+            {
+              event_type: "refresh_decision",
+              phase: "host_refresh",
+              cause: orthogonal.incidentKind,
+              retryable: orthogonal.status === "blocked",
+              recommended_next_actor: orthogonal.status === "blocked" ? "operator" : "none",
+              command_label: orthogonal.status === "blocked"
+                ? "git.cherry_pick.host_refresh"
+                : "git.reset.host_refresh",
+              relevant_shas: {
+                base_commit: input.baseCommit,
+                current_head: input.currentHead,
+                worktree_commit: input.worktreeCommit,
+              },
+              attributes: sanitizeJsonObject({
+                repo_path: input.repoPath,
+                chosen_path: "cherry_pick",
+                dispatch_touched_paths: dispatchTouchedPaths,
+                host_moved_paths: hostMovedPaths,
+                overlap_result: "disjoint",
+              }),
+              error: orthogonal.error,
+            },
+          ],
+        };
       }
     }
 
     if (!input.worktreeCommit) {
       await runGit(input.worktreePath, ["reset", "--hard", input.currentHead]);
+      telemetry.push({
+        event_type: "refresh_decision",
+        phase: input.repoPath === "." ? "host_refresh" : "integration",
+        cause: null,
+        retryable: false,
+        recommended_next_actor: "none",
+        command_label: "git.reset.host_refresh",
+        relevant_shas: {
+          base_commit: input.baseCommit,
+          current_head: input.currentHead,
+        },
+        attributes: sanitizeJsonObject({
+          repo_path: input.repoPath,
+          chosen_path: "reset",
+        }),
+      });
       return {
         status: "ready",
         baseCommit: input.currentHead,
         worktreeCommit: null,
         error: null,
         incidentKind: null,
+        telemetry,
       };
     }
 
@@ -841,26 +1134,98 @@ export class GitWorktreeIsolationStrategy {
           mountedSubmodules: input.mountedSubmodules ?? [],
         });
         if (reconciliation.status === "ready") {
+          telemetry.push({
+            event_type: "refresh_decision",
+            phase: "host_refresh",
+            cause: null,
+            retryable: false,
+            recommended_next_actor: "none",
+            command_label: "git.merge.host_refresh",
+            command_result: buildCommandResult({
+              exitCode: merge.exitCode,
+              stdout: merge.stdout,
+              stderr: merge.stderr,
+              rawCommand: `git merge --no-ff ${input.currentHead}`,
+            }),
+            relevant_shas: {
+              base_commit: input.baseCommit,
+              current_head: input.currentHead,
+              worktree_commit: input.worktreeCommit,
+            },
+            attributes: sanitizeJsonObject({
+              repo_path: input.repoPath,
+              chosen_path: "merge_reconciled_submodule_descendant",
+            }),
+          });
           return {
             status: "ready",
             baseCommit: input.currentHead,
             worktreeCommit: await gitHeadCommit(input.worktreePath),
             error: null,
             incidentKind: null,
+            telemetry,
           };
         }
         if (reconciliation.status === "blocked") {
+          telemetry.push({
+            event_type: "refresh_decision",
+            phase: "host_refresh",
+            cause: reconciliation.incidentKind,
+            retryable: false,
+            recommended_next_actor: "operator",
+            command_label: "git.merge.host_refresh",
+            command_result: buildCommandResult({
+              exitCode: merge.exitCode,
+              stdout: merge.stdout,
+              stderr: merge.stderr,
+              rawCommand: `git merge --no-ff ${input.currentHead}`,
+            }),
+            relevant_shas: {
+              base_commit: input.baseCommit,
+              current_head: input.currentHead,
+              worktree_commit: input.worktreeCommit,
+            },
+            attributes: sanitizeJsonObject({
+              repo_path: input.repoPath,
+              chosen_path: "block",
+            }),
+            error: reconciliation.error,
+          });
           return {
             status: "blocked",
             baseCommit: input.currentHead,
             worktreeCommit: input.worktreeCommit,
             error: reconciliation.error,
             incidentKind: reconciliation.incidentKind,
+            telemetry,
           };
         }
       }
 
       await gitAbortMerge(input.worktreePath).catch(() => undefined);
+      telemetry.push({
+        event_type: "refresh_decision",
+        phase: input.repoPath === "." ? "host_refresh" : "integration",
+        cause: input.repoPath === "." ? "tracked_path_conflict" : "submodule_concurrent_advance",
+        retryable: false,
+        recommended_next_actor: "operator",
+        command_label: "git.merge.host_refresh",
+        command_result: buildCommandResult({
+          exitCode: merge.exitCode,
+          stdout: merge.stdout,
+          stderr: merge.stderr,
+          rawCommand: `git merge --no-ff ${input.currentHead}`,
+        }),
+        relevant_shas: {
+          base_commit: input.baseCommit,
+          current_head: input.currentHead,
+          worktree_commit: input.worktreeCommit,
+        },
+        attributes: sanitizeJsonObject({
+          repo_path: input.repoPath,
+          chosen_path: "block",
+        }),
+      });
       return {
         status: "blocked",
         baseCommit: input.currentHead,
@@ -872,15 +1237,40 @@ export class GitWorktreeIsolationStrategy {
         incidentKind: input.repoPath === "."
           ? INCIDENT_TRACKED_PATH_CONFLICT
           : INCIDENT_SUBMODULE_CONCURRENT_ADVANCE,
+        telemetry,
       };
     }
 
+    telemetry.push({
+      event_type: "refresh_decision",
+      phase: input.repoPath === "." ? "host_refresh" : "integration",
+      cause: null,
+      retryable: false,
+      recommended_next_actor: "none",
+      command_label: "git.merge.host_refresh",
+      command_result: buildCommandResult({
+        exitCode: merge.exitCode,
+        stdout: merge.stdout,
+        stderr: merge.stderr,
+        rawCommand: `git merge --no-ff ${input.currentHead}`,
+      }),
+      relevant_shas: {
+        base_commit: input.baseCommit,
+        current_head: input.currentHead,
+        worktree_commit: input.worktreeCommit,
+      },
+      attributes: sanitizeJsonObject({
+        repo_path: input.repoPath,
+        chosen_path: "merge",
+      }),
+    });
     return {
       status: "ready",
       baseCommit: input.currentHead,
       worktreeCommit: await gitHeadCommit(input.worktreePath),
       error: null,
       incidentKind: null,
+      telemetry,
     };
   }
 
@@ -931,12 +1321,33 @@ export class GitWorktreeIsolationStrategy {
     worktreeCommit: string | null;
     error: string | null;
     incidentKind: string | null;
+    telemetry: DispatchPhaseTelemetry[];
   }> {
+    const telemetry: DispatchPhaseTelemetry[] = [];
     await runGit(input.worktreePath, ["reset", "--hard", input.currentHead]);
     const replay = await gitCherryPickNoCommit(input.worktreePath, input.worktreeCommit);
     if (replay.exitCode !== 0) {
       await gitAbortCherryPick(input.worktreePath).catch(() => undefined);
       await runGit(input.worktreePath, ["reset", "--hard", input.worktreeCommit]).catch(() => undefined);
+      telemetry.push({
+        event_type: "refresh_decision",
+        phase: "host_refresh",
+        cause: "tracked_path_conflict",
+        retryable: false,
+        recommended_next_actor: "operator",
+        command_label: "git.cherry_pick.host_refresh",
+        command_result: buildCommandResult({
+          exitCode: replay.exitCode,
+          stdout: replay.stdout,
+          stderr: replay.stderr,
+          rawCommand: `git cherry-pick --no-commit ${input.worktreeCommit}`,
+        }),
+        relevant_shas: {
+          base_commit: input.baseCommit,
+          current_head: input.currentHead,
+          worktree_commit: input.worktreeCommit,
+        },
+      });
       return {
         status: "blocked",
         baseCommit: input.currentHead,
@@ -946,9 +1357,29 @@ export class GitWorktreeIsolationStrategy {
           replay.stderr.trim() || replay.stdout.trim() || `cherry-pick ${input.worktreeCommit} failed`,
         ),
         incidentKind: INCIDENT_TRACKED_PATH_CONFLICT,
+        telemetry,
       };
     }
 
+    telemetry.push({
+      event_type: "refresh_decision",
+      phase: "host_refresh",
+      cause: null,
+      retryable: false,
+      recommended_next_actor: "none",
+      command_label: "git.cherry_pick.host_refresh",
+      command_result: buildCommandResult({
+        exitCode: replay.exitCode,
+        stdout: replay.stdout,
+        stderr: replay.stderr,
+        rawCommand: `git cherry-pick --no-commit ${input.worktreeCommit}`,
+      }),
+      relevant_shas: {
+        base_commit: input.baseCommit,
+        current_head: input.currentHead,
+        worktree_commit: input.worktreeCommit,
+      },
+    });
     return {
       status: "ready",
       baseCommit: input.currentHead,
@@ -959,6 +1390,7 @@ export class GitWorktreeIsolationStrategy {
       ),
       error: null,
       incidentKind: null,
+      telemetry,
     };
   }
 
@@ -1194,12 +1626,28 @@ export class GitWorktreeIsolationStrategy {
     baseCommit: string;
     dispatchTouchedPaths: ReadonlyArray<string>;
   }): Promise<
-    | { status: "ready"; publishedCommit: string; retryCount: number }
-    | { status: "blocked"; incidentKind: string; error: string; retryCount: number }
+    | { status: "ready"; publishedCommit: string; retryCount: number; telemetry: DispatchPhaseTelemetry[] }
+    | { status: "blocked"; incidentKind: string; error: string; retryCount: number; telemetry: DispatchPhaseTelemetry[] }
   > {
+    const telemetry: DispatchPhaseTelemetry[] = [];
     try {
       const target = await gitResolveCanonicalRefTarget(input.repoRoot);
       if (!target) {
+        telemetry.push({
+          event_type: "publish_attempt",
+          phase: "publish",
+          cause: "merge_back_publish_failed",
+          retryable: false,
+          recommended_next_actor: "operator",
+          command_label: "git.push.canonical",
+          error: formatRepoScopedPublishTargetError(
+            input.repoPath,
+            "canonical upstream ref is not configured on the integration checkout",
+          ),
+          attributes: sanitizeJsonObject({
+            repo_path: input.repoPath,
+          }),
+        });
         return {
           status: "blocked",
           incidentKind: INCIDENT_MERGE_BACK_PUBLISH_FAILED,
@@ -1208,6 +1656,7 @@ export class GitWorktreeIsolationStrategy {
             "canonical upstream ref is not configured on the integration checkout",
           ),
           retryCount: 0,
+          telemetry,
         };
       }
 
@@ -1217,14 +1666,67 @@ export class GitWorktreeIsolationStrategy {
       let retryCount = 0;
 
       while (true) {
+        const remoteHeadBefore = await gitRemoteRefCommit(
+          input.repoRoot,
+          target.remoteName,
+          target.fullRef,
+        ).catch(() => null);
         const push = await gitPush(
           input.repoRoot,
           target.remoteName,
           `${currentCommit}:${target.fullRef}`,
         );
+        telemetry.push({
+          event_type: "publish_attempt",
+          phase: "publish",
+          cause: push.exitCode === 0 ? null : "merge_back_publish_failed",
+          retryable: false,
+          recommended_next_actor: push.exitCode === 0 ? "none" : "operator",
+          command_label: "git.push.canonical",
+          command_result: buildCommandResult({
+            exitCode: push.exitCode,
+            stdout: push.stdout,
+            stderr: push.stderr,
+            rawCommand: `git push ${target.remoteName} ${currentCommit}:${target.fullRef}`,
+          }),
+          relevant_shas: {
+            base_commit: input.baseCommit,
+            integrated_commit: currentCommit,
+            remote_head_before: remoteHeadBefore,
+          },
+          attributes: sanitizeJsonObject({
+            repo_path: input.repoPath,
+            canonical_ref: targetName,
+            retry_count: retryCount,
+          }),
+        });
         if (push.exitCode === 0) {
           const remoteCommit = await gitRemoteRefCommit(input.repoRoot, target.remoteName, target.fullRef);
           if (remoteCommit !== currentCommit) {
+            telemetry.push({
+              event_type: "publish_attempt",
+              phase: "publish",
+              cause: "canonical_upstream_unsynced",
+              retryable: false,
+              recommended_next_actor: "operator",
+              command_label: "git.push.canonical",
+              relevant_shas: {
+                base_commit: input.baseCommit,
+                integrated_commit: currentCommit,
+                remote_head_before: remoteHeadBefore,
+                remote_head_after: remoteCommit,
+              },
+              error: formatRepoScopedRemoteMismatchError(
+                input.repoPath,
+                targetName,
+                currentCommit,
+                remoteCommit,
+              ),
+              attributes: sanitizeJsonObject({
+                repo_path: input.repoPath,
+                canonical_ref: targetName,
+              }),
+            });
             return {
               status: "blocked",
               incidentKind: INCIDENT_CANONICAL_UPSTREAM_UNSYNCED,
@@ -1235,6 +1737,7 @@ export class GitWorktreeIsolationStrategy {
                 remoteCommit,
               ),
               retryCount,
+              telemetry,
             };
           }
 
@@ -1242,6 +1745,25 @@ export class GitWorktreeIsolationStrategy {
             status: "ready",
             publishedCommit: currentCommit,
             retryCount,
+            telemetry: telemetry.concat({
+              event_type: "publish_attempt",
+              phase: "publish",
+              cause: null,
+              retryable: false,
+              recommended_next_actor: "none",
+              command_label: "git.push.canonical",
+              relevant_shas: {
+                base_commit: input.baseCommit,
+                integrated_commit: currentCommit,
+                remote_head_before: remoteHeadBefore,
+                remote_head_after: remoteCommit,
+              },
+              attributes: sanitizeJsonObject({
+                repo_path: input.repoPath,
+                canonical_ref: targetName,
+                retry_count: retryCount,
+              }),
+            }),
           };
         }
 
@@ -1257,10 +1779,30 @@ export class GitWorktreeIsolationStrategy {
               pushMessage,
             ),
             retryCount,
+            telemetry,
           };
         }
 
         if (retryCount >= MAX_PUBLISH_REPLAY_ATTEMPTS) {
+          telemetry.push({
+            event_type: "publish_replay",
+            phase: "publish",
+            cause: "merge_back_publish_failed",
+            retryable: false,
+            recommended_next_actor: "operator",
+            command_label: "git.push.canonical",
+            error: `non-fast-forward persisted after ${MAX_PUBLISH_REPLAY_ATTEMPTS} replay attempts: ${pushMessage}`,
+            relevant_shas: {
+              base_commit: input.baseCommit,
+              integrated_commit: currentCommit,
+              remote_head_before: remoteHeadBefore,
+            },
+            attributes: sanitizeJsonObject({
+              repo_path: input.repoPath,
+              canonical_ref: targetName,
+              retry_count: retryCount,
+            }),
+          });
           return {
             status: "blocked",
             incidentKind: INCIDENT_MERGE_BACK_PUBLISH_FAILED,
@@ -1271,6 +1813,7 @@ export class GitWorktreeIsolationStrategy {
               `non-fast-forward persisted after ${MAX_PUBLISH_REPLAY_ATTEMPTS} replay attempts: ${pushMessage}`,
             ),
             retryCount,
+            telemetry,
           };
         }
 
@@ -1282,6 +1825,29 @@ export class GitWorktreeIsolationStrategy {
           target.fullRef,
           trackingRef,
         );
+        telemetry.push({
+          event_type: "publish_replay",
+          phase: "publish",
+          cause: fetch.exitCode === 0 ? null : "merge_back_publish_failed",
+          retryable: false,
+          recommended_next_actor: fetch.exitCode === 0 ? "automation" : "operator",
+          command_label: "git.fetch.canonical",
+          command_result: buildCommandResult({
+            exitCode: fetch.exitCode,
+            stdout: fetch.stdout,
+            stderr: fetch.stderr,
+            rawCommand: `git fetch ${target.remoteName} ${target.fullRef} ${trackingRef}`,
+          }),
+          relevant_shas: {
+            base_commit: input.baseCommit,
+            integrated_commit: currentCommit,
+          },
+          attributes: sanitizeJsonObject({
+            repo_path: input.repoPath,
+            canonical_ref: targetName,
+            retry_count: retryCount,
+          }),
+        });
         if (fetch.exitCode !== 0) {
           return {
             status: "blocked",
@@ -1293,6 +1859,7 @@ export class GitWorktreeIsolationStrategy {
               `fetch failed before replay: ${fetch.stderr.trim() || fetch.stdout.trim() || "fetch failed"}`,
             ),
             retryCount,
+            telemetry,
           };
         }
 
@@ -1308,6 +1875,24 @@ export class GitWorktreeIsolationStrategy {
               `canonical upstream moved below recorded base ${input.baseCommit} -> ${remoteCommit}; automatic replay requires an ancestor-preserving remote`,
             ),
             retryCount,
+            telemetry: telemetry.concat({
+              event_type: "publish_replay",
+              phase: "publish",
+              cause: "merge_back_publish_failed",
+              retryable: false,
+              recommended_next_actor: "operator",
+              command_label: "git.merge-base.publish_replay",
+              relevant_shas: {
+                base_commit: input.baseCommit,
+                integrated_commit: currentCommit,
+                remote_head_after: remoteCommit,
+              },
+              attributes: sanitizeJsonObject({
+                repo_path: input.repoPath,
+                canonical_ref: targetName,
+                retry_count: retryCount,
+              }),
+            }),
           };
         }
 
@@ -1318,6 +1903,26 @@ export class GitWorktreeIsolationStrategy {
         );
         const conflictingPaths = overlappingPaths(input.dispatchTouchedPaths, remoteMovedPaths);
         if (conflictingPaths.length > 0) {
+          telemetry.push({
+            event_type: "publish_replay",
+            phase: "publish",
+            cause: "merge_back_publish_failed",
+            retryable: false,
+            recommended_next_actor: "operator",
+            command_label: "git.diff.publish_replay_overlap",
+            relevant_shas: {
+              base_commit: input.baseCommit,
+              integrated_commit: currentCommit,
+              remote_head_after: remoteCommit,
+            },
+            attributes: sanitizeJsonObject({
+              repo_path: input.repoPath,
+              canonical_ref: targetName,
+              retry_count: retryCount,
+              remote_moved_paths: remoteMovedPaths,
+              conflicting_paths: conflictingPaths,
+            }),
+          });
           return {
             status: "blocked",
             incidentKind: INCIDENT_MERGE_BACK_PUBLISH_FAILED,
@@ -1328,6 +1933,7 @@ export class GitWorktreeIsolationStrategy {
               conflictingPaths,
             ),
             retryCount,
+            telemetry,
           };
         }
 
@@ -1335,6 +1941,31 @@ export class GitWorktreeIsolationStrategy {
         if (rebase.exitCode !== 0) {
           const rebaseConflictPaths = await this.readUnmergedPaths(input.repoRoot);
           await gitAbortRebase(input.repoRoot).catch(() => undefined);
+          telemetry.push({
+            event_type: "publish_replay",
+            phase: "publish",
+            cause: "merge_back_publish_failed",
+            retryable: false,
+            recommended_next_actor: "operator",
+            command_label: "git.rebase.publish_replay",
+            command_result: buildCommandResult({
+              exitCode: rebase.exitCode,
+              stdout: rebase.stdout,
+              stderr: rebase.stderr,
+              rawCommand: `git rebase ${trackingRef}`,
+            }),
+            relevant_shas: {
+              base_commit: input.baseCommit,
+              integrated_commit: currentCommit,
+              remote_head_after: remoteCommit,
+            },
+            attributes: sanitizeJsonObject({
+              repo_path: input.repoPath,
+              canonical_ref: targetName,
+              retry_count: retryCount,
+              unmerged_paths: rebaseConflictPaths,
+            }),
+          });
           return {
             status: "blocked",
             incidentKind: INCIDENT_MERGE_BACK_PUBLISH_FAILED,
@@ -1346,12 +1977,49 @@ export class GitWorktreeIsolationStrategy {
               rebaseConflictPaths,
             ),
             retryCount,
+            telemetry,
           };
         }
 
+        telemetry.push({
+          event_type: "publish_replay",
+          phase: "publish",
+          cause: null,
+          retryable: false,
+          recommended_next_actor: "automation",
+          command_label: "git.rebase.publish_replay",
+          command_result: buildCommandResult({
+            exitCode: rebase.exitCode,
+            stdout: rebase.stdout,
+            stderr: rebase.stderr,
+            rawCommand: `git rebase ${trackingRef}`,
+          }),
+          relevant_shas: {
+            base_commit: input.baseCommit,
+            integrated_commit: currentCommit,
+            remote_head_after: remoteCommit,
+          },
+          attributes: sanitizeJsonObject({
+            repo_path: input.repoPath,
+            canonical_ref: targetName,
+            retry_count: retryCount,
+          }),
+        });
         currentCommit = await gitHeadCommit(input.repoRoot);
       }
     } catch (error) {
+      telemetry.push({
+        event_type: "publish_attempt",
+        phase: "publish",
+        cause: "merge_back_publish_failed",
+        retryable: false,
+        recommended_next_actor: "operator",
+        command_label: "git.push.canonical",
+        error: error instanceof Error ? error.message : String(error),
+        attributes: sanitizeJsonObject({
+          repo_path: input.repoPath,
+        }),
+      });
       return {
         status: "blocked",
         incidentKind: INCIDENT_MERGE_BACK_PUBLISH_FAILED,
@@ -1360,22 +2028,27 @@ export class GitWorktreeIsolationStrategy {
           error instanceof Error ? error.message : String(error),
         ),
         retryCount: 0,
+        telemetry,
       };
     }
   }
 
-  private async runPrimaryCloneFollowThrough(repoPath: string, repoRoot: string): Promise<void> {
+  private async runPrimaryCloneFollowThrough(
+    repoPath: string,
+    repoRoot: string,
+  ): Promise<Awaited<ReturnType<typeof convergePrimaryClone>>> {
     const convergence = await convergePrimaryClone({
       repoRoot,
       publisher: "dispatcher-merge-back",
     });
     if (convergence.status === "converged") {
-      return;
+      return convergence;
     }
 
     console.warn(
       `[dispatcher] primary clone follow-through for '${repoPath}' returned ${convergence.status}: ${convergence.message}`,
     );
+    return convergence;
   }
 
   private async rollbackMergeTransaction(input: {

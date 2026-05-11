@@ -16,9 +16,16 @@ import {
 } from "./dispatcher-runtime.js";
 import type { RuntimeDispatchSummary } from "./runtime-state.js";
 import { formatDispatcherVersionLine, loadDispatcherVersionInfo } from "./dispatcher-version.js";
-import { appendTelemetryEvent, DISPATCH_TELEMETRY_SCHEMA } from "./telemetry.js";
+import {
+  appendTelemetryEvent,
+  DISPATCH_TELEMETRY_SCHEMA,
+  readDispatchTelemetrySlice,
+  resolveIncidentBundlePath,
+  writeIncidentBundle,
+} from "./telemetry.js";
 import { createDrainControlPlane, type DrainControlPlane } from "./drain-control.js";
-import { scan } from "./watcher.js";
+import { scanWithDiagnostics, type WorkItemScanDecision } from "./watcher.js";
+import { sanitizeJsonObject } from "./forensics.js";
 import { resolveDispatchActiveOperator } from "./active-operator.js";
 
 function findSystemRoot(start: string): string {
@@ -50,6 +57,7 @@ const runtime = new DispatcherRuntime({
   bundleRoot: BUNDLE_ROOT,
   systemRoot: SYSTEM_ROOT,
   delamainName: config.delamainName,
+  moduleId: config.moduleId,
   statusField: config.statusField,
   pollMs: POLL_MS,
   submodules: config.submodules,
@@ -210,7 +218,10 @@ async function enterDrainingMode(source: string): Promise<void> {
   await updateHeartbeat();
 }
 
-async function writeRetryTelemetry(result: BlockedDirtyRetryResult): Promise<void> {
+async function writeRetryTelemetry(
+  result: BlockedDirtyRetryResult,
+  tickId: string | null,
+): Promise<void> {
   try {
     await appendTelemetryEvent(BUNDLE_ROOT, {
       schema: DISPATCH_TELEMETRY_SCHEMA,
@@ -219,7 +230,10 @@ async function writeRetryTelemetry(result: BlockedDirtyRetryResult): Promise<voi
       timestamp: new Date().toISOString(),
       dispatcher_name: config.delamainName,
       module_id: config.moduleId,
+      tick_id: tickId,
       dispatch_id: result.dispatchId,
+      merge_attempt_id: null,
+      repo_attempt_id: null,
       item_id: result.itemId,
       item_file: result.itemFile,
       isolated_item_file: result.isolatedItemFile,
@@ -240,12 +254,108 @@ async function writeRetryTelemetry(result: BlockedDirtyRetryResult): Promise<voi
       integrated_commit: result.integratedCommit,
       merge_outcome: result.mergeOutcome,
       incident_kind: result.incidentKind,
+      phase: result.incidentContext?.phase ?? null,
+      cause: result.incidentContext?.cause ?? null,
+      retryable: result.incidentContext?.retryable ?? null,
+      recommended_next_actor: result.incidentContext?.recommended_next_actor ?? null,
+      command_label: result.incidentContext?.command_label ?? null,
+      command_result: result.incidentContext?.command_result ?? null,
+      relevant_shas: result.incidentContext?.relevant_shas ?? {
+        base_commit: null,
+        current_head: null,
+        worktree_commit: result.worktreeCommit,
+        integrated_commit: result.integratedCommit,
+        remote_head_before: null,
+        remote_head_after: null,
+        theirs_commit: null,
+        pre_integration_head: null,
+      },
       transition_targets: result.transitionTargets,
       duration_ms: result.durationMs,
       num_turns: result.numTurns,
       cost_usd: result.costUsd,
       error: result.action === "merged" ? null : result.incidentMessage,
+      incident_context: result.incidentContext,
+      attributes: sanitizeJsonObject({
+        retry_attempt: result.attempt,
+        previous_incident_kind: result.previousIncidentKind,
+        tree_state: result.treeState,
+      }),
     });
+
+    if (result.action !== "merged" && result.incidentKind && result.incidentContext) {
+      const bundlePath = resolveIncidentBundlePath(BUNDLE_ROOT, result.dispatchId);
+      await appendTelemetryEvent(BUNDLE_ROOT, {
+        schema: DISPATCH_TELEMETRY_SCHEMA,
+        event_id: crypto.randomUUID(),
+        event_type: "incident_preserved",
+        timestamp: new Date().toISOString(),
+        dispatcher_name: config.delamainName,
+        module_id: config.moduleId,
+        tick_id: tickId,
+        dispatch_id: result.dispatchId,
+        merge_attempt_id: result.incidentContext.correlation_ids.merge_attempt_id,
+        repo_attempt_id: result.incidentContext.correlation_ids.repo_attempt_id,
+        item_id: result.itemId,
+        item_file: result.itemFile,
+        isolated_item_file: result.isolatedItemFile,
+        state: result.state,
+        agent_name: result.agentName,
+        sub_agent_name: null,
+        provider: result.provider,
+        resumable: result.resumable,
+        resume_requested: false,
+        session_field: result.sessionField,
+        runtime_session_id: result.sessionId,
+        resume_session_id: null,
+        worker_session_id: result.sessionId,
+        worktree_path: result.worktreePath,
+        branch_name: result.branchName,
+        mounted_submodules: result.mountedSubmodules,
+        worktree_commit: result.worktreeCommit,
+        integrated_commit: result.integratedCommit,
+        merge_outcome: result.mergeOutcome,
+        incident_kind: result.incidentKind,
+        phase: "incident_preserved",
+        cause: result.incidentContext.cause,
+        retryable: result.incidentContext.retryable,
+        recommended_next_actor: result.incidentContext.recommended_next_actor,
+        command_label: result.incidentContext.command_label,
+        command_result: result.incidentContext.command_result,
+        relevant_shas: result.incidentContext.relevant_shas,
+        transition_targets: result.transitionTargets,
+        duration_ms: result.durationMs,
+        num_turns: result.numTurns,
+        cost_usd: result.costUsd,
+        error: result.incidentMessage,
+        incident_context: result.incidentContext,
+        attributes: sanitizeJsonObject({
+          bundle_path: bundlePath,
+          retry_attempt: result.attempt,
+        }),
+      });
+
+      await writeIncidentBundle(BUNDLE_ROOT, {
+        schema: "als-delamain-incident-bundle@1",
+        created_at: new Date().toISOString(),
+        dispatcher_name: config.delamainName,
+        module_id: config.moduleId,
+        tick_id: tickId,
+        dispatch_id: result.dispatchId,
+        merge_attempt_id: result.incidentContext.correlation_ids.merge_attempt_id,
+        repo_attempt_id: result.incidentContext.correlation_ids.repo_attempt_id,
+        item_id: result.itemId,
+        item_file: result.itemFile,
+        state: result.state,
+        incident_kind: result.incidentKind,
+        phase: result.incidentContext.phase,
+        cause: result.incidentContext.cause,
+        retryable: result.incidentContext.retryable,
+        recommended_next_actor: result.incidentContext.recommended_next_actor,
+        incident_context: result.incidentContext,
+        events: await readDispatchTelemetrySlice(BUNDLE_ROOT, result.dispatchId),
+      });
+    }
   } catch (error) {
     console.warn(
       `[dispatcher] ${result.itemId} retry telemetry write failed: ${error instanceof Error ? error.message : String(error)}`,
@@ -292,10 +402,109 @@ function buildOpenRecordItemIdSet(summary: RuntimeDispatchSummary): Set<string> 
   ].map((record) => record.item_id));
 }
 
+function buildTickId(): string {
+  return `t-${crypto.randomUUID().replaceAll("-", "").slice(0, 12)}`;
+}
+
+async function writeScanDecisionTelemetry(input: {
+  tickId: string;
+  decision: WorkItemScanDecision;
+  rule: DispatchEntry | undefined;
+  outcome: string;
+  dispatchId?: string | null;
+  openRecord: boolean;
+  blockedBy?: "state" | "pool" | null;
+  currentCount?: number | null;
+  concurrencyLimit?: number | null;
+}): Promise<void> {
+  const { decision, rule } = input;
+  try {
+    await appendTelemetryEvent(BUNDLE_ROOT, {
+      schema: DISPATCH_TELEMETRY_SCHEMA,
+      event_id: crypto.randomUUID(),
+      event_type: "scan_claim",
+      timestamp: new Date().toISOString(),
+      dispatcher_name: config.delamainName,
+      module_id: config.moduleId,
+      tick_id: input.tickId,
+      dispatch_id: input.dispatchId ?? null,
+      merge_attempt_id: null,
+      repo_attempt_id: null,
+      item_id: decision.item.id,
+      item_file: decision.item.filePath,
+      isolated_item_file: null,
+      state: decision.item.status,
+      agent_name: rule?.agentName ?? "unclaimed",
+      sub_agent_name: rule?.subAgentName ?? null,
+      provider: rule?.provider ?? "anthropic",
+      resumable: rule?.resumable ?? false,
+      resume_requested: false,
+      session_field: rule?.sessionField ?? null,
+      runtime_session_id: null,
+      resume_session_id: null,
+      worker_session_id: null,
+      worktree_path: null,
+      branch_name: null,
+      mounted_submodules: [],
+      worktree_commit: null,
+      integrated_commit: null,
+      merge_outcome: null,
+      incident_kind: null,
+      phase: "scan_claim",
+      cause: input.blockedBy === "pool"
+        ? "concurrency_pool_limit"
+        : input.blockedBy === "state"
+          ? "concurrency_state_limit"
+          : decision.active_operator.outcome === "skipped_missing_assignment"
+            ? "active_operator_assignment_missing"
+            : decision.active_operator.outcome === "skipped_operator_mismatch"
+              ? "active_operator_assignment_mismatch"
+              : input.openRecord
+                ? "open_dispatch_exists"
+                : null,
+      retryable: input.openRecord || input.blockedBy === "state" || input.blockedBy === "pool",
+      recommended_next_actor: input.outcome === "claimed" ? "none" : input.blockedBy ? "automation" : "operator",
+      command_label: null,
+      command_result: null,
+      relevant_shas: {
+        base_commit: null,
+        current_head: null,
+        worktree_commit: null,
+        integrated_commit: null,
+        remote_head_before: null,
+        remote_head_after: null,
+        theirs_commit: null,
+        pre_integration_head: null,
+      },
+      ...(input.blockedBy ? { blocked_by: input.blockedBy } : {}),
+      current_count: input.currentCount ?? null,
+      concurrency_limit: input.concurrencyLimit ?? null,
+      transition_targets: rule?.transitions.map((transition) => transition.to) ?? [],
+      duration_ms: null,
+      num_turns: null,
+      cost_usd: null,
+      error: null,
+      incident_context: null,
+      attributes: sanitizeJsonObject({
+        committed_status: decision.committed_status,
+        scan_outcome: input.outcome,
+        open_record: input.openRecord,
+        active_operator: decision.active_operator,
+      }),
+    });
+  } catch (error) {
+    console.warn(
+      `[dispatcher] ${decision.item.id} scan telemetry write failed: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+}
+
 async function writeConcurrencySuppressionTelemetry(
   item: { id: string; filePath: string },
   rule: DispatchEntry,
   suppression: DispatchConcurrencySuppression,
+  tickId: string | null,
+  decision?: WorkItemScanDecision,
 ): Promise<void> {
   try {
     await appendTelemetryEvent(BUNDLE_ROOT, {
@@ -305,7 +514,10 @@ async function writeConcurrencySuppressionTelemetry(
       timestamp: new Date().toISOString(),
       dispatcher_name: config.delamainName,
       module_id: config.moduleId,
+      tick_id: tickId,
       dispatch_id: null,
+      merge_attempt_id: null,
+      repo_attempt_id: null,
       item_id: item.id,
       item_file: item.filePath,
       isolated_item_file: null,
@@ -321,10 +533,27 @@ async function writeConcurrencySuppressionTelemetry(
       worker_session_id: null,
       worktree_path: null,
       branch_name: null,
+      mounted_submodules: [],
       worktree_commit: null,
       integrated_commit: null,
       merge_outcome: null,
       incident_kind: null,
+      phase: "scan_claim",
+      cause: suppression.blockedBy === "pool" ? "concurrency_pool_limit" : "concurrency_state_limit",
+      retryable: true,
+      recommended_next_actor: "automation",
+      command_label: null,
+      command_result: null,
+      relevant_shas: {
+        base_commit: null,
+        current_head: null,
+        worktree_commit: null,
+        integrated_commit: null,
+        remote_head_before: null,
+        remote_head_after: null,
+        theirs_commit: null,
+        pre_integration_head: null,
+      },
       blocked_by: suppression.blockedBy,
       current_count: suppression.currentCount,
       concurrency_limit: suppression.concurrencyLimit,
@@ -340,6 +569,12 @@ async function writeConcurrencySuppressionTelemetry(
       num_turns: null,
       cost_usd: null,
       error: null,
+      incident_context: null,
+      attributes: sanitizeJsonObject({
+        committed_status: decision?.committed_status ?? rule.state,
+        active_operator: decision?.active_operator ?? null,
+        scan_outcome: "suppressed_concurrency",
+      }),
     });
   } catch (error) {
     console.warn(
@@ -386,6 +621,7 @@ async function maybeExitForDrain(): Promise<boolean> {
 
 async function tick() {
   tickCount += 1;
+  const tickId = buildTickId();
   logCounts(`[dispatcher] tick #${tickCount}`);
 
   const sweep = await runtime.sweepOrphans();
@@ -402,11 +638,72 @@ async function tick() {
   if (activeOperatorResolution.status === "refuse") {
     lastItemsScanned = 0;
     logActiveOperatorRefusal(activeOperatorResolution.messages);
+    await appendTelemetryEvent(BUNDLE_ROOT, {
+      schema: DISPATCH_TELEMETRY_SCHEMA,
+      event_id: crypto.randomUUID(),
+      event_type: "scan_claim",
+      timestamp: new Date().toISOString(),
+      dispatcher_name: config.delamainName,
+      module_id: config.moduleId,
+      tick_id: tickId,
+      dispatch_id: null,
+      merge_attempt_id: null,
+      repo_attempt_id: null,
+      item_id: "<active-operator-refusal>",
+      item_file: "<active-operator-refusal>",
+      isolated_item_file: null,
+      state: "<refused>",
+      agent_name: "dispatcher",
+      sub_agent_name: null,
+      provider: "anthropic",
+      resumable: false,
+      resume_requested: false,
+      session_field: null,
+      runtime_session_id: null,
+      resume_session_id: null,
+      worker_session_id: null,
+      worktree_path: null,
+      branch_name: null,
+      mounted_submodules: [],
+      worktree_commit: null,
+      integrated_commit: null,
+      merge_outcome: null,
+      incident_kind: null,
+      phase: "scan_claim",
+      cause: "active_operator_missing",
+      retryable: false,
+      recommended_next_actor: "operator",
+      command_label: null,
+      command_result: null,
+      relevant_shas: {
+        base_commit: null,
+        current_head: null,
+        worktree_commit: null,
+        integrated_commit: null,
+        remote_head_before: null,
+        remote_head_after: null,
+        theirs_commit: null,
+        pre_integration_head: null,
+      },
+      transition_targets: [],
+      duration_ms: null,
+      num_turns: null,
+      cost_usd: null,
+      error: activeOperatorResolution.messages.join(" | "),
+      incident_context: null,
+      attributes: sanitizeJsonObject({
+        active_operator_resolution: activeOperatorResolution,
+      }),
+    }).catch((error) => {
+      console.warn(
+        `[dispatcher] active-operator refusal telemetry write failed: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    });
 
     const retries = await runtime.retryBlockedDirtyDispatches();
     for (const retry of retries) {
       logRetry(retry);
-      await writeRetryTelemetry(retry);
+      await writeRetryTelemetry(retry, tickId);
     }
 
     if (await maybeExitForDrain()) {
@@ -418,7 +715,7 @@ async function tick() {
   }
   lastActiveOperatorRefusalSignature = null;
 
-  const items = await scan(
+  const scanResult = await scanWithDiagnostics(
     config.moduleRoot,
     config.entityPath,
     config.statusField,
@@ -426,6 +723,7 @@ async function tick() {
     config.discriminatorValue,
     activeOperatorResolution.status === "ready" ? activeOperatorResolution.filter : undefined,
   );
+  const items = scanResult.items;
   lastItemsScanned = items.length;
 
   const releases = await runtime.reconcileObservedItems(items);
@@ -438,7 +736,7 @@ async function tick() {
   const retries = await runtime.retryBlockedDirtyDispatches();
   for (const retry of retries) {
     logRetry(retry);
-    await writeRetryTelemetry(retry);
+    await writeRetryTelemetry(retry, tickId);
   }
 
   if (await maybeExitForDrain()) {
@@ -449,26 +747,82 @@ async function tick() {
   const openItemIds = buildOpenRecordItemIdSet(openSummary);
   const concurrencySnapshot = buildConcurrencySnapshot(openSummary, config.dispatchTable);
 
+  const decisionsByItemId = new Map(scanResult.decisions.map((decision) => [decision.item.id, decision] as const));
+
+  for (const decision of scanResult.decisions) {
+    if (
+      decision.active_operator.outcome === "skipped_missing_assignment"
+      || decision.active_operator.outcome === "skipped_operator_mismatch"
+    ) {
+      await writeScanDecisionTelemetry({
+        tickId,
+        decision,
+        rule: findRule(decision.item.status),
+        outcome: "skipped_active_operator_filter",
+        openRecord: false,
+      });
+    }
+  }
+
   for (const item of items) {
     if (lifecycleMode === "draining") {
       break;
     }
 
     const rule = findRule(item.status);
-    if (!rule) continue;
-    if (openItemIds.has(item.id)) continue;
+    const decision = decisionsByItemId.get(item.id);
+    if (!rule || !decision) {
+      continue;
+    }
+    if (openItemIds.has(item.id)) {
+      await writeScanDecisionTelemetry({
+        tickId,
+        decision,
+        rule,
+        outcome: "skipped_open_record",
+        openRecord: true,
+      });
+      continue;
+    }
 
     const suppression = evaluateDispatchConcurrency(rule, concurrencySnapshot);
     if (suppression) {
-      await writeConcurrencySuppressionTelemetry(item, rule, suppression);
+      await writeScanDecisionTelemetry({
+        tickId,
+        decision,
+        rule,
+        outcome: "suppressed_concurrency",
+        openRecord: false,
+        blockedBy: suppression.blockedBy,
+        currentCount: suppression.currentCount,
+        concurrencyLimit: suppression.concurrencyLimit,
+      });
+      await writeConcurrencySuppressionTelemetry(item, rule, suppression, tickId, decision);
       continue;
     }
 
     const prepared = await runtime.prepareDispatch(item.id, item.filePath, rule);
     if (!prepared) {
       console.log(`[dispatcher] ${item.id} skipped: runtime registry already owns this item`);
+      await writeScanDecisionTelemetry({
+        tickId,
+        decision,
+        rule,
+        outcome: "skipped_runtime_registry",
+        openRecord: true,
+      });
       continue;
     }
+    prepared.tickId = tickId;
+
+    await writeScanDecisionTelemetry({
+      tickId,
+      decision,
+      rule,
+      outcome: "claimed",
+      dispatchId: prepared.dispatchId,
+      openRecord: false,
+    });
 
     openItemIds.add(item.id);
     reserveDispatchConcurrency(rule, concurrencySnapshot, rule.pool

@@ -32,6 +32,24 @@ export interface WorkItem {
   updated: string | null;
 }
 
+export interface WorkItemScanDecision {
+  item: WorkItem;
+  accepted: boolean;
+  committed_status: string;
+  active_operator: {
+    field: string | null;
+    mode: string | null;
+    resolved_operator_id: string | null;
+    assignment_value: string | null;
+    outcome: "not_required" | "accepted" | "skipped_missing_assignment" | "skipped_operator_mismatch";
+  };
+}
+
+export interface WorkItemScanResult {
+  items: WorkItem[];
+  decisions: WorkItemScanDecision[];
+}
+
 const warnedUncommittedTransitions = new Map<string, string>();
 
 function parseFrontmatter(raw: string): Record<string, string> {
@@ -197,6 +215,25 @@ export async function scan(
   discriminatorValue?: string,
   activeOperatorFilter?: DispatchActiveOperatorFilter,
 ): Promise<WorkItem[]> {
+  const result = await scanWithDiagnostics(
+    moduleRoot,
+    entityPath,
+    statusField,
+    discriminatorField,
+    discriminatorValue,
+    activeOperatorFilter,
+  );
+  return result.items;
+}
+
+export async function scanWithDiagnostics(
+  moduleRoot: string,
+  entityPath: string,
+  statusField: string,
+  discriminatorField?: string,
+  discriminatorValue?: string,
+  activeOperatorFilter?: DispatchActiveOperatorFilter,
+): Promise<WorkItemScanResult> {
   const requestedModuleRoot = resolve(moduleRoot);
   const moduleRootFromRepo = trimTrailingSlash(
     normalizePath(await gitRepoPrefix(requestedModuleRoot)),
@@ -204,6 +241,7 @@ export async function scan(
   const template = parsePathTemplate(entityPath);
   const trackedFiles = await gitListTrackedFilesAtHead(requestedModuleRoot, ".");
   const items: WorkItem[] = [];
+  const decisions: WorkItemScanDecision[] = [];
   const activeWarnings = new Set<string>();
 
   for (const moduleRelativePath of trackedFiles) {
@@ -227,13 +265,39 @@ export async function scan(
         if (frontmatter[discriminatorField] !== discriminatorValue) continue;
       }
 
-      if (activeOperatorFilter) {
-        const assignmentValue = frontmatter[activeOperatorFilter.field];
-        if (assignmentValue === undefined || assignmentValue === null || assignmentValue === "") {
-          if (activeOperatorFilter.mode === "strict") continue;
-        } else if (typeof assignmentValue !== "string" || assignmentValue !== activeOperatorFilter.operatorId) {
-          continue;
-        }
+      const item = {
+        id: frontmatter["id"]!,
+        status: frontmatter[statusField]!,
+        type: frontmatter["type"] ?? "unknown",
+        filePath,
+        title: frontmatter["title"] ?? null,
+        updated: frontmatter["updated"] ?? frontmatter["updated_at"] ?? null,
+      } satisfies WorkItem;
+
+      const assignmentValue = activeOperatorFilter
+        ? normalizeOperatorAssignment(frontmatter[activeOperatorFilter.field])
+        : null;
+      const activeOperatorDecision = resolveActiveOperatorDecision(activeOperatorFilter, assignmentValue);
+
+      decisions.push({
+        item,
+        accepted: activeOperatorDecision.outcome === "accepted"
+          || activeOperatorDecision.outcome === "not_required",
+        committed_status: item.status,
+        active_operator: {
+          field: activeOperatorFilter?.field ?? null,
+          mode: activeOperatorFilter?.mode ?? null,
+          resolved_operator_id: activeOperatorFilter?.operatorId ?? null,
+          assignment_value: assignmentValue,
+          outcome: activeOperatorDecision.outcome,
+        },
+      });
+
+      if (
+        activeOperatorDecision.outcome === "skipped_missing_assignment"
+        || activeOperatorDecision.outcome === "skipped_operator_mismatch"
+      ) {
+        continue;
       }
 
       const pending = await readPendingStatusChange(
@@ -254,19 +318,38 @@ export async function scan(
         activeWarnings.add(filePath);
       }
 
-      items.push({
-        id: frontmatter["id"]!,
-        status: frontmatter[statusField]!,
-        type: frontmatter["type"] ?? "unknown",
-        filePath,
-        title: frontmatter["title"] ?? null,
-        updated: frontmatter["updated"] ?? frontmatter["updated_at"] ?? null,
-      });
+      items.push(item);
     } catch {
       // Skip unreadable files
     }
   }
 
   pruneResolvedWarnings(activeWarnings);
-  return items;
+  return {
+    items,
+    decisions,
+  };
+}
+
+function normalizeOperatorAssignment(value: unknown): string | null {
+  return typeof value === "string" && value.trim().length > 0 ? value : null;
+}
+
+function resolveActiveOperatorDecision(
+  filter: DispatchActiveOperatorFilter | undefined,
+  assignmentValue: string | null,
+): Pick<WorkItemScanDecision["active_operator"], "outcome"> {
+  if (!filter) {
+    return { outcome: "not_required" };
+  }
+
+  if (assignmentValue === null) {
+    return {
+      outcome: filter.mode === "strict" ? "skipped_missing_assignment" : "accepted",
+    };
+  }
+
+  return {
+    outcome: assignmentValue === filter.operatorId ? "accepted" : "skipped_operator_mismatch",
+  };
 }

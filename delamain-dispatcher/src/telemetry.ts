@@ -1,15 +1,30 @@
 import { mkdir, readFile, rename, writeFile } from "fs/promises";
 import { join } from "path";
+import {
+  buildIncidentContext,
+  normalizeCommandResult,
+  normalizeCorrelationIds,
+  normalizeIncidentContext,
+  normalizeRelevantShas,
+  sanitizeJsonObject,
+  type DispatchCommandResult,
+  type DispatchCorrelationIds,
+  type DispatchIncidentContext,
+  type DispatchRelevantShas,
+  type JsonObject,
+} from "./forensics.js";
 import type {
   RuntimeConcurrencyHolderRecord,
   RuntimeMountedSubmoduleRecord,
 } from "./runtime-state.js";
 import type { AgentProvider } from "./provider.js";
 
-export const DISPATCH_TELEMETRY_SCHEMA = "als-delamain-telemetry-event@1";
-export const DEFAULT_TELEMETRY_RETENTION = 200;
+const LEGACY_DISPATCH_TELEMETRY_SCHEMA = "als-delamain-telemetry-event@1";
+export const DISPATCH_TELEMETRY_SCHEMA = "als-delamain-telemetry-event@2";
+export const DISPATCH_INCIDENT_BUNDLE_SCHEMA = "als-delamain-incident-bundle@1";
+export const DEFAULT_TELEMETRY_RETENTION = 10_000;
 
-export type DispatchTelemetryEventType =
+type KnownDispatchTelemetryEventType =
   | "dispatch_start"
   | "dispatch_prepare"
   | "dispatch_finish"
@@ -18,7 +33,22 @@ export type DispatchTelemetryEventType =
   | "dispatch_merge_success"
   | "dispatch_merge_blocked"
   | "dispatch_cleanup"
-  | "dispatch_orphaned";
+  | "dispatch_orphaned"
+  | "scan_claim"
+  | "provider_run"
+  | "worktree_result"
+  | "merge_attempt_start"
+  | "dirty_check"
+  | "refresh_decision"
+  | "integration_attempt"
+  | "publish_attempt"
+  | "publish_replay"
+  | "rollback"
+  | "incident_preserved"
+  | "primary_convergence"
+  | "orphan_cleanup";
+
+export type DispatchTelemetryEventType = KnownDispatchTelemetryEventType | (string & {});
 
 export interface DispatchTelemetryEvent {
   schema: typeof DISPATCH_TELEMETRY_SCHEMA;
@@ -27,7 +57,10 @@ export interface DispatchTelemetryEvent {
   timestamp: string;
   dispatcher_name: string;
   module_id: string;
+  tick_id: string | null;
   dispatch_id: string | null;
+  merge_attempt_id: string | null;
+  repo_attempt_id: string | null;
   item_id: string;
   item_file: string;
   isolated_item_file: string | null;
@@ -43,11 +76,18 @@ export interface DispatchTelemetryEvent {
   worker_session_id: string | null;
   worktree_path: string | null;
   branch_name: string | null;
-  mounted_submodules?: RuntimeMountedSubmoduleRecord[];
+  mounted_submodules: RuntimeMountedSubmoduleRecord[];
   worktree_commit: string | null;
   integrated_commit: string | null;
   merge_outcome: string | null;
   incident_kind: string | null;
+  phase: string | null;
+  cause: string | null;
+  retryable: boolean | null;
+  recommended_next_actor: "operator" | "automation" | "none" | null;
+  command_label: string | null;
+  command_result: DispatchCommandResult | null;
+  relevant_shas: DispatchRelevantShas;
   blocked_by?: "state" | "pool";
   current_count?: number | null;
   concurrency_limit?: number | null;
@@ -59,6 +99,29 @@ export interface DispatchTelemetryEvent {
   num_turns: number | null;
   cost_usd: number | null;
   error: string | null;
+  incident_context: DispatchIncidentContext | null;
+  attributes: JsonObject | null;
+}
+
+export interface DispatchIncidentBundle {
+  schema: typeof DISPATCH_INCIDENT_BUNDLE_SCHEMA;
+  created_at: string;
+  dispatcher_name: string;
+  module_id: string;
+  tick_id: string | null;
+  dispatch_id: string;
+  merge_attempt_id: string | null;
+  repo_attempt_id: string | null;
+  item_id: string;
+  item_file: string;
+  state: string;
+  incident_kind: string;
+  phase: string;
+  cause: string;
+  retryable: boolean;
+  recommended_next_actor: "operator" | "automation" | "none";
+  incident_context: DispatchIncidentContext;
+  events: DispatchTelemetryEvent[];
 }
 
 export interface TelemetryReadResult {
@@ -70,6 +133,7 @@ export interface TelemetryReadResult {
 interface TelemetryPaths {
   directory: string;
   eventsFile: string;
+  incidentsDirectory: string;
 }
 
 const writeQueues = new Map<string, Promise<void>>();
@@ -79,7 +143,12 @@ export function resolveTelemetryPaths(bundleRoot: string): TelemetryPaths {
   return {
     directory,
     eventsFile: join(directory, "events.jsonl"),
+    incidentsDirectory: join(bundleRoot, "runtime", "incidents"),
   };
+}
+
+export function resolveIncidentBundlePath(bundleRoot: string, dispatchId: string): string {
+  return join(resolveTelemetryPaths(bundleRoot).incidentsDirectory, `${dispatchId}.json`);
 }
 
 export async function readTelemetryEvents(
@@ -109,8 +178,11 @@ export async function readTelemetryEvents(
     if (!line.trim()) continue;
 
     try {
-      const parsed = JSON.parse(line) as Partial<DispatchTelemetryEvent>;
-      if (parsed.schema !== DISPATCH_TELEMETRY_SCHEMA) {
+      const parsed = JSON.parse(line) as Partial<DispatchTelemetryEvent> & { schema?: string };
+      if (
+        parsed.schema !== DISPATCH_TELEMETRY_SCHEMA
+        && parsed.schema !== LEGACY_DISPATCH_TELEMETRY_SCHEMA
+      ) {
         parseErrors += 1;
         continue;
       }
@@ -126,6 +198,14 @@ export async function readTelemetryEvents(
     events: events.slice(-limit),
     parse_errors: parseErrors,
   };
+}
+
+export async function readDispatchTelemetrySlice(
+  bundleRoot: string,
+  dispatchId: string,
+): Promise<DispatchTelemetryEvent[]> {
+  const result = await readTelemetryEvents(bundleRoot, DEFAULT_TELEMETRY_RETENTION);
+  return result.events.filter((event) => event.dispatch_id === dispatchId);
 }
 
 export async function appendTelemetryEvent(
@@ -156,43 +236,61 @@ export async function appendTelemetryEvent(
   }
 }
 
+export async function writeIncidentBundle(
+  bundleRoot: string,
+  bundle: DispatchIncidentBundle,
+): Promise<void> {
+  const normalized = normalizeIncidentBundle(bundle);
+  const bundlePath = resolveIncidentBundlePath(bundleRoot, normalized.dispatch_id);
+  await mkdir(resolveTelemetryPaths(bundleRoot).incidentsDirectory, { recursive: true });
+  const tempFile = `${bundlePath}.tmp`;
+  await writeFile(tempFile, JSON.stringify(normalized, null, 2) + "\n", "utf-8");
+  await rename(tempFile, bundlePath);
+}
+
 function normalizeTelemetryEvent(
-  event: Partial<DispatchTelemetryEvent>,
+  event: Partial<DispatchTelemetryEvent> & { schema?: string },
 ): DispatchTelemetryEvent {
   return {
     schema: DISPATCH_TELEMETRY_SCHEMA,
     event_id: event.event_id ?? crypto.randomUUID(),
-    event_type: event.event_type ?? "dispatch_failure",
+    event_type: normalizeEventType(event.event_type),
     timestamp: event.timestamp ?? new Date().toISOString(),
     dispatcher_name: event.dispatcher_name ?? "unknown",
     module_id: event.module_id ?? "unknown",
-    dispatch_id: typeof event.dispatch_id === "string" ? event.dispatch_id : null,
+    tick_id: asString(event.tick_id),
+    dispatch_id: asString(event.dispatch_id),
+    merge_attempt_id: asString(event.merge_attempt_id),
+    repo_attempt_id: asString(event.repo_attempt_id),
     item_id: event.item_id ?? "unknown",
     item_file: event.item_file ?? "unknown",
-    isolated_item_file: typeof event.isolated_item_file === "string"
-      ? event.isolated_item_file
-      : null,
+    isolated_item_file: asString(event.isolated_item_file),
     state: event.state ?? "unknown",
     agent_name: event.agent_name ?? "unknown",
-    sub_agent_name: event.sub_agent_name ?? null,
+    sub_agent_name: asString(event.sub_agent_name),
     provider: event.provider === "openai" ? "openai" : "anthropic",
     resumable: event.resumable === true,
     resume_requested: event.resume_requested === true,
-    session_field: event.session_field ?? null,
-    runtime_session_id: event.runtime_session_id ?? null,
-    resume_session_id: event.resume_session_id ?? null,
-    worker_session_id: event.worker_session_id ?? null,
-    worktree_path: typeof event.worktree_path === "string" ? event.worktree_path : null,
-    branch_name: typeof event.branch_name === "string" ? event.branch_name : null,
+    session_field: asString(event.session_field),
+    runtime_session_id: asString(event.runtime_session_id),
+    resume_session_id: asString(event.resume_session_id),
+    worker_session_id: asString(event.worker_session_id),
+    worktree_path: asString(event.worktree_path),
+    branch_name: asString(event.branch_name),
     mounted_submodules: Array.isArray(event.mounted_submodules)
       ? event.mounted_submodules.map((entry) => normalizeMountedSubmodule(entry))
       : [],
-    worktree_commit: typeof event.worktree_commit === "string" ? event.worktree_commit : null,
-    integrated_commit: typeof event.integrated_commit === "string"
-      ? event.integrated_commit
-      : null,
-    merge_outcome: typeof event.merge_outcome === "string" ? event.merge_outcome : null,
-    incident_kind: typeof event.incident_kind === "string" ? event.incident_kind : null,
+    worktree_commit: asString(event.worktree_commit),
+    integrated_commit: asString(event.integrated_commit),
+    merge_outcome: asString(event.merge_outcome),
+    incident_kind: asString(event.incident_kind),
+    phase: asString(event.phase),
+    cause: asString(event.cause),
+    retryable: typeof event.retryable === "boolean" ? event.retryable : null,
+    recommended_next_actor: normalizeRecommendedNextActor(event.recommended_next_actor),
+    command_label: asString(event.command_label),
+    command_result: normalizeCommandResult(event.command_result),
+    relevant_shas: normalizeRelevantShas(event.relevant_shas),
     ...(event.blocked_by === "state" || event.blocked_by === "pool"
       ? { blocked_by: event.blocked_by }
       : {}),
@@ -219,7 +317,48 @@ function normalizeTelemetryEvent(
     duration_ms: typeof event.duration_ms === "number" ? event.duration_ms : null,
     num_turns: typeof event.num_turns === "number" ? event.num_turns : null,
     cost_usd: typeof event.cost_usd === "number" ? event.cost_usd : null,
-    error: typeof event.error === "string" && event.error.length > 0 ? event.error : null,
+    error: asString(event.error),
+    incident_context: normalizeIncidentContext(event.incident_context),
+    attributes: sanitizeJsonObject(event.attributes),
+  };
+}
+
+function normalizeIncidentBundle(bundle: DispatchIncidentBundle): DispatchIncidentBundle {
+  const incidentContext = normalizeIncidentContext(bundle.incident_context)
+    ?? buildIncidentContext({
+      phase: bundle.phase,
+      cause: bundle.cause,
+      retryable: bundle.retryable,
+      recommended_next_actor: bundle.recommended_next_actor,
+      correlation_ids: {
+        tick_id: bundle.tick_id,
+        dispatch_id: bundle.dispatch_id,
+        merge_attempt_id: bundle.merge_attempt_id,
+        repo_attempt_id: bundle.repo_attempt_id,
+      },
+    });
+
+  return {
+    schema: DISPATCH_INCIDENT_BUNDLE_SCHEMA,
+    created_at: bundle.created_at ?? new Date().toISOString(),
+    dispatcher_name: bundle.dispatcher_name ?? "unknown",
+    module_id: bundle.module_id ?? "unknown",
+    tick_id: asString(bundle.tick_id),
+    dispatch_id: bundle.dispatch_id,
+    merge_attempt_id: asString(bundle.merge_attempt_id),
+    repo_attempt_id: asString(bundle.repo_attempt_id),
+    item_id: bundle.item_id,
+    item_file: bundle.item_file,
+    state: bundle.state,
+    incident_kind: bundle.incident_kind,
+    phase: bundle.phase,
+    cause: bundle.cause,
+    retryable: bundle.retryable,
+    recommended_next_actor: bundle.recommended_next_actor,
+    incident_context: incidentContext,
+    events: Array.isArray(bundle.events)
+      ? bundle.events.map((event) => normalizeTelemetryEvent(event))
+      : [],
   };
 }
 
@@ -270,6 +409,20 @@ function normalizeMountedSubmodule(value: unknown): RuntimeMountedSubmoduleRecor
       ? record.integrated_commit
       : null,
   };
+}
+
+function normalizeEventType(value: unknown): DispatchTelemetryEventType {
+  return typeof value === "string" && value.length > 0 ? value as DispatchTelemetryEventType : "dispatch_failure";
+}
+
+function normalizeRecommendedNextActor(
+  value: unknown,
+): DispatchTelemetryEvent["recommended_next_actor"] {
+  return value === "operator" || value === "automation" || value === "none" ? value : null;
+}
+
+function asString(value: unknown): string | null {
+  return typeof value === "string" && value.length > 0 ? value : null;
 }
 
 function isMissing(error: unknown): boolean {

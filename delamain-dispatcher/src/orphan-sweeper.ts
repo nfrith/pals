@@ -2,6 +2,7 @@ import { DispatchRegistry } from "./dispatch-registry.js";
 import { isProcessAlive } from "./git.js";
 import { GitWorktreeIsolationStrategy } from "./git-worktree-isolation.js";
 import { RepoMutationLock } from "./repo-mutation-lock.js";
+import { buildIncidentContext } from "./forensics.js";
 
 export interface OrphanSweepSummary {
   staleLocksReleased: number;
@@ -80,6 +81,23 @@ export class OrphanSweeper {
               message: `Pristine orphan cleanup failed for worktree '${existing.worktree_path ?? "<missing>"}': ${incidentMessage}`,
               detected_at: now.toISOString(),
               retry_count: 0,
+              incident_context: buildIncidentContext({
+                phase: "orphan_cleanup",
+                cause: "orphan_cleanup_failed",
+                retryable: false,
+                recommended_next_actor: "operator",
+                repo_role: "worktree",
+                repo_path: ".",
+                command_label: "git.worktree.remove",
+                preserved_paths: existing.worktree_path ? [existing.worktree_path] : [],
+                recovery_hint: "Clean up the preserved orphaned worktree manually.",
+                correlation_ids: {
+                  tick_id: existing.incident?.incident_context?.correlation_ids.tick_id ?? null,
+                  dispatch_id: existing.dispatch_id,
+                  merge_attempt_id: null,
+                  repo_attempt_id: null,
+                },
+              }),
             },
           }));
           continue;
@@ -100,6 +118,22 @@ export class OrphanSweeper {
           message: `Dispatch heartbeat went stale while worktree '${existing.worktree_path ?? "<missing>"}' still had preserved work`,
           detected_at: now.toISOString(),
           retry_count: 0,
+          incident_context: buildIncidentContext({
+            phase: "orphan_cleanup",
+            cause: "stale_dispatch",
+            retryable: false,
+            recommended_next_actor: "operator",
+            repo_role: "worktree",
+            repo_path: ".",
+            preserved_paths: existing.worktree_path ? [existing.worktree_path] : [],
+            recovery_hint: "Resume investigation from the preserved orphaned worktree.",
+            correlation_ids: {
+              tick_id: existing.incident?.incident_context?.correlation_ids.tick_id ?? null,
+              dispatch_id: existing.dispatch_id,
+              merge_attempt_id: null,
+              repo_attempt_id: null,
+            },
+          }),
         },
       }));
       summary.dirtyOrphansPreserved += 1;

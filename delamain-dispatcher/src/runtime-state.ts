@@ -6,6 +6,10 @@ import {
   type AgentProvider,
   type ProviderDispatchCounts,
 } from "./provider.js";
+import {
+  normalizeIncidentContext,
+  type DispatchIncidentContext,
+} from "./forensics.js";
 
 export const DELAMAIN_RUNTIME_STATE_SCHEMA = "als-delamain-worktree-state@1";
 
@@ -27,6 +31,7 @@ export interface RuntimeDispatchIncident {
   message: string;
   detected_at: string;
   retry_count: number;
+  incident_context: DispatchIncidentContext | null;
 }
 
 export interface RuntimeMountedSubmoduleRecord {
@@ -341,6 +346,7 @@ function normalizeIncident(value: unknown): RuntimeDispatchIncident | null {
     message,
     detected_at: asString(incident.detected_at) ?? new Date().toISOString(),
     retry_count: asNonNegativeInteger(incident.retry_count) ?? 0,
+    incident_context: normalizeIncidentContext(incident.incident_context),
   };
 }
 

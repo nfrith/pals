@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DispatchLifecycle } from "../../../delamain-dispatcher/src/dispatch-lifecycle.ts";
@@ -16,7 +16,9 @@ import {
   appendTelemetryEvent,
   DISPATCH_TELEMETRY_SCHEMA,
   readTelemetryEvents,
+  resolveIncidentBundlePath,
   resolveTelemetryPaths,
+  writeIncidentBundle,
   type DispatchTelemetryEvent,
 } from "../../../delamain-dispatcher/src/telemetry.ts";
 import {
@@ -632,6 +634,114 @@ test("dispatcher telemetry skips malformed lines without failing the reader", as
   });
 });
 
+test("dispatcher telemetry reader accepts legacy schema and additive event kinds", async () => {
+  await withTelemetrySandbox("legacy-compat", async (bundleRoot) => {
+    const { directory, eventsFile } = resolveTelemetryPaths(bundleRoot);
+    await mkdir(directory, { recursive: true });
+    await writeFile(
+      eventsFile,
+      [
+        JSON.stringify({
+          ...buildTelemetryEvent("ALS-020"),
+          schema: "als-delamain-telemetry-event@1",
+        }),
+        JSON.stringify({
+          ...buildTelemetryEvent("ALS-021"),
+          event_type: "custom_future_event",
+        }),
+      ].join("\n") + "\n",
+      "utf-8",
+    );
+
+    const result = await readTelemetryEvents(bundleRoot, 10);
+
+    expect(result.available).toBe(true);
+    expect(result.events.map((event) => event.item_id)).toEqual(["ALS-020", "ALS-021"]);
+    expect(result.events[0]?.schema).toBe(DISPATCH_TELEMETRY_SCHEMA);
+    expect(result.events[1]?.event_type).toBe("custom_future_event");
+  });
+});
+
+test("dispatcher incident bundles persist structured incident context", async () => {
+  await withTelemetrySandbox("incident-bundle", async (bundleRoot) => {
+    await writeIncidentBundle(bundleRoot, {
+      schema: "als-delamain-incident-bundle@1",
+      created_at: "2026-05-11T00:00:00.000Z",
+      dispatcher_name: "telemetry-test",
+      module_id: "factory",
+      tick_id: "t-telemetry001",
+      dispatch_id: "d-telemetry001",
+      merge_attempt_id: "m-telemetry001",
+      repo_attempt_id: "r-telemetry001",
+      item_id: "ALS-030",
+      item_file: "/tmp/ALS-030.md",
+      state: "dev",
+      incident_kind: "tracked_path_conflict",
+      phase: "integration",
+      cause: "tracked_path_conflict",
+      retryable: false,
+      recommended_next_actor: "operator",
+      incident_context: {
+        phase: "integration",
+        cause: "tracked_path_conflict",
+        retryable: false,
+        recommended_next_actor: "operator",
+        repo_role: "host",
+        repo_path: ".",
+        command_label: "git.merge.integration",
+        command_result: {
+          exit_code: 1,
+          stdout_excerpt: null,
+          stderr_excerpt: "merge conflict",
+          raw_command: "git merge --ff-only abc123",
+        },
+        relevant_shas: {
+          base_commit: "base",
+          current_head: "head",
+          worktree_commit: "worktree",
+          integrated_commit: null,
+          remote_head_before: null,
+          remote_head_after: null,
+          theirs_commit: null,
+          pre_integration_head: null,
+        },
+        touched_paths: ["als-factory/jobs/ALS-030.md"],
+        moved_paths: ["als-factory/jobs/ALS-030.md"],
+        overlapping_paths: ["als-factory/jobs/ALS-030.md"],
+        dirty_paths: [],
+        unmerged_paths: ["als-factory/jobs/ALS-030.md"],
+        preserved_paths: ["/tmp/.worktrees/ALS-030"],
+        recovery_hint: "Resolve the preserved conflict before retrying.",
+        canonical_ref: null,
+        correlation_ids: {
+          tick_id: "t-telemetry001",
+          dispatch_id: "d-telemetry001",
+          merge_attempt_id: "m-telemetry001",
+          repo_attempt_id: "r-telemetry001",
+        },
+      },
+      events: [
+        buildTelemetryEvent("ALS-030", {
+          tick_id: "t-telemetry001",
+          dispatch_id: "d-telemetry001",
+          merge_attempt_id: "m-telemetry001",
+          repo_attempt_id: "r-telemetry001",
+          phase: "integration",
+          cause: "tracked_path_conflict",
+        } as Partial<DispatchTelemetryEvent>),
+      ],
+    });
+
+    const bundle = JSON.parse(
+      await readFile(resolveIncidentBundlePath(bundleRoot, "d-telemetry001"), "utf-8"),
+    ) as { incident_context: { cause: string; correlation_ids: { dispatch_id: string } }; events: DispatchTelemetryEvent[] };
+
+    expect(bundle.incident_context.cause).toBe("tracked_path_conflict");
+    expect(bundle.incident_context.correlation_ids.dispatch_id).toBe("d-telemetry001");
+    expect(bundle.events[0]?.schema).toBe(DISPATCH_TELEMETRY_SCHEMA);
+  });
+});
+
 async function withTelemetrySandbox(
   label: string,
   run: (bundleRoot: string) => Promise<void>,
@@ -695,7 +805,10 @@ function buildTelemetryEvent(
     timestamp: "2026-04-16T08:00:00.000Z",
     dispatcher_name: "telemetry-test",
     module_id: "factory",
+    tick_id: overrides.tick_id ?? "t-telemetry001",
     dispatch_id: overrides.dispatch_id ?? "d-telemetry001",
+    merge_attempt_id: overrides.merge_attempt_id ?? null,
+    repo_attempt_id: overrides.repo_attempt_id ?? null,
     item_id: itemId,
     item_file: `/tmp/${itemId}.md`,
     isolated_item_file: overrides.isolated_item_file ?? `/tmp/.worktrees/${itemId}.md`,
@@ -715,6 +828,22 @@ function buildTelemetryEvent(
     integrated_commit: overrides.integrated_commit ?? null,
     merge_outcome: overrides.merge_outcome ?? "merged",
     incident_kind: overrides.incident_kind ?? null,
+    phase: overrides.phase ?? null,
+    cause: overrides.cause ?? null,
+    retryable: overrides.retryable ?? null,
+    recommended_next_actor: overrides.recommended_next_actor ?? null,
+    command_label: overrides.command_label ?? null,
+    command_result: overrides.command_result ?? null,
+    relevant_shas: overrides.relevant_shas ?? {
+      base_commit: null,
+      current_head: null,
+      worktree_commit: overrides.worktree_commit ?? null,
+      integrated_commit: overrides.integrated_commit ?? null,
+      remote_head_before: null,
+      remote_head_after: null,
+      theirs_commit: null,
+      pre_integration_head: null,
+    },
     blocked_by: overrides.blocked_by,
     current_count: overrides.current_count ?? null,
     concurrency_limit: overrides.concurrency_limit ?? null,
@@ -726,5 +855,7 @@ function buildTelemetryEvent(
     num_turns: overrides.num_turns ?? 6,
     cost_usd: overrides.cost_usd ?? 0.42,
     error: overrides.error ?? null,
+    incident_context: overrides.incident_context ?? null,
+    attributes: overrides.attributes ?? null,
   };
 }

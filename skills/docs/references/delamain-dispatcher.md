@@ -71,8 +71,9 @@ The dispatcher now emits three runtime surfaces per deployed Delamain bundle:
 - `status.json` — the small compatibility heartbeat for liveness, PID checks, poll cadence, active dispatch counts, provider breakdown, and scanned item count
 - `runtime/worktree-state.json` — the current runtime registry for active, blocked, orphaned, and guarded dispatch ownership plus provider metadata
 - `telemetry/events.jsonl` — the bounded recent activity log for dashboard history
+- `runtime/incidents/<dispatch_id>.json` — the preserved per-incident forensics bundle for blocked/orphaned dispatches
 
-`telemetry/events.jsonl` is append-only at the contract level, but the writer keeps only the most recent bounded window of events so the file does not grow without limit. Each event is a single JSON object using schema `als-delamain-telemetry-event@1`.
+`telemetry/events.jsonl` is append-only at the contract level, but the writer keeps only the most recent bounded window of events so the file does not grow without limit. Each new event is a single JSON object using schema `als-delamain-telemetry-event@2`, and readers must continue to tolerate older local `@1` files.
 
 Recent telemetry events include:
 
@@ -87,6 +88,16 @@ Recent telemetry events include:
 
 Each event records the Delamain name, module id, dispatch id, item id, current state, agent identity, resume metadata, worktree path and branch, merge outcome, transition targets, duration, turn count, cost, and error text when present. Concurrency-suppression events also carry the suppression discriminator and, for pool suppressions, pool metadata.
 Submodule-targeting events also carry `mounted_submodules`, which records each mounted repo path plus its dispatch branch name, mounted worktree path, and any worktree/integrated commit SHAs known at that point in the lifecycle.
+
+ALS-102 widens that surface substantially:
+
+- the writer now emits schema `als-delamain-telemetry-event@2` while still tolerating older local `@1` files
+- blocked and orphaned incidents carry structured `incident_context` with phase, cause, retryability, recommended next actor, command labels, relevant SHAs, and preserved-path metadata
+- correlation ids (`tick_id`, `dispatch_id`, `merge_attempt_id`, `repo_attempt_id`) join scan/claim, provider, merge, publish, rollback, and preserved-incident events
+- merge-back internals become first-class events: `merge_attempt_start`, `dirty_check`, `refresh_decision`, `integration_attempt`, `publish_attempt`, `publish_replay`, `rollback`, `primary_convergence`, and `incident_preserved`
+- `runtime/incidents/<dispatch_id>.json` preserves the full dispatch-local event slice plus the resolved `incident_context`, so future diagnosis does not depend on stdout archaeology or the recent-event ring alone
+
+The load-bearing rationale for this contract lives in [`als-factory/artifacts/ALS-102/dispatcher-incident-forensics-architecture.md`](../../../../als-factory/artifacts/ALS-102/dispatcher-incident-forensics-architecture.md).
 
 Older dispatcher copies that only emit `status.json` remain valid. Consumers must degrade to heartbeat-only mode instead of failing when `telemetry/events.jsonl` is absent.
 

@@ -9,6 +9,7 @@ import {
 import { resolveDispatchLimits } from "./dispatch-limits.js";
 import {
   DispatcherRuntime,
+  type FinalizeDispatchResult,
   type PreparedDispatch,
 } from "./dispatcher-runtime.js";
 import { parseMd, readFrontmatterField, setFrontmatterField } from "./frontmatter.js";
@@ -22,8 +23,11 @@ import {
 import {
   appendTelemetryEvent,
   DISPATCH_TELEMETRY_SCHEMA,
+  resolveIncidentBundlePath,
+  writeIncidentBundle,
   type DispatchTelemetryEvent,
 } from "./telemetry.js";
+import { sanitizeJsonObject } from "./forensics.js";
 
 interface Transition {
   class: string;
@@ -345,11 +349,15 @@ export async function dispatch(
   let sessionId: string | undefined;
   let resultSummary: ProviderDispatchResult | null = null;
   const startedAt = Date.now();
+  const providerModel = resolveProviderModel(entry.provider, agent.model);
   const baseEvent = {
     schema: DISPATCH_TELEMETRY_SCHEMA,
     dispatcher_name: config.delamainName,
     module_id: config.moduleId,
+    tick_id: prepared.tickId ?? null,
     dispatch_id: prepared.dispatchId,
+    merge_attempt_id: null,
+    repo_attempt_id: null,
     item_id: itemId,
     item_file: itemFile,
     isolated_item_file: isolatedItemFile,
@@ -377,7 +385,25 @@ export async function dispatch(
     integrated_commit: null,
     merge_outcome: null,
     incident_kind: null,
+    phase: null,
+    cause: null,
+    retryable: null,
+    recommended_next_actor: null,
+    command_label: null,
+    command_result: null,
+    relevant_shas: {
+      base_commit: prepared.baseCommit,
+      current_head: null,
+      worktree_commit: null,
+      integrated_commit: null,
+      remote_head_before: null,
+      remote_head_after: null,
+      theirs_commit: null,
+      pre_integration_head: null,
+    },
     transition_targets: entry.transitions.map((transition) => transition.to),
+    incident_context: null,
+    attributes: null,
   } satisfies Omit<
     DispatchTelemetryEvent,
     "event_id"
@@ -389,6 +415,7 @@ export async function dispatch(
       | "cost_usd"
       | "error"
   >;
+  const emittedEvents: DispatchTelemetryEvent[] = [];
   const heartbeat = setInterval(() => {
     void runtime.touchDispatch(prepared.dispatchId).catch((error) => {
       console.warn(
@@ -484,6 +511,77 @@ export async function dispatch(
       success: dispatchSucceeded,
     });
 
+    await writeTelemetry({
+      ...baseEvent,
+      event_id: crypto.randomUUID(),
+      event_type: "provider_run",
+      timestamp: new Date().toISOString(),
+      worker_session_id: sessionId ?? null,
+      mounted_submodules: finalized.mountedSubmodules,
+      worktree_commit: finalized.worktreeCommit,
+      integrated_commit: finalized.integratedCommit,
+      merge_outcome: finalized.mergeOutcome,
+      incident_kind: finalized.incidentKind,
+      phase: "provider_run",
+      cause: dispatchSucceeded ? null : resultSummary?.subtype ?? "provider_failed",
+      retryable: false,
+      recommended_next_actor: dispatchSucceeded ? null : "operator",
+      relevant_shas: {
+        ...baseEvent.relevant_shas,
+        worktree_commit: finalized.worktreeCommit,
+        integrated_commit: finalized.integratedCommit,
+      },
+      duration_ms: resultSummary?.durationMs ?? Date.now() - startedAt,
+      num_turns: resultSummary?.numTurns ?? null,
+      cost_usd: resultSummary?.totalCostUsd ?? null,
+      error: dispatchSucceeded
+        ? null
+        : describeDispatchFailure(resultSummary?.subtype, entry.provider, providerMaxBudgetUsd),
+      incident_context: finalized.incidentContext,
+      attributes: sanitizeJsonObject({
+        model: providerModel,
+        provider_subtype: resultSummary?.subtype ?? null,
+        resume_behavior: sessionState.resume,
+        runtime_session_id: sessionState.runtimeSessionId ?? null,
+        resume_session_id: sessionState.resumeSessionId ?? null,
+        worker_session_id: sessionId ?? null,
+        mutated_before_failure: finalized.incidentKind === "dispatch_failed_dirty",
+      }),
+    });
+
+    await writeTelemetry({
+      ...baseEvent,
+      event_id: crypto.randomUUID(),
+      event_type: "worktree_result",
+      timestamp: new Date().toISOString(),
+      worker_session_id: sessionId ?? null,
+      mounted_submodules: finalized.mountedSubmodules,
+      worktree_commit: finalized.worktreeCommit,
+      integrated_commit: finalized.integratedCommit,
+      merge_outcome: finalized.mergeOutcome,
+      incident_kind: finalized.incidentKind,
+      phase: "worktree_result",
+      cause: finalized.incidentContext?.cause ?? null,
+      retryable: finalized.incidentContext?.retryable ?? null,
+      recommended_next_actor: finalized.incidentContext?.recommended_next_actor ?? null,
+      relevant_shas: {
+        ...baseEvent.relevant_shas,
+        worktree_commit: finalized.worktreeCommit,
+        integrated_commit: finalized.integratedCommit,
+      },
+      duration_ms: resultSummary?.durationMs ?? Date.now() - startedAt,
+      num_turns: resultSummary?.numTurns ?? null,
+      cost_usd: resultSummary?.totalCostUsd ?? null,
+      error: finalized.incidentMessage,
+      incident_context: finalized.incidentContext,
+      attributes: sanitizeJsonObject({
+        final_state: finalized.finalState,
+        blocked: finalized.blocked,
+        merge_outcome: finalized.mergeOutcome,
+        provider_model: providerModel,
+      }),
+    });
+
     if (finalized.mergeOutcome === "merged") {
       await writeTelemetry({
         ...baseEvent,
@@ -563,6 +661,8 @@ export async function dispatch(
         ),
     });
 
+    await preserveIncidentBundle(finalized);
+
     return {
       success: overallSuccess,
       blocked: finalized.blocked,
@@ -596,6 +696,7 @@ export async function dispatch(
       cost_usd: resultSummary?.totalCostUsd ?? null,
       error: finalized.incidentMessage ?? (error instanceof Error ? error.message : String(error)),
     });
+    await preserveIncidentBundle(finalized);
     console.error(
       `[dispatcher] ${itemId} failed:`,
       error instanceof Error ? error.message : error,
@@ -611,10 +712,74 @@ export async function dispatch(
 
   async function writeTelemetry(event: DispatchTelemetryEvent): Promise<void> {
     try {
+      emittedEvents.push(event);
       await appendTelemetryEvent(bundleRoot, event);
     } catch (error) {
       console.warn(
         `[dispatcher] ${itemId} telemetry write failed: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  }
+
+  async function preserveIncidentBundle(finalized: FinalizeDispatchResult): Promise<void> {
+    if (!finalized.blocked || !finalized.incidentKind || !finalized.incidentContext) {
+      return;
+    }
+
+    const bundlePath = resolveIncidentBundlePath(bundleRoot, prepared.dispatchId);
+    await writeTelemetry({
+      ...baseEvent,
+      event_id: crypto.randomUUID(),
+      event_type: "incident_preserved",
+      timestamp: new Date().toISOString(),
+      worker_session_id: sessionId ?? null,
+      mounted_submodules: finalized.mountedSubmodules,
+      worktree_commit: finalized.worktreeCommit,
+      integrated_commit: finalized.integratedCommit,
+      merge_outcome: finalized.mergeOutcome,
+      incident_kind: finalized.incidentKind,
+      phase: "incident_preserved",
+      cause: finalized.incidentContext.cause,
+      retryable: finalized.incidentContext.retryable,
+      recommended_next_actor: finalized.incidentContext.recommended_next_actor,
+      command_label: finalized.incidentContext.command_label,
+      command_result: finalized.incidentContext.command_result,
+      relevant_shas: finalized.incidentContext.relevant_shas,
+      duration_ms: resultSummary?.durationMs ?? Date.now() - startedAt,
+      num_turns: resultSummary?.numTurns ?? null,
+      cost_usd: resultSummary?.totalCostUsd ?? null,
+      error: finalized.incidentMessage,
+      incident_context: finalized.incidentContext,
+      attributes: sanitizeJsonObject({
+        bundle_path: bundlePath,
+        preserved_event_count: emittedEvents.length,
+      }),
+    });
+
+    try {
+      await writeIncidentBundle(bundleRoot, {
+        schema: "als-delamain-incident-bundle@1",
+        created_at: new Date().toISOString(),
+        dispatcher_name: config.delamainName,
+        module_id: config.moduleId,
+        tick_id: prepared.tickId ?? null,
+        dispatch_id: prepared.dispatchId,
+        merge_attempt_id: finalized.incidentContext.correlation_ids.merge_attempt_id,
+        repo_attempt_id: finalized.incidentContext.correlation_ids.repo_attempt_id,
+        item_id: itemId,
+        item_file: itemFile,
+        state: entry.state,
+        incident_kind: finalized.incidentKind,
+        phase: finalized.incidentContext.phase,
+        cause: finalized.incidentContext.cause,
+        retryable: finalized.incidentContext.retryable,
+        recommended_next_actor: finalized.incidentContext.recommended_next_actor,
+        incident_context: finalized.incidentContext,
+        events: emittedEvents,
+      });
+    } catch (bundleError) {
+      console.warn(
+        `[dispatcher] ${itemId} incident bundle write failed: ${bundleError instanceof Error ? bundleError.message : String(bundleError)}`,
       );
     }
   }
@@ -643,6 +808,14 @@ export async function dispatch(
       },
     });
   }
+}
+
+function resolveProviderModel(provider: AgentProvider, model: string | undefined): string {
+  if (provider === "openai") {
+    return model ?? "gpt-5.4";
+  }
+
+  return model === "opus" || model === "haiku" ? model : "sonnet";
 }
 
 function describeDispatchFailure(
