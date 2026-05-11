@@ -2,11 +2,16 @@
 
 import { recordTouchedPathBreadcrumb } from "../alsc/compiler/src/hook-runtime.ts";
 import {
+  extractCodexTouchedPaths,
+  isCodexHookPayload,
+  type CodexHookPayload,
+} from "./codex-hook-adapter.ts";
+import {
   derivePluginRootFromEntrypoint,
-  parseClaudeHookInput,
-} from "./claude-hook-adapter.ts";
+  parseHookInput,
+} from "./hook-adapter.ts";
 
-interface PostToolUsePayload {
+interface ClaudePostToolUsePayload {
   session_id?: string;
   tool_input?: {
     file_path?: string;
@@ -14,14 +19,23 @@ interface PostToolUsePayload {
 }
 
 try {
-  const input = await parseClaudeHookInput<PostToolUsePayload>();
-  recordTouchedPathBreadcrumb({
-    context: {
-      plugin_root: derivePluginRootFromEntrypoint(import.meta.url),
-    },
-    file_path: input?.tool_input?.file_path ?? "",
-    session_id: input?.session_id ?? "",
-  });
+  const input = await parseHookInput<ClaudePostToolUsePayload | CodexHookPayload>();
+  const sessionId = input?.session_id ?? "";
+  const touchedPaths = isCodexHookPayload(input)
+    ? extractCodexTouchedPaths(input)
+    : input?.tool_input?.file_path
+    ? [input.tool_input.file_path]
+    : [];
+
+  for (const filePath of touchedPaths) {
+    recordTouchedPathBreadcrumb({
+      context: {
+        plugin_root: derivePluginRootFromEntrypoint(import.meta.url),
+      },
+      file_path: filePath,
+      session_id: sessionId,
+    });
+  }
 } catch {
   process.exit(0);
 }

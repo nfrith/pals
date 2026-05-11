@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { existsSync, rmSync } from "node:fs";
-import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -33,6 +33,7 @@ const compilerRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const alsRepoRoot = resolve(compilerRoot, "../..");
 const v5FixtureRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../../../language-upgrades/fixtures/v5");
 const sessionStartHookPath = resolve(alsRepoRoot, "hooks/operator-config-session-start.ts");
+const postBreadcrumbHookPath = resolve(alsRepoRoot, "hooks/als-breadcrumb.ts");
 const postValidateHookPath = resolve(alsRepoRoot, "hooks/als-validate.ts");
 const stopHookPath = resolve(alsRepoRoot, "hooks/als-stop-gate.ts");
 
@@ -378,6 +379,64 @@ test("operator-config session-start hook resolves plugin root without CLAUDE_PLU
   });
 });
 
+test("operator-config session-start hook accepts Codex SessionStart payloads", async () => {
+  await withFixtureSandbox("cli-hook-session-start-codex", async ({ root }) => {
+    await removePath(root, ".als/skip-operator-config");
+    await writeValidOperatorConfig(root);
+
+    const process = runHook(sessionStartHookPath, {
+      hook_event_name: "SessionStart",
+      source: "startup",
+      cwd: join(root, "workspace"),
+    });
+
+    expect(process.exitCode).toBe(0);
+    expect(process.stderr).toBe("");
+    expect(process.stdout).toContain("<system-reminder>");
+    expect(process.stdout).toContain("Stable operator context loaded");
+  });
+});
+
+test("als breadcrumb hook parses Codex apply_patch payloads across add update delete and move entries", async () => {
+  await withFixtureSandbox("cli-hook-breadcrumb-codex", async ({ root }) => {
+    const sessionId = `als104-breadcrumb-${randomUUID()}`;
+    const breadcrumbPath = `/tmp/als-touched-${sessionId}`;
+
+    try {
+      const process = runHook(postBreadcrumbHookPath, {
+        hook_event_name: "PostToolUse",
+        cwd: root,
+        session_id: sessionId,
+        tool_name: "apply_patch",
+        tool_input: {
+          command: [
+            "*** Begin Patch",
+            "*** Add File: workspace/backlog/items/ITEM-0099.md",
+            "*** Update File: workspace/backlog/items/ITEM-0001.md",
+            "*** Delete File: workspace/backlog/items/ITEM-0002.md",
+            "*** Update File: workspace/backlog/items/ITEM-0003.md",
+            "*** Move to: .als/system.ts",
+            "*** End Patch",
+          ].join("\n"),
+        },
+      });
+
+      expect(process.exitCode).toBe(0);
+      expect(process.stdout).toBe("");
+      expect(process.stderr).toBe("");
+      const contents = await readFile(breadcrumbPath, "utf-8");
+      expect(contents.split(/\r?\n/).filter(Boolean)).toEqual([
+        `${root}:backlog`,
+        `${root}:__system__`,
+      ]);
+    } finally {
+      if (existsSync(breadcrumbPath)) {
+        rmSync(breadcrumbPath, { force: true });
+      }
+    }
+  });
+});
+
 test("als post-edit hook stays silent on clean success", async () => {
   await withFixtureSandbox("cli-hook-post-pass", async ({ root }) => {
     const process = runHook(postValidateHookPath, {
@@ -405,6 +464,75 @@ test("als post-edit hook blocks further edits when validation fails", async () =
     });
 
     expect(process.exitCode).toBe(2);
+    expect(process.stderr).toBe("");
+    const output = JSON.parse(process.stdout) as {
+      decision: string;
+      reason: string;
+      hookSpecificOutput?: {
+        additionalContext?: string;
+      };
+    };
+    expect(output.decision).toBe("block");
+    expect(output.reason).toContain("STOP: fix all errors");
+    expect(output.hookSpecificOutput?.additionalContext).toContain("\"status\": \"fail\"");
+  });
+});
+
+test("als post-edit hook parses Codex apply_patch payloads and dedupes module validation", async () => {
+  await withFixtureSandbox("cli-hook-post-codex-warn", async ({ root }) => {
+    await configureSyntheticDeprecationFixture(root);
+
+    const process = runHook(postValidateHookPath, {
+      hook_event_name: "PostToolUse",
+      cwd: root,
+      tool_name: "apply_patch",
+      tool_input: {
+        command: [
+          "*** Begin Patch",
+          "*** Update File: workspace/backlog/items/ITEM-0001.md",
+          "*** Update File: workspace/backlog/items/ITEM-0002.md",
+          "*** End Patch",
+        ].join("\n"),
+      },
+    }, {
+      env: syntheticDeprecationFixtureEnv(),
+    });
+
+    expect(process.exitCode).toBe(0);
+    expect(process.stderr).toBe("");
+    const output = JSON.parse(process.stdout) as {
+      decision?: string;
+      hookSpecificOutput?: {
+        additionalContext?: string;
+      };
+    };
+    expect(output.decision).toBeUndefined();
+    expect(output.hookSpecificOutput?.additionalContext).toContain("synthetic-deprecated");
+    expect(output.hookSpecificOutput?.additionalContext?.match(/ALS validation warnings for module "backlog"/g))
+      .toHaveLength(1);
+  });
+});
+
+test("als post-edit hook blocks Codex apply_patch edits with JSON output", async () => {
+  await withFixtureSandbox("cli-hook-post-codex-fail", async ({ root }) => {
+    await updateRecord(root, "workspace/backlog/items/ITEM-0001.md", (record) => {
+      delete record.data.title;
+    });
+
+    const process = runHook(postValidateHookPath, {
+      hook_event_name: "PostToolUse",
+      cwd: root,
+      tool_name: "apply_patch",
+      tool_input: {
+        command: [
+          "*** Begin Patch",
+          "*** Update File: workspace/backlog/items/ITEM-0001.md",
+          "*** End Patch",
+        ].join("\n"),
+      },
+    });
+
+    expect(process.exitCode).toBe(0);
     expect(process.stderr).toBe("");
     const output = JSON.parse(process.stdout) as {
       decision: string;
@@ -476,6 +604,34 @@ test("als stop hook surfaces a final warn-only reminder without blocking", async
   });
 });
 
+test("als stop hook stays silent for Codex warn-only sessions", async () => {
+  await withFixtureSandbox("cli-hook-stop-codex-warn", async ({ root }) => {
+    await configureSyntheticDeprecationFixture(root);
+
+    const sessionId = `als104-stop-codex-warn-${randomUUID()}`;
+    const breadcrumbPath = `/tmp/als-touched-${sessionId}`;
+
+    try {
+      await Bun.write(breadcrumbPath, `${root}:backlog\n`);
+      const process = runHook(stopHookPath, {
+        hook_event_name: "Stop",
+        session_id: sessionId,
+      }, {
+        env: syntheticDeprecationFixtureEnv(),
+      });
+
+      expect(process.exitCode).toBe(0);
+      expect(process.stdout).toBe("");
+      expect(process.stderr).toBe("");
+      expect(existsSync(breadcrumbPath)).toBe(false);
+    } finally {
+      if (existsSync(breadcrumbPath)) {
+        rmSync(breadcrumbPath, { force: true });
+      }
+    }
+  });
+});
+
 test("als stop hook blocks stop when validation errors remain", async () => {
   await withFixtureSandbox("cli-hook-stop-fail", async ({ root }) => {
     await updateRecord(root, "workspace/backlog/items/ITEM-0001.md", (record) => {
@@ -492,6 +648,37 @@ test("als stop hook blocks stop when validation errors remain", async () => {
       });
 
       expect(process.exitCode).toBe(2);
+      expect(process.stderr).toBe("");
+      const output = JSON.parse(process.stdout) as {
+        decision: string;
+        reason: string;
+      };
+      expect(output.decision).toBe("block");
+      expect(output.reason).toContain("still have errors");
+      expect(existsSync(breadcrumbPath)).toBe(true);
+    } finally {
+      rmSync(breadcrumbPath, { force: true });
+    }
+  });
+});
+
+test("als stop hook blocks Codex stop with JSON output", async () => {
+  await withFixtureSandbox("cli-hook-stop-codex-fail", async ({ root }) => {
+    await updateRecord(root, "workspace/backlog/items/ITEM-0001.md", (record) => {
+      delete record.data.title;
+    });
+
+    const sessionId = `als104-stop-codex-fail-${randomUUID()}`;
+    const breadcrumbPath = `/tmp/als-touched-${sessionId}`;
+
+    try {
+      await Bun.write(breadcrumbPath, `${root}:backlog\n`);
+      const process = runHook(stopHookPath, {
+        hook_event_name: "Stop",
+        session_id: sessionId,
+      });
+
+      expect(process.exitCode).toBe(0);
       expect(process.stderr).toBe("");
       const output = JSON.parse(process.stdout) as {
         decision: string;

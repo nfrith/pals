@@ -1,0 +1,48 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume|clear",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bun ${PLUGIN_ROOT}/hooks/operator-config-session-start.ts",
+            "timeout": 10,
+            "statusMessage": "Loading ALS operator profile"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "apply_patch|Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bun ${PLUGIN_ROOT}/hooks/als-breadcrumb.ts",
+            "timeout": 5,
+            "statusMessage": "Recording ALS edit"
+          },
+          {
+            "type": "command",
+            "command": "bun ${PLUGIN_ROOT}/hooks/als-validate.ts",
+            "timeout": 15,
+            "statusMessage": "Validating ALS edit"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bun ${PLUGIN_ROOT}/hooks/als-stop-gate.ts",
+            "timeout": 30,
+            "statusMessage": "Checking ALS validation gate"
+          }
+        ]
+      }
+    ]
+  }
+}

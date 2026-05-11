@@ -2,7 +2,9 @@
 
 The four compiler-owned hooks now run as Bun TypeScript adapters above the public compiler hook-runtime boundary at `alsc/compiler/src/hook-runtime.ts`. The normative decision is [SDR 053](../sdr/053-public-hook-runtime-api-and-harness-adapter-contract.md); ALS-099's load-bearing rationale note lives at [`../../als-factory/artifacts/ALS-099/hook-runtime-public-api-architecture.md`](../../als-factory/artifacts/ALS-099/hook-runtime-public-api-architecture.md).
 
-Claude still launches the hook commands from `${CLAUDE_PLUGIN_ROOT}/hooks/*.json`, but the adapter code derives the plugin root from `import.meta.url` instead of treating child-process env inheritance as the only boundary.
+ALS-104 adds the Codex hook bundle at [`hooks.json`](./hooks.json) and keeps the same semantic runtime. The load-bearing Codex rationale note is [`../../als-factory/artifacts/ALS-104/codex-hook-wiring-architecture.md`](../../als-factory/artifacts/ALS-104/codex-hook-wiring-architecture.md): plugin-bundled wiring only, no fake `SessionEnd`, and no Codex-specific semantic fork below the adapter seam.
+
+Claude still launches commands from `${CLAUDE_PLUGIN_ROOT}/hooks/*.json`. Codex loads the bundled `./hooks/hooks.json` from the installed plugin copy and launches those same TypeScript entrypoints through `${PLUGIN_ROOT}`. In both cases the adapters derive the plugin root from `import.meta.url` instead of treating child-process env inheritance as the only boundary.
 
 ## Hook inventory
 
@@ -10,15 +12,15 @@ Claude still launches the hook commands from `${CLAUDE_PLUGIN_ROOT}/hooks/*.json
 
 On session start, walks up from the reported `cwd`, finds the current ALS system root, and resolves the ALS v5 operator-config surface: `<system_root>/.als/operator-roster.ts` plus the machine-local selector at `<system_root>/.als/local/active-operator.json`. If no ALS system root is found or the current ALS system contains `.als/skip-operator-config`, it injects nothing. If the roster or selector is missing or invalid, it injects hard remediation telling the operator to run `/configure-operator` or finish the `v4 -> v5` migration; it never reads legacy `.als/operator.md` at runtime.
 
-### als-validate.ts (PostToolUse — Write|Edit)
+### als-validate.ts (PostToolUse — Write|Edit on Claude, apply_patch|Edit|Write on Codex)
 
-After Write/Edit operations, validates the affected module and blocks further edits if validation fails. This is the inline feedback loop — it catches errors immediately. The adapter only handles Claude stdin/stdout and exit-code translation; compiler semantics live in `alsc/compiler/src/hook-runtime.ts`.
+After file-edit operations, validates the affected module and blocks further edits if validation fails. This is the inline feedback loop — it catches errors immediately. The adapter only handles harness stdin/stdout and exit-code translation; compiler semantics live in `alsc/compiler/src/hook-runtime.ts`.
 
-Silent on clean success. Warn-only validation stays non-blocking but emits immediate context so deprecated-value usage is visible during the edit loop. On failure, outputs a structured JSON block decision with compiler diagnostics.
+Silent on clean success. Warn-only validation stays non-blocking but emits immediate context so deprecated-value usage is visible during the edit loop. On failure, outputs a structured JSON block decision with compiler diagnostics. The Codex adapter parses `tool_input.command` for `*** Add File:`, `*** Update File:`, `*** Delete File:`, and `*** Move to:` entries, then dedupes validation runs by touched module so one multi-file patch does not validate the same module repeatedly.
 
-### als-breadcrumb.ts (PostToolUse — Write|Edit)
+### als-breadcrumb.ts (PostToolUse — Write|Edit on Claude, apply_patch|Edit|Write on Codex)
 
-After Write/Edit operations, records which ALS system and module were touched to a session-scoped breadcrumb file at `/tmp/als-touched-${session_id}`. Does not run the compiler. Does not block.
+After file-edit operations, records which ALS system and module were touched to a session-scoped breadcrumb file at `/tmp/als-touched-${session_id}`. Does not run the compiler. Does not block.
 
 This hook exists so the stop gate knows what to validate without scanning the whole filesystem.
 
@@ -28,7 +30,7 @@ TODO: Does not capture Bash-based file mutations (e.g. `echo ... > file.md`).
 
 Before Claude finishes, reads the breadcrumb file for this session. If ALS systems/modules were touched, validates only those. Blocks stop if any have errors.
 
-Warn-only results never block stop, but the hook emits a final reminder summary when the touched system/module still carries warnings. If no breadcrumb file exists (session didn't touch ALS files), exits immediately — no validation, no blocking.
+Claude keeps the warn-only reminder summary through `hookSpecificOutput.additionalContext`. Codex uses the safe ALS-104 contract instead: clean or warn-only success exits silently, and only hard failures emit a JSON block decision. If no breadcrumb file exists (session didn't touch ALS files), exits immediately — no validation, no blocking.
 
 ### delamain-stop.sh (SessionEnd)
 
@@ -49,4 +51,5 @@ When set to `"1"`, `als-validate.ts` and `als-stop-gate.ts` skip all validation.
 ## Requirements
 
 - Bun must be installed and on `$PATH`.
-- The plugin must be loaded so `CLAUDE_PLUGIN_ROOT` resolves.
+- Claude hook wiring requires `${CLAUDE_PLUGIN_ROOT}` substitution.
+- Codex hook wiring requires the installed plugin bundle to resolve `${PLUGIN_ROOT}` in `hooks/hooks.json`.

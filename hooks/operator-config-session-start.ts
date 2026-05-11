@@ -3,15 +3,15 @@
 import { buildOperatorConfigSessionStart } from "../alsc/compiler/src/hook-runtime.ts";
 import {
   derivePluginRootFromEntrypoint,
-  parseClaudeHookInput,
-} from "./claude-hook-adapter.ts";
+  parseHookInput,
+} from "./hook-adapter.ts";
 
 interface SessionStartPayload {
   cwd?: string;
 }
 
 try {
-  const input = await parseClaudeHookInput<SessionStartPayload>();
+  const input = await parseHookInput<SessionStartPayload>();
   const output = buildOperatorConfigSessionStart({
     context: {
       plugin_root: derivePluginRootFromEntrypoint(import.meta.url),
