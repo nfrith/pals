@@ -20,14 +20,10 @@ Proposed
 
 - ALS defines a first-class entity field kind `operator-ref`.
 - ALS defines a delamain-level declaration `requires_active_operator`.
-- `requires_active_operator` accepts:
-  - `true`
-  - or an object with:
-    - `field?: string`
-    - `mode?: "opportunistic" | "strict"`
-- Bare `requires_active_operator: true` means:
-  - `field = "assigned_operator"`
-  - `mode = "opportunistic"`
+- `requires_active_operator` is **always** an object with **both** fields supplied explicitly. No shorthand alias is accepted:
+  - `field: string` (required) — the entity-schema field this delamain binds to
+  - `mode: "opportunistic" | "strict"` (required) — explicit assignment policy
+- There is no default field name and no default mode. Authors must state both intents in the declaration so agents reading or modifying the source see the full contract on the surface, without resolving hidden defaults.
 - The bound assignment field must be explicitly authored in the entity schema with `type: "operator-ref"`.
 - ALS-101 rejects session-field-style implicit synthesis for this contract. The field is real authored schema, not a hidden effective field.
 - Compiler validation resolves `operator-ref` values against the ALS-100 roster contract:
@@ -58,16 +54,17 @@ Proposed
 
 - Required: `operator-ref` is a first-class field kind validated against the compiler-owned operator roster contract.
 - Required: delamains that declare `requires_active_operator` bind to one explicitly authored `operator-ref` field.
-- Required: bare `true` means `assigned_operator` plus opportunistic mode.
+- Required: `requires_active_operator` is always an object literal with both `field` and `mode` supplied. No shorthand and no defaults — the contract must be fully visible in authored source.
 - Required: strict mode rejects nullable assignment fields and rejects missing assignment values.
 - Required: opportunistic mode preserves single-operator behavior by allowing unassigned entities to dispatch on any machine.
 - Required: dispatcher filtering runs only from compiler-projected metadata and the local active selector.
 - Required: missing or invalid local selector state fails closed for the affected declared delamain and surfaces remediation explicitly.
 - Required: console create flows use a shared helper for assignment metadata and local active operator lookup.
 - Allowed: delamains without `requires_active_operator` remain byte-identical to current behavior.
-- Allowed: authors may override the default field name through the delamain declaration.
+- Allowed: authors may name the assignment field whatever they want by supplying it explicitly through `field`.
 - Allowed: operators may manually reassign work by editing the bound `operator-ref` field and committing the change.
 - Rejected: implicit synthesized operator-assignment fields.
+- Rejected: shorthand `requires_active_operator: true` or any form that omits `field` or `mode`. Agents who read or modify a delamain config must see the full assignment contract on the surface, not infer it from invisible defaults.
 - Rejected: plain `string` or roster-mirrored `enum` as the canonical authored assignment contract.
 - Rejected: dispatcher parsing of authored module or delamain TypeScript at runtime.
 - Rejected: lease, lock, queue, or timeout-based takeover semantics in this job.
