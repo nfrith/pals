@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed
+Accepted
 
 ## Context
 
@@ -41,6 +41,9 @@ Proposed
   - `.codex-plugin/plugin.json` at the ALS repo root
   - `.agents/plugins/marketplace.json` at the ALS repo root
 - Codex stable distribution must remain Section 9-owned and must stay inside the same two-channel release model as Claude. The recommended stable shape is to reuse `nfrith/als-stable` as one thin catalog family with separate stable marketplace entries for Claude and Codex rather than creating a second stable repo.
+- The shared `nfrith/als-stable` repo uses sibling harness-native marketplace manifests, not one mixed file:
+  - `.claude-plugin/marketplace.json` for the Claude stable surface
+  - `.agents/plugins/marketplace.json` for the Codex stable surface
 - Release/public docs must describe the install surface as a **harness × channel** matrix:
   - Claude RC
   - Claude stable
@@ -49,6 +52,7 @@ Proposed
 - Public copy must be explicit about the boundary:
   - install and discovery in Codex are supported in this phase
   - Codex skill portability, hooks, and runtime projection are not yet promised
+- Canonical ALS reference docs under `nfrith-repos/als/skills/docs/references/` must reflect the same dual-harness reality. When a Codex-specific fact is not yet empirically locked, the doc must say so explicitly with a placeholder or TBD marker instead of inventing a value.
 - This decision does not claim Codex runtime parity. It does not add:
   - `alsc deploy codex`
   - Codex hook packaging
@@ -63,9 +67,12 @@ Proposed
 - Required: `.claude-plugin/plugin.json.version` and `.codex-plugin/plugin.json.version` are identical in every shipped ALS release.
 - Required: architect-side release automation that performs the release act updates both plugin manifests in the same release commit.
 - Required: Codex stable distribution points only at Section 9-owned repositories and explicit release refs. Contributor forks are forbidden.
+- Required: the shared stable repo shape uses sibling harness-native marketplace manifests (`.claude-plugin/marketplace.json` and `.agents/plugins/marketplace.json`) rather than a second stable repo or an ambiguous mixed-file contract.
 - Required: release-model docs teach the install surface as a harness × channel matrix, not as Claude-only prose with a Codex appendix.
 - Required: public docs describe Codex as install-surface support only until follow-up jobs land skill portability, hooks, and runtime projection.
+- Required: canonical reference docs under `nfrith-repos/als/skills/docs/references/` stop assuming Claude is the only harness. Unverified Codex-specific facts must be marked as placeholders or TBDs instead of being omitted silently or asserted as observed truth.
 - Allowed: `.codex-plugin/plugin.json` may point `skills` at `./skills/` if the public contract remains explicit that functional Codex skill parity is deferred.
+- Allowed: placeholder or TBD language in reference docs where Codex-specific runtime facts are not yet empirically verified.
 - Allowed: future jobs may add Codex runtime-harness projection, but only under a separate SDR.
 - Rejected: independent Claude and Codex plugin versions.
 - Rejected: a second public release act for Codex separate from the existing ALS release act.
@@ -85,8 +92,17 @@ Proposed
 - Add [`../../../als-factory/artifacts/ALS-097/codex-install-surface-architecture.md`](../../../als-factory/artifacts/ALS-097/codex-install-surface-architecture.md) as the load-bearing rationale note for the shared release-plane recommendation.
 - Update `als-factory/docs/release-model/architect-flow.md`, `edgerunner-flow.md`, and `update-mechanics/version-policy.md` so they describe the harness × channel matrix and the dual-manifest release act.
 - Update `nfrith-repos/als/README.md` and `nfrith-repos/als/CLAUDE.md` so Codex installation is documented honestly.
+- Update the canonical reference docs under `nfrith-repos/als/skills/docs/references/`, with initial high-risk files including:
+  - `platforms.md`
+  - `delamain-console-patterns.md`
+  - `dev-mapping.md`
+  - `module-integration.md`
+  - `delamain-overview.md`
+  - `vocabulary.md`
+  Additional files in that directory should be audited for Claude-only assumptions during dev and updated or marked TBD where needed.
 - Update `.als/modules/als-factory/v3/skills/als-factory-release-rc/SKILL.md` and its projected copy so release automation aligns both manifests.
 - Update `.als/modules/als-factory/v3/skills/als-factory-release-prep/SKILL.md` and its projected copy only as needed to remove Claude-only wording around plugin-versioning non-goals.
+- Add a short pointer from the affected architect-side release skills back to this SDR or the ALS-097 rationale note so later edits cannot silently drop the dual-manifest release contract.
 - No authored ALS syntax changes are introduced, so no shape-language fixture round is required for this job.
 
 ## Alternatives Considered
