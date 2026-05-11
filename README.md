@@ -161,7 +161,7 @@ ALS uses a **two-channel release model**:
 | Harness | Stable channel | RC channel | Current status |
 |---------|----------------|------------|----------------|
 | Claude Code | `als-marketplace-stable` from `nfrith/als-stable` | `als-marketplace` from `nfrith/als` | Full preview workflow today |
-| Codex | `als-codex-marketplace-stable` from `nfrith/als-stable` | `als-codex-marketplace` from `nfrith/als` | Install surface only in this phase |
+| Codex | Planned companion catalog in `nfrith/als-stable` (not live yet) | `als-codex-marketplace` from `nfrith/als` | RC install surface ships now; stable activation is still pending the companion catalog |
 
 ### Claude Code — full supported flow
 
@@ -194,11 +194,7 @@ Once installed, ALS skills (`/install`, `/new`, `/validate`, `/change`, `/migrat
 
 #### Stable channel
 
-```bash
-codex plugin marketplace add https://github.com/nfrith/als-stable
-```
-
-Restart Codex, open the plugin directory, choose the **ALS Codex Stable** marketplace, and install **ALS**.
+The intended stable Codex catalog lives in [`nfrith/als-stable`](https://github.com/nfrith/als-stable), but that companion repo has not published `.agents/plugins/marketplace.json` yet. As of 2026-05-11, `codex plugin marketplace add https://github.com/nfrith/als-stable` registers the Claude marketplace name, not a working Codex stable marketplace, so this is not a usable Codex install path yet.
 
 #### RC channel
 
@@ -208,7 +204,7 @@ codex plugin marketplace add https://github.com/nfrith/als
 
 Restart Codex, open the plugin directory, choose **ALS Codex RC**, and install **ALS**.
 
-**Boundary:** this phase makes ALS discoverable and installable in Codex. Claude remains the only fully supported runtime today. Codex skill portability, hooks, and runtime projection are follow-up work.
+**Boundary:** this phase makes ALS discoverable and installable in Codex through the RC/local marketplace surface. Claude remains the only fully supported runtime today. Codex stable-catalog activation, skill portability, hooks, and runtime projection are follow-up work.
 
 ## Update
 
