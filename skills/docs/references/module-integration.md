@@ -55,7 +55,7 @@ The SKILL.md procedure says "Follow the procedure in references/plan-input.md" f
 
 ## The Deploy Pipeline
 
-`alsc deploy claude` manages one system-owned file under `.als/` and projects active ALS assets into `.claude/`:
+`alsc deploy claude` is the only shipped runtime projection today. It manages one system-owned file under `.als/` and projects active ALS assets into `.claude/`:
 
 ```
 .als/
@@ -78,10 +78,11 @@ The SKILL.md procedure says "Follow the procedure in references/plan-input.md" f
 - Delamain deploy does not run `bun install` or any other package-manager command.
 - If the deployed dispatcher has no installed dependencies yet, deploy warns and continues.
 - Merge projection may leave stale authored files or incidental runtime files in the deployed Delamain target.
+- Codex install-surface metadata (`.codex-plugin/plugin.json`, `.agents/plugins/marketplace.json`) is separate from deploy and does not create `.codex/` runtime assets in this phase.
 
 ## Dispatcher as Engine-Managed Construct
 
-Never hand-write a dispatcher. The canonical bundle lives at `${CLAUDE_PLUGIN_ROOT}/delamain-dispatcher/`, and ALS v2+ installs one operator-side copy per Delamain under `.als/constructs/delamain-dispatcher/<delamain>/`.
+Never hand-write a dispatcher. In the current Claude runtime, the canonical bundle lives at `${CLAUDE_PLUGIN_ROOT}/delamain-dispatcher/`, and ALS v2+ installs one operator-side copy per Delamain under `.als/constructs/delamain-dispatcher/<delamain>/`. Codex install-surface support does not add a second dispatcher runtime path yet.
 
 Module bundles no longer carry `delamains/<name>/dispatcher/`. `/change` and other authored-source flows manage only `delamain.ts`, agent prompts, optional sub-agent prompts, and optional `runtime-manifest.config.json`.
 

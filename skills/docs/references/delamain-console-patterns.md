@@ -16,7 +16,7 @@ Pre-processor block(s) that run at skill load time using the `!` technique avail
 
 ### LLM Operations
 
-Runtime dependency checks the operator-agent (Claude, inside the console session) performs before proceeding with any action. Use this for checks that require judgment or agent tools: dispatcher health (is a status file present and fresh?), write-access verification against factory directories, decisions about soft dependencies, and structured reactions to `MISSING_*` tokens emitted by Scanner results.
+Runtime dependency checks the operator-agent inside the console session performs before proceeding with any action. Use this for checks that require judgment or agent tools: dispatcher health (is a status file present and fresh?), write-access verification against factory directories, decisions about soft dependencies, and structured reactions to `MISSING_*` tokens emitted by Scanner results.
 
 A console skill with failing Scanner results (any `MISSING_*` token) should refuse to proceed and surface the miss to the operator with a remediation hint. LLM Operations checks run every time the console is invoked, before the attention queue scan. Keep both sub-sections present even when empty — state "none" explicitly rather than omitting the sub-section.
 
@@ -78,7 +78,7 @@ The dispatcher only reads committed `HEAD` state. Unstaged or staged status edit
 
 "Review" means presenting the full entity record to the operator for reading before they make a decision.
 
-The pattern is **platform-aware**: every console skill must detect the operator's platform via `$CLAUDE_CODE_ENTRYPOINT` (see [`platforms.md`](platforms.md)) and route to a platform-appropriate viewer. The console decides *how* to present; the contract is that the operator can always read the entity before acting.
+The pattern is **platform-aware**: in the current supported Claude runtime surfaces, every console skill detects the operator's platform via `$CLAUDE_CODE_ENTRYPOINT` (see [`platforms.md`](platforms.md)) and routes to a platform-appropriate viewer. The console decides *how* to present; the contract is that the operator can always read the entity before acting.
 
 | Platform | Entrypoint | Viewer pattern |
 |----------|------------|----------------|
@@ -90,6 +90,8 @@ The pattern is **platform-aware**: every console skill must detect the operator'
 When a preference question is appropriate (CDSK, CWEB), only ask once per review — if the operator already answered earlier in the same action flow, respect that choice for the rest of the flow.
 
 The universal pattern does not prescribe a specific tool — neither a specific terminal viewer (`tmux-review`, `less`, `glow`, etc.) nor a specific browser MCP (Claude Preview, Claude in Chrome, or any successor). Each console skill chooses the concrete implementation based on what ships with the factory or system it belongs to. Factories intended for distribution outside their authoring repo must bundle or gracefully degrade so their Review action works without external dependencies. Do not hard-code specific MCP tool names in the pattern — tool naming on the browser side is expected to drift as Anthropic evolves the surface; rely on whichever browser/preview tool the operator has connected at run time.
+
+Codex install-surface support does not yet establish a Codex console viewer contract. Until a follow-up job locks a Codex runtime-platform code and detection signal, keep Codex-specific console behavior marked TBD instead of inferring it from install metadata.
 
 ## The Attention Queue
 

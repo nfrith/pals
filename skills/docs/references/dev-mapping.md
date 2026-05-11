@@ -38,11 +38,13 @@ This table is intentionally extensible. Add rows as new vocabulary friction surf
 | `phase` | pipeline stage / SDLC phase | Coarser grouping over states. |
 | `actor` | task assignee / executor type | Closest to a BPMN swimlane: who owns the step, `operator` or `agent`. |
 | `provider` | worker pool / execution backend | Which backend executes the agent-owned step. |
+| `authoring harness` | IDE / plugin host | Where ALS is discovered, installed, and invoked as a plugin. Today: Claude Code and Codex. |
+| `runtime harness` | deploy target / runtime host | Where compiler-owned runtime assets are projected. Today: Claude-only. |
 | `agent` | task implementation / handler / service | The concrete state implementation the dispatcher runs. |
 | `construct` | framework / engine code | Vendor-shipped runtime/tooling code, not operator-authored content. |
-| `compiler` (`alsc`) | build tool / transpiler / code generator | Materializes ALS-authored source into deployed Claude assets; it is not the request runtime. |
+| `compiler` (`alsc`) | build tool / transpiler / code generator | Materializes ALS-authored source into deployed harness-native assets. Claude projection is the only shipped runtime projection today. |
 | `skill` | slash command + bundled knowledge | A named operator interface surface, closer to a command/handler than a controller action. |
-| `hook` | lifecycle hook / middleware | Plugin-wired shell entrypoints around Claude Code lifecycle events. |
+| `hook` | lifecycle hook / middleware | Plugin-wired shell entrypoints around Claude Code lifecycle events today. |
 | `dashboard` / `statusline` / `console` | views | Consumer-plane views over ALS-produced state; continuously refreshed, not request-scoped renders. |
 | `job` | ticket / issue / card / work item | `als-factory`'s record type. |
 | `cyborg` | application instance / tenant | Rough only. ALS treats it as an inhabited personal-agent system, not just a deployable app. |
@@ -66,7 +68,7 @@ In ALS, "DB migration" breaks into at least four different things:
 - `/change` + `/migrate` for per-module data shape evolution inside one `als_version`
 - `language-upgrade-recipe` for a whole-system `als_version` hop
 - construct upgrade for vendor-managed runtime/tooling version hops
-- bundled-surface refresh via `alsc deploy claude` for regenerating deployed `.claude/` assets from authored ALS state
+- bundled-surface refresh via `alsc deploy claude` for regenerating deployed `.claude/` assets from authored ALS state; Codex install-surface packaging is separate and does not yet imply runtime projection
 
 ### "Package update"
 

@@ -13,7 +13,7 @@ Canonical glossary lives at [`skills/docs/references/vocabulary.md`](skills/docs
 
 ## Platform Support
 
-ALS targets multiple Claude platforms (Claude Code CLI, Claude Cowork, Claude Code Desktop, Claude Code Web). The full matrix — codes, runtime entrypoint values, and current support status — lives in [`platforms.md`](skills/docs/references/platforms.md).
+ALS currently spans two authoring-harness surfaces: Claude Code and Codex. The full matrix — including today's Claude runtime platform codes and the Codex placeholder boundary — lives in [`platforms.md`](skills/docs/references/platforms.md).
 
 When referencing a platform anywhere in the codebase, use its `ALS-PLAT-XXXX` code with a formal markdown link back to that reference file. Never use bare platform codes without a link.
 
@@ -76,10 +76,10 @@ Someone sends them a link or tells them "try this thing".
 
 User is on a different AI coding harness. Discovers ALS and wants to try it.
 
-- ALS plugin system may not exist in their harness
-- Hooks, skills, slash commands — none of it works natively
-- Placeholder: guide them to a video of the product in action
-- Future: per-harness instruction sets (AGENTS.md, tool configs, etc.)
+- Codex now has a real marketplace/install surface: add the ALS marketplace, restart Codex, open the plugin directory, install ALS
+- Boundary: this phase is install/discovery only. Codex skill portability, hooks, and runtime projection are follow-up work
+- Other harnesses still do not have a real ALS install surface yet
+- Future: per-harness instruction sets, runtime detection, and projected tool configs
 
 ### 7. AI assistant recommends it
 

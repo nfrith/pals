@@ -69,7 +69,7 @@ development-pipeline/
 
 The authored Delamain bundle lives in `.als/modules/{module}/v{N}/delamains/` as `delamain.ts` plus markdown assets. Dispatcher source is not authored inside that bundle in ALS v2+; ALS installs it separately under `.als/constructs/delamain-dispatcher/<name>/` and deploy projects the runnable copy to `.claude/delamains/`.
 
-## Claude Projection
+## Current Runtime Projection (Claude)
 
 `alsc deploy claude` projects each active Delamain bundle to `.claude/delamains/<delamain-name>/`.
 
@@ -79,6 +79,8 @@ The authored Delamain bundle lives in `.als/modules/{module}/v{N}/delamains/` as
 - Deploy stays filesystem-only. It does not run `bun install` or any other package-manager command.
 - If the target dispatcher has no `node_modules/` yet, deploy warns and continues.
 - Because Delamain projection may use merge semantics, stale authored files or incidental runtime files can remain in the deployed target.
+
+Codex install-surface support does not add `alsc deploy codex` or a `.codex/delamains/` projection in this phase.
 
 ## How It Runs
 

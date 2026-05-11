@@ -1,0 +1,20 @@
+{
+  "name": "als-codex-marketplace",
+  "interface": {
+    "displayName": "ALS Codex RC"
+  },
+  "plugins": [
+    {
+      "name": "als",
+      "source": {
+        "source": "local",
+        "path": "./"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}

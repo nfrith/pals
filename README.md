@@ -4,13 +4,13 @@
 
 **Build a personal agent system that subtracts your attention.**
 
-A model harness engineering SDK — built for Claude.
+A model harness engineering SDK — Claude-first, with the Codex install surface now live.
 
 **Beta Research Preview**
 
 ALS is public for early adopters who are comfortable with breakage, manual rewrites, and rapid iteration. Read the preview contract in [RESEARCH-PREVIEW.md](RESEARCH-PREVIEW.md).
 
-Install from the stable marketplace, update with `/update`, and expect fix-forward recovery while preview-era lifecycle tooling is still incomplete.
+Install from the stable marketplace on Claude Code or Codex, update with `/update` on Claude, and expect fix-forward recovery while preview-era lifecycle tooling is still incomplete.
 
 </div>
 
@@ -135,7 +135,7 @@ ALS is a filesystem-backed specification language with a compiler and a small se
 
 A strict contract: structure separates from workflow, operator attention separates from agent execution, across every device the operator touches.
 
-ALS targets the Claude platforms today — Claude Code CLI, Cowork, Desktop, Web — with a vision toward wearables and ambient computing.
+ALS ships full workflow support on the Claude platforms today — Claude Code CLI, Cowork, Desktop, Web — and now exposes a Codex marketplace install surface. Codex skill portability, hooks, and runtime projection remain follow-up work.
 
 ## What Works Today
 
@@ -144,32 +144,42 @@ The current public preview is centered on two usable surfaces:
 - `alsc validate` validates an ALS system and emits machine-readable JSON
 - `alsc deploy claude` projects active ALS Claude assets into `.claude/skills/` and `.claude/delamains/`
 - `alsc changelog inspect` validates the ALS repo's structured `CHANGELOG.md` staging area
+- ALS can now be discovered and installed in Codex through the Codex marketplace surface, with the current boundary documented below
 - `reference-system/` provides the canonical reference fixture for the current ALS v1 contract
 
 ## Install
 
-ALS is distributed as a Claude Code plugin. Requires [Bun](https://bun.sh) >= 1.3.0 and [jq](https://jqlang.github.io/jq/).
+ALS publishes harness-native plugin surfaces that share one ALS version number. Claude Code is the fully supported runtime today. Codex can now discover and install ALS, but Codex skill portability, hooks, and runtime projection are still follow-up work.
+
+Requires [Bun](https://bun.sh) >= 1.3.0 and [jq](https://jqlang.github.io/jq/) for the current Claude-side workflows.
 
 ALS uses a **two-channel release model**:
 
-- **Stable channel** (`als-marketplace-stable`) — recommended for everyone. Source: [`nfrith/als-stable`](https://github.com/nfrith/als-stable). Receives versions only after RC validation passes.
-- **RC channel** (`als-marketplace`) — for the maintainer's pre-release testing only. Source: this repo. Versions land here first to be validated before advancing to stable.
+- **Stable channel** — recommended for everyone. Source: [`nfrith/als-stable`](https://github.com/nfrith/als-stable). Receives versions only after RC validation passes.
+- **RC channel** — for maintainer and contributor pre-release testing. Source: this repo. Versions land here first to be validated before advancing to stable.
 
-### Option A: From the terminal (stable channel — recommended)
+| Harness | Stable channel | RC channel | Current status |
+|---------|----------------|------------|----------------|
+| Claude Code | `als-marketplace-stable` from `nfrith/als-stable` | `als-marketplace` from `nfrith/als` | Full preview workflow today |
+| Codex | `als-codex-marketplace-stable` from `nfrith/als-stable` | `als-codex-marketplace` from `nfrith/als` | Install surface only in this phase |
+
+### Claude Code — full supported flow
+
+#### Stable channel (recommended)
 
 ```bash
 claude plugin marketplace add https://github.com/nfrith/als-stable
 claude plugin install als@als-marketplace-stable
 ```
 
-### Option B: From inside Claude Code Desktop (stable channel — recommended)
+#### Desktop marketplace path (stable channel — recommended)
 
 1. Open Customize → Plugins → Add plugin → Add marketplace
 2. Enter `https://github.com/nfrith/als-stable` as the marketplace source
 3. From the Plugins Directory, find **ALS** and click **Install**
 4. Type `/install` to bootstrap your first ALS system
 
-### Option C: RC channel (maintainer / contributor only)
+#### RC channel (maintainer / contributor only)
 
 ```bash
 claude plugin marketplace add https://github.com/nfrith/als
@@ -180,15 +190,37 @@ Use only if you need the latest unreleased commits. Edgerunners should NOT use t
 
 Once installed, ALS skills (`/install`, `/new`, `/validate`, `/change`, `/migrate`, `/update`) are available inside Claude Code sessions.
 
+### Codex — install surface available, deeper integration in flight
+
+#### Stable channel
+
+```bash
+codex plugin marketplace add https://github.com/nfrith/als-stable
+```
+
+Restart Codex, open the plugin directory, choose the **ALS Codex Stable** marketplace, and install **ALS**.
+
+#### RC channel
+
+```bash
+codex plugin marketplace add https://github.com/nfrith/als
+```
+
+Restart Codex, open the plugin directory, choose **ALS Codex RC**, and install **ALS**.
+
+**Boundary:** this phase makes ALS discoverable and installable in Codex. Claude remains the only fully supported runtime today. Codex skill portability, hooks, and runtime projection are follow-up work.
+
 ## Update
 
-ALS does not auto-update installed systems in the background. When a newer preview release is available, run `/update` from inside Claude Code.
+ALS does not auto-update installed systems in the background. When a newer preview release is available, run `/update` from inside Claude Code. A Codex-native update flow is not part of this phase yet.
 
 If a preview release is bad, the recovery path is fix-forward: ship a hotfix bump, then run `/update` again. ALS does not promise rollback or automatic reverse migration during preview.
 
 ## How to Use
 
 The ALS plugin adds skills to Claude Code — slash commands that guide Claude through structured workflows. Type the skill name in your Claude Code session to invoke it.
+
+The workflow descriptions below describe the current supported Claude runtime. A Codex install today gives you the plugin surface and bundled assets, not the full Claude-equivalent skill/hook/runtime behavior yet.
 
 ### `/install` — Bootstrap a new ALS system
 

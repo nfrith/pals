@@ -1,0 +1,19 @@
+{
+  "name": "als",
+  "version": "0.16.0",
+  "description": "ALS install surface for Codex plus bundled ALS assets",
+  "author": {
+    "name": "Nicholas Frith"
+  },
+  "license": "Elastic-2.0",
+  "keywords": ["agents", "als", "validation", "markdown"],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "ALS",
+    "shortDescription": "Install ALS in Codex; deeper Codex support is still in flight.",
+    "longDescription": "ALS can be installed from Codex today through the Codex marketplace surface. Claude remains the only fully supported runtime: Codex skill portability, hooks, and runtime projection are follow-up work.",
+    "developerName": "Nicholas Frith",
+    "category": "Productivity",
+    "capabilities": ["Read", "Write"]
+  }
+}
