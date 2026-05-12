@@ -9,6 +9,10 @@ import {
   applyTransientRuntimeCleanup,
   isTransientRuntimePath,
 } from "../../shared/transient-runtime.ts";
+import {
+  inspectOperatorConfig,
+  selectSingletonActiveOperator,
+} from "../../compiler/src/operator-config.ts";
 import { validateSystem } from "../../compiler/src/validate.ts";
 import {
   createDashboardProcessDefinition,
@@ -96,6 +100,16 @@ export type UpdateTransactionPrepareResult =
   | UpdateTransactionBlockedResult
   | PreparedUpdateTransaction;
 
+export interface UpdateTransactionPostcondition {
+  code: string;
+  phase: "language" | ConstructName;
+  status: "satisfied" | "unresolved";
+  severity: "required" | "warning";
+  why: string;
+  command_to_run: string | null;
+  operator_input_required: boolean;
+}
+
 export interface UpdateTransactionServices {
   validate_system?(systemRoot: string): ReturnType<typeof validateSystem>;
   deploy_claude?(systemRoot: string): ReturnType<typeof deployClaudeSkills>;
@@ -124,6 +138,20 @@ export interface UpdateTransactionCompletedResult {
   commit_oid: string | null;
   commit_message: string | null;
   action_count: number;
+  postconditions: UpdateTransactionPostcondition[];
+  manual_follow_up_note: string | null;
+  language_phase: LanguageUpgradePhaseTrace | null;
+  language_error_code: string | null;
+  language_checkpoint_mismatch: LanguageUpgradeCheckpointMismatch | null;
+  construct_phase: UpdateTransactionConstructPhaseTrace;
+}
+
+export interface UpdateTransactionRequiresPostconditionInputResult {
+  status: "requires_postcondition_input";
+  commit_oid: string | null;
+  commit_message: string | null;
+  action_count: number;
+  postconditions: UpdateTransactionPostcondition[];
   manual_follow_up_note: string | null;
   language_phase: LanguageUpgradePhaseTrace | null;
   language_error_code: string | null;
@@ -139,6 +167,7 @@ export interface UpdateTransactionFailedResult {
   commit_oid: string | null;
   lifecycle_failure_state: ConstructFailureState | null;
   precise_lifecycle_failure_state: Exclude<ConstructFailureState, "lifecycle-partial"> | null;
+  postconditions: UpdateTransactionPostcondition[];
   manual_follow_up_note: string | null;
   language_phase: LanguageUpgradePhaseTrace | null;
   language_error_code: string | null;
@@ -148,6 +177,7 @@ export interface UpdateTransactionFailedResult {
 
 export type UpdateTransactionExecuteResult =
   | UpdateTransactionCompletedResult
+  | UpdateTransactionRequiresPostconditionInputResult
   | UpdateTransactionFailedResult;
 
 export interface UpdateTransactionConstructPhaseTrace {
@@ -248,17 +278,16 @@ export async function runPreparedUpdateTransaction(input: {
   const services = withDefaultServices(input.services);
   const emptyConstructPhase = buildConstructPhaseTrace([]);
   if (!prepared.requires_changes) {
-    return {
-      status: "completed",
+    return buildSuccessfulResult({
       commit_oid: null,
       commit_message: null,
       action_count: 0,
-      manual_follow_up_note: prepared.manual_follow_up_note,
+      postconditions: [],
       language_phase: null,
       language_error_code: null,
       language_checkpoint_mismatch: null,
       construct_phase: emptyConstructPhase,
-    };
+    });
   }
 
   await pruneStaleUpdateWorktrees(prepared.repo_root);
@@ -320,7 +349,7 @@ export async function runPreparedUpdateTransaction(input: {
         executeResult.diagnostic ?? "Language-upgrade execute failed inside the staging worktree.",
         stagingRepoRoot,
         null,
-        prepared.manual_follow_up_note,
+        [],
         languagePhase,
         languageErrorCode,
         languageCheckpointMismatch,
@@ -362,7 +391,7 @@ export async function runPreparedUpdateTransaction(input: {
       formatError(error),
       stagingRepoRoot,
       null,
-      prepared.manual_follow_up_note,
+      [],
       languagePhase,
       languageErrorCode,
       languageCheckpointMismatch,
@@ -377,7 +406,7 @@ export async function runPreparedUpdateTransaction(input: {
       "Staged ALS system validation failed before commit.",
       stagingRepoRoot,
       null,
-      prepared.manual_follow_up_note,
+      [],
       languagePhase,
       languageErrorCode,
       languageCheckpointMismatch,
@@ -392,7 +421,7 @@ export async function runPreparedUpdateTransaction(input: {
       deploy.error ?? "Bundled-surface refresh failed inside the staging worktree.",
       stagingRepoRoot,
       null,
-      prepared.manual_follow_up_note,
+      [],
       languagePhase,
       languageErrorCode,
       languageCheckpointMismatch,
@@ -416,7 +445,7 @@ export async function runPreparedUpdateTransaction(input: {
         languageInvariantFailure,
         stagingRepoRoot,
         null,
-        prepared.manual_follow_up_note,
+        [],
         languagePhase,
         languageErrorCode,
         languageCheckpointMismatch,
@@ -425,17 +454,16 @@ export async function runPreparedUpdateTransaction(input: {
     }
     if (stagedPaths.length === 0) {
       await removeWorktree(prepared.repo_root, stagingRepoRoot);
-      return {
-        status: "completed",
+      return buildSuccessfulResult({
         commit_oid: null,
         commit_message: null,
         action_count: 0,
-        manual_follow_up_note: prepared.manual_follow_up_note,
+        postconditions: [],
         language_phase: languagePhase,
         language_error_code: languageErrorCode,
         language_checkpoint_mismatch: languageCheckpointMismatch,
         construct_phase: constructPhase,
-      };
+      });
     }
     const commitMessage = buildCommitMessage(languagePhase, constructPhase);
     runGit(stagingRepoRoot, ["commit", "--no-gpg-sign", "-m", commitMessage]);
@@ -454,7 +482,7 @@ export async function runPreparedUpdateTransaction(input: {
         formatError(error),
         stagingRepoRoot,
         commitOid,
-        prepared.manual_follow_up_note,
+        [],
         languagePhase,
         languageErrorCode,
         languageCheckpointMismatch,
@@ -463,6 +491,11 @@ export async function runPreparedUpdateTransaction(input: {
     }
 
     const actionManifest = combineActionManifests(stagedConstructResults);
+    const postconditions = [
+      ...buildLanguagePhasePostconditions(prepared, languagePhase),
+      ...evaluateActiveOperatorPostconditions(prepared),
+      ...buildWarningPostconditions(prepared),
+    ];
     if (actionManifest.actions.length > 0) {
       try {
         const lifecycle = await services.run_action_manifest(actionManifest, {
@@ -479,7 +512,8 @@ export async function runPreparedUpdateTransaction(input: {
             commit_oid: commitOid,
             lifecycle_failure_state: lifecycle.failure?.overall_failure_state ?? null,
             precise_lifecycle_failure_state: lifecycle.failure?.precise_failure_state ?? null,
-            manual_follow_up_note: prepared.manual_follow_up_note,
+            postconditions,
+            manual_follow_up_note: synthesizeManualFollowUpNote(postconditions),
             language_phase: languagePhase,
             language_error_code: languageErrorCode,
             language_checkpoint_mismatch: languageCheckpointMismatch,
@@ -496,7 +530,8 @@ export async function runPreparedUpdateTransaction(input: {
           commit_oid: commitOid,
           lifecycle_failure_state: null,
           precise_lifecycle_failure_state: null,
-          manual_follow_up_note: prepared.manual_follow_up_note,
+          postconditions,
+          manual_follow_up_note: synthesizeManualFollowUpNote(postconditions),
           language_phase: languagePhase,
           language_error_code: languageErrorCode,
           language_checkpoint_mismatch: languageCheckpointMismatch,
@@ -506,24 +541,26 @@ export async function runPreparedUpdateTransaction(input: {
     }
 
     await removeWorktree(prepared.repo_root, stagingRepoRoot);
-    return {
-      status: "completed",
+    return buildSuccessfulResult({
       commit_oid: commitOid,
       commit_message: commitMessage,
       action_count: actionManifest.actions.length,
-      manual_follow_up_note: prepared.manual_follow_up_note,
+      postconditions: [
+        ...postconditions,
+        ...buildLifecycleSuccessPostconditions(actionManifest),
+      ],
       language_phase: languagePhase,
       language_error_code: languageErrorCode,
       language_checkpoint_mismatch: languageCheckpointMismatch,
       construct_phase: constructPhase,
-    };
+    });
   } catch (error) {
     return buildFailureResult(
       "commit-failed",
       formatError(error),
       stagingRepoRoot,
       null,
-      prepared.manual_follow_up_note,
+      [],
       languagePhase,
       languageErrorCode,
       languageCheckpointMismatch,
@@ -634,6 +671,150 @@ function buildConstructPhaseTrace(
   return {
     applied_constructs: appliedConstructs,
     deltas,
+  };
+}
+
+function buildLanguagePhasePostconditions(
+  prepared: PreparedUpdateTransaction,
+  languagePhase: LanguageUpgradePhaseTrace | null,
+): UpdateTransactionPostcondition[] {
+  if (!prepared.language || prepared.language.plan.hops.length === 0) {
+    return [];
+  }
+
+  const appliedHopIds = (languagePhase?.hops ?? [])
+    .filter((hop) => hop.status === "applied")
+    .map((hop) => hop.hop_id);
+  if (appliedHopIds.length === 0) {
+    return [];
+  }
+
+  return [{
+    code: "language.target-version-landed",
+    phase: "language",
+    status: "satisfied",
+    severity: "required",
+    why: `Language hops ${appliedHopIds.join(", ")} landed and validated as ALS v${prepared.language.plan.target_als_version}.`,
+    command_to_run: null,
+    operator_input_required: false,
+  }];
+}
+
+function evaluateActiveOperatorPostconditions(
+  prepared: PreparedUpdateTransaction,
+): UpdateTransactionPostcondition[] {
+  const inspection = inspectOperatorConfig(prepared.system_root);
+  if (!inspection || !inspection.roster.exists) {
+    return [];
+  }
+
+  if (inspection.status === "pass" && inspection.active_selection.exists) {
+    return [{
+      code: "language.active-operator-selector",
+      phase: "language",
+      status: "satisfied",
+      severity: "required",
+      why: `Machine-local active-operator selector is present and valid at ${inspection.active_selection.file_path}.`,
+      command_to_run: null,
+      operator_input_required: false,
+    }];
+  }
+
+  const selectionWrite = selectSingletonActiveOperator(prepared.system_root);
+  if (selectionWrite.status === "pass") {
+    return [{
+      code: "language.active-operator-selector",
+      phase: "language",
+      status: "satisfied",
+      severity: "required",
+      why: `Wrapper wrote the machine-local active-operator selector for singleton roster entry '${selectionWrite.operator_id}'.`,
+      command_to_run: null,
+      operator_input_required: false,
+    }];
+  }
+
+  const operatorConfigCli = resolve(prepared.plugin_root, "alsc", "compiler", "src", "cli.ts");
+  const operatorChoiceRequired = inspection.roster.operator_ids.length > 1;
+  return [{
+    code: "language.active-operator-selector",
+    phase: "language",
+    status: "unresolved",
+    severity: "required",
+    why: operatorChoiceRequired
+      ? `Machine-local active-operator selection still requires an explicit operator choice. ${selectionWrite.error ?? "Choose one roster entry before dispatch resumes."}`
+      : selectionWrite.error ?? "Machine-local active-operator selection is still unresolved after the update commit landed.",
+    command_to_run: operatorChoiceRequired
+      ? `bun ${operatorConfigCli} operator-config set-active "${prepared.system_root}" <operator-id>`
+      : `bun ${operatorConfigCli} operator-config inspect "${prepared.system_root}"`,
+    operator_input_required: operatorChoiceRequired,
+  }];
+}
+
+function buildWarningPostconditions(
+  prepared: PreparedUpdateTransaction,
+): UpdateTransactionPostcondition[] {
+  const postconditions: UpdateTransactionPostcondition[] = [];
+  if (prepared.constructs.statusline.needs_upgrade) {
+    postconditions.push({
+      code: "statusline.data-freshness",
+      phase: "statusline",
+      status: "unresolved",
+      severity: "warning",
+      why: "Statusline pulse is not yet a construct participant. If statusline data goes stale after this update, refresh the runtime surfaces manually.",
+      command_to_run: "/bootup or /reboot",
+      operator_input_required: false,
+    });
+  }
+  return postconditions;
+}
+
+function buildLifecycleSuccessPostconditions(
+  actionManifest: ConstructActionManifest,
+): UpdateTransactionPostcondition[] {
+  const constructs = new Set<ConstructName>();
+  for (const action of actionManifest.actions) {
+    if (action.construct === "dispatcher" || action.construct === "statusline" || action.construct === "dashboard") {
+      constructs.add(action.construct);
+    }
+  }
+
+  return Array.from(constructs).map((construct) => ({
+    code: `${construct}.lifecycle-actions-completed`,
+    phase: construct,
+    status: "satisfied",
+    severity: "required",
+    why: `Wrapper completed post-commit ${construct} lifecycle actions without a wrapper-level failure.`,
+    command_to_run: null,
+    operator_input_required: false,
+  }));
+}
+
+function buildSuccessfulResult(input: {
+  commit_oid: string | null;
+  commit_message: string | null;
+  action_count: number;
+  postconditions: UpdateTransactionPostcondition[];
+  language_phase: LanguageUpgradePhaseTrace | null;
+  language_error_code: string | null;
+  language_checkpoint_mismatch: LanguageUpgradeCheckpointMismatch | null;
+  construct_phase: UpdateTransactionConstructPhaseTrace;
+}): UpdateTransactionCompletedResult | UpdateTransactionRequiresPostconditionInputResult {
+  const manualFollowUpNote = synthesizeManualFollowUpNote(input.postconditions);
+  const requiresOperatorInput = input.postconditions.some((postcondition) =>
+    postcondition.status === "unresolved" && postcondition.severity === "required",
+  );
+
+  return {
+    status: requiresOperatorInput ? "requires_postcondition_input" : "completed",
+    commit_oid: input.commit_oid,
+    commit_message: input.commit_message,
+    action_count: input.action_count,
+    postconditions: input.postconditions,
+    manual_follow_up_note: manualFollowUpNote,
+    language_phase: input.language_phase,
+    language_error_code: input.language_error_code,
+    language_checkpoint_mismatch: input.language_checkpoint_mismatch,
+    construct_phase: input.construct_phase,
   };
 }
 
@@ -822,7 +1003,7 @@ function buildFailureResult(
   diagnostic: string,
   stagingWorktreePath: string | null,
   commitOid: string | null,
-  manualFollowUpNote: string | null,
+  postconditions: UpdateTransactionPostcondition[],
   languagePhase: LanguageUpgradePhaseTrace | null,
   languageErrorCode: string | null,
   languageCheckpointMismatch: LanguageUpgradeCheckpointMismatch | null,
@@ -836,12 +1017,28 @@ function buildFailureResult(
     commit_oid: commitOid,
     lifecycle_failure_state: null,
     precise_lifecycle_failure_state: null,
-    manual_follow_up_note: manualFollowUpNote,
+    postconditions,
+    manual_follow_up_note: synthesizeManualFollowUpNote(postconditions),
     language_phase: languagePhase,
     language_error_code: languageErrorCode,
     language_checkpoint_mismatch: languageCheckpointMismatch,
     construct_phase: constructPhase,
   };
+}
+
+function synthesizeManualFollowUpNote(
+  postconditions: UpdateTransactionPostcondition[],
+): string | null {
+  const surfaced = postconditions.filter((postcondition) => postcondition.status === "unresolved");
+  if (surfaced.length === 0) {
+    return null;
+  }
+
+  return surfaced.map((postcondition) => {
+    const prefix = postcondition.severity === "required" ? "Required" : "Warning";
+    const command = postcondition.command_to_run ? ` Command: ${postcondition.command_to_run}.` : "";
+    return `${prefix}: ${postcondition.why}${command}`;
+  }).join("\n");
 }
 
 function formatError(error: unknown): string {

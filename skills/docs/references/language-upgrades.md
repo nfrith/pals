@@ -2,7 +2,7 @@
 
 Language upgrades are explicit whole-system cutovers from one `als_version` to the next.
 
-The recipe contract lives in [SDR 037](../../../sdr/037-language-upgrade-recipe-contract.md). The two-phase runtime contract lives in [SDR 039](../../../sdr/039-update-transaction-wrapper-contract.md). The `/update` language-phase truthfulness and checkpoint-identity refinement lives in [SDR 050](../../../sdr/050-update-transaction-language-phase-truthfulness-contract.md). This doc is the human-readable reference for authors and operators; it points back to those SDRs for required, allowed, and rejected behavior.
+The recipe contract lives in [SDR 037](../../../sdr/037-language-upgrade-recipe-contract.md). The two-phase runtime contract lives in [SDR 039](../../../sdr/039-update-transaction-wrapper-contract.md). The `/update` language-phase truthfulness and checkpoint-identity refinement lives in [SDR 050](../../../sdr/050-update-transaction-language-phase-truthfulness-contract.md). The `/update` postcondition-ledger refinement lives in [SDR 057](../../../sdr/057-update-transaction-postcondition-contract.md). This doc is the human-readable reference for authors and operators; it points back to those SDRs for required, allowed, and rejected behavior.
 
 ## Core Model
 
@@ -72,12 +72,12 @@ Notes:
 - Post-step `git diff` / status is the source of truth for the actual mutation set.
 - Recipe-owned rewrites must be deterministic and idempotent. Re-running a completed hop should produce no further diff beyond the already-migrated target shape.
 - Any residual non-`.als/` path change fails the step closed.
-- Some hops intentionally require live-machine follow-through after the tracked commit lands. The shipped `v4 -> v5` operator-config hop is the reference case: the recipe rewrites tracked `.als/` files, then `/upgrade-language` or `/update` calls `alsc operator-config select-singleton` to write `.als/local/active-operator.json` on the live machine.
+- Some hops intentionally require live-machine follow-through after the tracked commit lands. The shipped `v4 -> v5` operator-config hop is the reference case: the recipe rewrites tracked `.als/` files, then the caller owns the live-machine selector contract. Standalone `/upgrade-language` writes `.als/local/active-operator.json` directly through `alsc operator-config select-singleton`; `/update` instead surfaces the wrapper-owned tri-state execute result plus structured `postconditions` ledger from SDR 057 and auto-heals singleton rosters when it can prove safety.
 - Caller-owned checkpoints are same-plan only. A resume checkpoint must match the requested target version and hop chain; stale checkpoint state fails closed rather than counting as progress.
 - Preflight discovers every `operator-prompt` step that can fire for the selected hop chain and option set.
 - Execute consumes a pre-collected operator-answer map and fails closed if a required answer is missing.
 - `operator-prompt` steps in `category: "recovery"` are rejected so prompt discovery stays static.
-- When `/upgrade-language` runs under `/update`, SDR 039's transaction wrapper owns the staged `alsc deploy claude` refresh and SDR 050's transaction-scoped checkpoint plus truthful commit-claim invariants.
+- When `/upgrade-language` runs under `/update`, SDR 039's transaction wrapper owns the staged `alsc deploy claude` refresh, SDR 050 owns the transaction-scoped checkpoint plus truthful commit-claim invariants, and SDR 057 owns the tri-state execute result plus the machine-readable follow-through ledger.
 
 ## Fixtures And Verification
 
@@ -93,4 +93,4 @@ Notes:
 - Construct upgrades are a sibling primitive, not part of the core `language-upgrade-recipe` contract.
 - Rollback, partial-system upgrades, and live patching are excluded.
 
-See [SDR 037](../../../sdr/037-language-upgrade-recipe-contract.md), [SDR 039](../../../sdr/039-update-transaction-wrapper-contract.md), and [SDR 050](../../../sdr/050-update-transaction-language-phase-truthfulness-contract.md) for the exact contract.
+See [SDR 037](../../../sdr/037-language-upgrade-recipe-contract.md), [SDR 039](../../../sdr/039-update-transaction-wrapper-contract.md), [SDR 050](../../../sdr/050-update-transaction-language-phase-truthfulness-contract.md), and [SDR 057](../../../sdr/057-update-transaction-postcondition-contract.md) for the exact contract.

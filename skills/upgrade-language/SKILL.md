@@ -116,8 +116,8 @@ bun ${CLAUDE_PLUGIN_ROOT}/alsc/compiler/src/cli.ts validate <system-root>
 bun ${CLAUDE_PLUGIN_ROOT}/alsc/compiler/src/cli.ts operator-config select-singleton <system-root>
 ```
 
-This is the canonical post-commit follow-through for the shipped `v4 -> v5` operator-config migration. If it fails, surface that failure explicitly and tell the operator SessionStart will keep remediating until the local selector is written.
-4. If `/upgrade-language` is being run through `/update`, let the SDR 039 transaction wrapper own the staged `alsc deploy claude` refresh. Do not restate a competing projection contract here.
+This is the standalone-skill follow-through for the shipped `v4 -> v5` operator-config migration. When the same hop runs under `/update`, [SDR 057](../../sdr/057-update-transaction-postcondition-contract.md) makes the transaction wrapper the owner of the structured postcondition ledger, singleton self-heal, and `requires_postcondition_input` escalation.
+4. If `/upgrade-language` is being run through `/update`, let the SDR 039 transaction wrapper own the staged `alsc deploy claude` refresh and let SDR 057 own the machine-readable live-machine follow-through surface. Do not restate a competing projection or selector-reporting contract here.
 
 ## Boundaries
 

@@ -370,10 +370,126 @@ test("runPreparedUpdateTransaction commits once, runs lifecycle after writeback,
       expect(result.action_count).toBeGreaterThan(0);
       expect(result.manual_follow_up_note).toContain("/bootup");
       expect(result.commit_message).toContain("Construct deltas:");
+      expect(result.postconditions).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          code: "statusline.data-freshness",
+          phase: "statusline",
+          status: "unresolved",
+          severity: "warning",
+        }),
+        expect.objectContaining({
+          code: "statusline.lifecycle-actions-completed",
+          phase: "statusline",
+          status: "satisfied",
+          severity: "required",
+        }),
+        expect.objectContaining({
+          code: "dashboard.lifecycle-actions-completed",
+          phase: "dashboard",
+          status: "satisfied",
+          severity: "required",
+        }),
+      ]));
     }
     expect(sawCommittedRuntimeState).toBe(true);
     expect(git(repo_root, ["rev-list", "--count", "HEAD"])).toBe("2");
     expect(await listStagingWorktrees(dirname(repo_root))).toEqual([]);
+  });
+});
+
+test("runPreparedUpdateTransaction self-heals a singleton active-operator selector and completes cleanly", async () => {
+  await withSystemRepo("singleton-selector", async ({ repo_root, root }) => {
+    const bundleRoot = join(root, "bundle");
+    const languagePlan = await createOperatorRosterLanguagePlan(bundleRoot, ["nick"]);
+    const prepared = await prepareUpdateTransaction({
+      repo_root,
+      plugin_root: alsRepoRoot,
+      language_plan: languagePlan,
+    });
+    expect(prepared.status).toBe("ready");
+    if (prepared.status !== "ready") {
+      return;
+    }
+
+    const isolatedPrepared = withConstructUpgradeFlags(prepared, {
+      dispatcher: false,
+      statusline: false,
+      dashboard: false,
+    });
+    const result = await runPreparedUpdateTransaction({
+      prepared: isolatedPrepared,
+    });
+
+    expect(result.status).toBe("completed");
+    if (result.status !== "completed") {
+      return;
+    }
+
+    expect(result.manual_follow_up_note).toBeNull();
+    expect(result.postconditions).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        code: "language.target-version-landed",
+        phase: "language",
+        status: "satisfied",
+      }),
+      expect.objectContaining({
+        code: "language.active-operator-selector",
+        phase: "language",
+        status: "satisfied",
+      }),
+    ]));
+
+    const activeSelection = JSON.parse(
+      await readFile(join(repo_root, ".als", "local", "active-operator.json"), "utf-8"),
+    ) as {
+      operator_id: string;
+      schema: string;
+    };
+    expect(activeSelection.operator_id).toBe("nick");
+    expect(activeSelection.schema).toBe("als-active-operator-selection@1");
+  });
+});
+
+test("runPreparedUpdateTransaction returns requires_postcondition_input when operator choice remains unresolved", async () => {
+  await withSystemRepo("multi-operator-selector", async ({ repo_root, root }) => {
+    const bundleRoot = join(root, "bundle");
+    const languagePlan = await createOperatorRosterLanguagePlan(bundleRoot, ["nick", "case"]);
+    const prepared = await prepareUpdateTransaction({
+      repo_root,
+      plugin_root: alsRepoRoot,
+      language_plan: languagePlan,
+    });
+    expect(prepared.status).toBe("ready");
+    if (prepared.status !== "ready") {
+      return;
+    }
+
+    const isolatedPrepared = withConstructUpgradeFlags(prepared, {
+      dispatcher: false,
+      statusline: false,
+      dashboard: false,
+    });
+    const result = await runPreparedUpdateTransaction({
+      prepared: isolatedPrepared,
+    });
+
+    expect(result.status).toBe("requires_postcondition_input");
+    if (result.status !== "requires_postcondition_input") {
+      return;
+    }
+
+    expect(result.commit_oid).not.toBeNull();
+    expect(result.manual_follow_up_note).toContain("set-active");
+    expect(result.postconditions).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        code: "language.active-operator-selector",
+        phase: "language",
+        status: "unresolved",
+        severity: "required",
+        operator_input_required: true,
+      }),
+    ]));
+    expect(await pathExists(join(repo_root, ".als", "local", "active-operator.json"))).toBe(false);
   });
 });
 
@@ -467,7 +583,11 @@ test("runPreparedUpdateTransaction ignores stale live language checkpoints and c
     }
 
     const result = await runPreparedUpdateTransaction({
-      prepared,
+      prepared: withConstructUpgradeFlags(prepared, {
+        dispatcher: false,
+        statusline: false,
+        dashboard: false,
+      }),
     });
 
     expect(result.status).toBe("completed");
@@ -478,6 +598,14 @@ test("runPreparedUpdateTransaction ignores stale live language checkpoints and c
     expect(result.language_phase?.checkpoint_mode).toBe("fresh");
     expect(result.language_phase?.hops.map((hop) => hop.hop_id)).toEqual(["v3-to-v4"]);
     expect(result.commit_message).toContain("Language hops: v3-to-v4");
+    expect(result.postconditions).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        code: "language.target-version-landed",
+        phase: "language",
+        status: "satisfied",
+        severity: "required",
+      }),
+    ]));
 
     const commitPaths = git(repo_root, ["show", "--pretty=", "--name-only", result.commit_oid])
       .split("\n")
@@ -538,6 +666,66 @@ test("runPreparedUpdateTransaction fails closed when language execute dirties on
     expect(result.staging_worktree_path).not.toBeNull();
     expect(await pathExists(result.staging_worktree_path!)).toBe(true);
     expect(git(repo_root, ["rev-list", "--count", "HEAD"])).toBe("1");
+  });
+});
+
+test("runPreparedUpdateTransaction keeps dispatcher lifecycle gaps on the failed path", async () => {
+  await withSystemRepo("dispatcher-lifecycle-failure", async ({ repo_root }) => {
+    const dispatcherVersionFiles = await replaceDispatcherFleet(repo_root, dispatcherV11FixtureRoot);
+    const dispatcherRoots = dispatcherVersionFiles.map((relativePath) => dirname(relativePath));
+    git(repo_root, ["add", "-A", "--", ...dispatcherRoots]);
+    git(repo_root, ["commit", "--no-gpg-sign", "-m", "Downgrade dispatcher fixture"]);
+
+    const prepared = await prepareUpdateTransaction({
+      repo_root,
+      plugin_root: alsRepoRoot,
+    });
+    expect(prepared.status).toBe("ready");
+    if (prepared.status !== "ready") {
+      return;
+    }
+
+    let sawDispatcherLifecycle = false;
+    const isolatedPrepared = withConstructUpgradeFlags(prepared, {
+      dispatcher: true,
+      statusline: false,
+      dashboard: false,
+    });
+    const result = await runPreparedUpdateTransaction({
+      prepared: isolatedPrepared,
+      operator_answers: Object.fromEntries(
+        isolatedPrepared.prompts
+          .filter((prompt) => prompt.source === "construct" && prompt.construct === "dispatcher")
+          .map((prompt) => [prompt.key, "drain"]),
+      ),
+      services: {
+        async run_action_manifest(manifest) {
+          sawDispatcherLifecycle = manifest.actions.some((action) => action.construct === "dispatcher");
+          return {
+            success: false,
+            completed_action_count: 0,
+            total_action_count: manifest.actions.length,
+            failure: {
+              action_index: 0,
+              action_kind: manifest.actions[0]?.kind ?? "drain-then-restart",
+              precise_failure_state: "lifecycle-drain-stalled",
+              overall_failure_state: "lifecycle-drain-stalled",
+              message: "Injected dispatcher lifecycle failure.",
+            },
+          };
+        },
+      },
+    });
+
+    expect(sawDispatcherLifecycle).toBe(true);
+    expect(result.status).toBe("failed");
+    if (result.status !== "failed") {
+      return;
+    }
+
+    expect(result.failure_surface).toBe("lifecycle-failed");
+    expect(result.lifecycle_failure_state).toBe("lifecycle-drain-stalled");
+    expect(result.postconditions.some((postcondition) => postcondition.code === "dispatcher.lifecycle-actions-completed")).toBe(false);
   });
 });
 
@@ -618,10 +806,66 @@ test("update-transaction CLI execute consumes prepared and answer JSON files", a
       status: string;
       commit_oid: string | null;
       action_count: number;
+      postconditions: unknown[];
     };
     expect(output.status).toBe("completed");
     expect(output.commit_oid).toBeNull();
     expect(output.action_count).toBe(0);
+    expect(output.postconditions).toEqual([]);
+  });
+});
+
+test("update-transaction CLI execute fails loudly when required postconditions remain unresolved", async () => {
+  await withSystemRepo("cli-requires-postcondition-input", async ({ repo_root, root }) => {
+    const bundleRoot = join(root, "bundle");
+    const languagePlan = await createOperatorRosterLanguagePlan(bundleRoot, ["nick", "case"]);
+    const prepared = await prepareUpdateTransaction({
+      repo_root,
+      plugin_root: alsRepoRoot,
+      language_plan: languagePlan,
+    });
+    expect(prepared.status).toBe("ready");
+    if (prepared.status !== "ready") {
+      return;
+    }
+
+    const preparedFile = join(root, "prepared.json");
+    const answersFile = join(root, "answers.json");
+    const isolatedPrepared = withConstructUpgradeFlags(prepared, {
+      dispatcher: false,
+      statusline: false,
+      dashboard: false,
+    });
+    await writeFile(preparedFile, JSON.stringify(isolatedPrepared, null, 2) + "\n", "utf-8");
+    await writeFile(answersFile, "{}\n", "utf-8");
+
+    const result = await captureCli([
+      "execute",
+      "--prepared-file",
+      preparedFile,
+      "--answers-file",
+      answersFile,
+    ]);
+
+    expect(result.exitCode).toBe(1);
+    const output = JSON.parse(result.stdout) as {
+      status: string;
+      manual_follow_up_note: string | null;
+      postconditions: Array<{
+        code: string;
+        operator_input_required: boolean;
+        status: string;
+      }>;
+    };
+    expect(output.status).toBe("requires_postcondition_input");
+    expect(output.manual_follow_up_note).toContain("set-active");
+    expect(output.postconditions).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        code: "language.active-operator-selector",
+        operator_input_required: true,
+        status: "unresolved",
+      }),
+    ]));
   });
 });
 
@@ -651,6 +895,74 @@ function createLanguagePlan(
   };
 }
 
+async function createOperatorRosterLanguagePlan(
+  bundleRoot: string,
+  operatorIds: string[],
+): Promise<UpdateTransactionLanguagePlan> {
+  const operatorWrites = operatorIds.map((operatorId) => [
+    `cat > "$SYSTEM_ROOT/.als/operators/${operatorId}.ts" <<'EOF'`,
+    buildOperatorSource(operatorId).trimEnd(),
+    "EOF",
+  ].join("\n")).join("\n");
+
+  const rosterSource = buildOperatorRosterSource(operatorIds);
+  await writeFixtureFile(
+    bundleRoot,
+    "scripts/seed-operator-roster.sh",
+    [
+      "#!/usr/bin/env bash",
+      "set -euo pipefail",
+      "SYSTEM_ROOT=\"$(pwd)\"",
+      "AGENT_PATH=\"$SYSTEM_ROOT/.als/modules/factory/v1/delamains/development-pipeline/agents/in-dev.md\"",
+      "printf '\\nSynthetic operator roster fixture.\\n' >> \"$AGENT_PATH\"",
+      "mkdir -p \"$SYSTEM_ROOT/.als/operators\"",
+      "cat > \"$SYSTEM_ROOT/.als/operator-roster.ts\" <<'EOF'",
+      rosterSource.trimEnd(),
+      "EOF",
+      operatorWrites,
+      "cat > \"$SYSTEM_ROOT/.als/.gitignore\" <<'EOF'",
+      "# Machine-local operator selection",
+      "/local/",
+      "EOF",
+      "rm -f \"$SYSTEM_ROOT/.als/skip-operator-config\"",
+      "rm -f \"$SYSTEM_ROOT/.als/operator.md\"",
+      "",
+    ].join("\n"),
+  );
+
+  return {
+    current_als_version: 3,
+    target_als_version: 3,
+    hops: [{
+      hop_id: "v3-to-v3-operator-roster",
+      recipe: {
+        schema: "als-language-upgrade-recipe@1",
+        from: {
+          als_version: 3,
+        },
+        to: {
+          als_version: 3,
+        },
+        summary: "Synthetic operator roster follow-through fixture.",
+        steps: [{
+          id: "seed-operator-roster",
+          title: "Seed operator roster",
+          type: "script",
+          category: "must-run",
+          depends_on: [],
+          preconditions: [],
+          postconditions: [],
+          trigger: "auto",
+          path: "scripts/seed-operator-roster.sh",
+          args: [],
+        }],
+      },
+      recipe_path: join(bundleRoot, "recipe.yaml"),
+      bundle_root: bundleRoot,
+    }],
+  };
+}
+
 function createShippedLanguagePlan(
   recipeRoot: string,
   currentAlsVersion: number,
@@ -670,6 +982,73 @@ function createShippedLanguagePlan(
       recipe_path: inspection.recipe_path,
       bundle_root: inspection.bundle_root,
     }],
+  };
+}
+
+function buildOperatorSource(operatorId: string): string {
+  const displayName = operatorId.split("-").map((token) => `${token[0]!.toUpperCase()}${token.slice(1)}`).join(" ");
+  return [
+    "import { defineOperator } from \"als:authoring\";",
+    "",
+    "export const operator = defineOperator({",
+    `  "id": ${JSON.stringify(operatorId)},`,
+    `  "first_name": ${JSON.stringify(displayName)},`,
+    `  "last_name": ${JSON.stringify("Operator")},`,
+    `  "display_name": ${JSON.stringify(displayName)},`,
+    `  "primary_email": ${JSON.stringify(`${operatorId}@example.com`)},`,
+    `  "role": ${JSON.stringify("ALS operator")},`,
+    "  \"profiles\": [\"als_architect\"],",
+    "  \"owns_company\": false,",
+    "  \"company_name\": null,",
+    "  \"company_type\": null,",
+    "  \"company_type_other\": null,",
+    "  \"revenue_band\": null",
+    "} as const);",
+    "",
+    "export default operator;",
+    "",
+  ].join("\n");
+}
+
+function buildOperatorRosterSource(operatorIds: string[]): string {
+  return [
+    "import { defineOperatorRoster } from \"als:authoring\";",
+    "",
+    "export const operatorRoster = defineOperatorRoster({",
+    `  "operator_paths": ${JSON.stringify(operatorIds.map((operatorId) => `./operators/${operatorId}.ts`), null, 2)}`,
+    "} as const);",
+    "",
+    "export default operatorRoster;",
+    "",
+  ].join("\n");
+}
+
+function withConstructUpgradeFlags(
+  prepared: PreparedUpdateTransaction,
+  flags: Record<"dispatcher" | "statusline" | "dashboard", boolean>,
+): PreparedUpdateTransaction {
+  return {
+    ...prepared,
+    constructs: {
+      dispatcher: {
+        ...prepared.constructs.dispatcher,
+        needs_upgrade: flags.dispatcher,
+      },
+      statusline: {
+        ...prepared.constructs.statusline,
+        needs_upgrade: flags.statusline,
+      },
+      dashboard: {
+        ...prepared.constructs.dashboard,
+        needs_upgrade: flags.dashboard,
+      },
+    },
+    requires_changes: Boolean(
+      (prepared.language?.plan.hops.length ?? 0) > 0
+      || flags.dispatcher
+      || flags.statusline
+      || flags.dashboard,
+    ),
   };
 }
 

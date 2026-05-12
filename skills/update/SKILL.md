@@ -177,7 +177,7 @@ Read the full entry again — version, gitCommitSha, lastUpdated should all refl
 
 ## Phase 6: Upgrade runtime surfaces
 
-After the plugin update is verified, drive runtime follow-through through the transaction-wrapper CLI at `${CLAUDE_PLUGIN_ROOT}/alsc/update-transaction/src/cli.ts`. The CLI is the operator-reachable adapter for [SDR 039](../../sdr/039-update-transaction-wrapper-contract.md); [SDR 050](../../sdr/050-update-transaction-language-phase-truthfulness-contract.md) owns the language-phase truthfulness refinement for `/update` runs: transaction-scoped checkpoint state, same-plan-only resume, per-phase language trace, and fail-closed commit claims.
+After the plugin update is verified, drive runtime follow-through through the transaction-wrapper CLI at `${CLAUDE_PLUGIN_ROOT}/alsc/update-transaction/src/cli.ts`. The CLI is the operator-reachable adapter for [SDR 039](../../sdr/039-update-transaction-wrapper-contract.md); [SDR 050](../../sdr/050-update-transaction-language-phase-truthfulness-contract.md) owns the language-phase truthfulness refinement for `/update` runs; [SDR 057](../../sdr/057-update-transaction-postcondition-contract.md) owns the tri-state execute result plus structured `postconditions` ledger.
 
 1. Create temp files for the prepared payload, answer map, and final result.
 
@@ -262,14 +262,6 @@ Write the AskUserQuestion answers back to `$ANSWERS_JSON` as one JSON object key
 }
 ```
 
-4. After a successful transaction execute, inspect whether the language phase landed the operator-config `v4 -> v5` hop without a local selector. If `.als/operator-roster.ts` exists and `.als/local/active-operator.json` does not, call the compiler-owned helper:
-
-```bash
-bun ${CLAUDE_PLUGIN_ROOT}/alsc/compiler/src/cli.ts operator-config select-singleton "$SYSTEM_ROOT"
-```
-
-If that helper fails, surface the failure as mandatory post-commit follow-up. Do not claim the operator-config migration is fully complete while the selector is still missing.
-
 If any answer is a cancel or abort choice, stop before execute.
 
 4. Execute the prepared transaction with the answer map.
@@ -285,11 +277,19 @@ set -e
 cat "$RESULT_JSON"
 ```
 
-If `EXECUTE_EXIT` is non-zero, stop and surface the `failure_surface`, `diagnostic`, `staging_worktree_path`, and any `manual_follow_up_note` from `$RESULT_JSON`.
+Then inspect the machine-readable execute status:
 
-5. On success, surface the `commit_oid`, `action_count`, and any `manual_follow_up_note` from `$RESULT_JSON`.
+```bash
+EXECUTE_STATUS=$(jq -r '.status // empty' "$RESULT_JSON" 2>/dev/null || true)
+```
 
-See [SDR 039](../../sdr/039-update-transaction-wrapper-contract.md) for the full `/update` transaction contract and [SDR 038](../../sdr/038-construct-upgrade-engine-contract.md) for construct-upgrade semantics. Do not restate or special-case that orchestration here.
+- If `EXECUTE_STATUS` is `failed`, stop and surface the `failure_surface`, `diagnostic`, `staging_worktree_path`, `postconditions`, and any synthesized `manual_follow_up_note` from `$RESULT_JSON`.
+- If `EXECUTE_STATUS` is `requires_postcondition_input`, do not declare success and do not stop at a silent report. Surface the structured `postconditions` rows plus the synthesized `manual_follow_up_note`, then turn the unresolved required rows into AskUserQuestion follow-through. `/update` owns the full job; the operator must not have to remember a hidden post-step.
+- If `EXECUTE_STATUS` is `completed`, surface the `commit_oid`, `action_count`, `postconditions`, and any synthesized `manual_follow_up_note`.
+
+`manual_follow_up_note` is compatibility output only. The structured `postconditions` ledger is the canonical truth surface.
+
+See [SDR 039](../../sdr/039-update-transaction-wrapper-contract.md) for the shared `/update` transaction contract, [SDR 038](../../sdr/038-construct-upgrade-engine-contract.md) for construct-upgrade semantics, and [SDR 057](../../sdr/057-update-transaction-postcondition-contract.md) for the postcondition ledger contract. Do not restate or special-case that orchestration here.
 
 Known v1 gap: if statusline data goes stale after a successful run, the operator may still need `/bootup` or `/reboot` until pulse becomes a construct participant.
 

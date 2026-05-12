@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed
+Accepted
 
 ## Context
 
@@ -87,5 +87,5 @@ Proposed
 
 ## Follow-Up
 
-- The next planning pass should paint JSON fixture examples for each covered hop class and use that fixture friction to confirm whether the proposed `postconditions` fields are sufficient.
+- Future passes may widen the ledger contributors if wrapper-derived rows prove insufficient for a new hop class.
 - If the accepted parent contract fully covers ALS-107, SDR 056 should be superseded or reduced to historical context rather than left as a competing proposal.

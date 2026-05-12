@@ -135,7 +135,7 @@ A specific case of construct upgrade. When the dispatcher's `VERSION` bumps in t
 
 ### Transaction wrapper
 
-The runtime owner of `/update`'s all-or-nothing boundary. It batches language and construct prompts, creates one staging worktree, runs validation plus bundled-surface refresh, fast-forwards the live repo with one commit, and then executes post-commit lifecycle actions.
+The runtime owner of `/update`'s all-or-nothing boundary. It batches language and construct prompts, creates one staging worktree, runs validation plus bundled-surface refresh, fast-forwards the live repo with one commit, executes post-commit lifecycle actions, and reports execute truth through a tri-state status plus structured `postconditions` ledger. `manual_follow_up_note` is only a synthesized compatibility projection of that ledger.
 
 ### Staging worktree
 
