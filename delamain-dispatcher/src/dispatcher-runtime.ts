@@ -4,6 +4,7 @@ import { readFrontmatterField } from "./frontmatter.js";
 import {
   GitWorktreeIsolationStrategy,
   type IsolatedDispatch,
+  type MergeBackCorrelationIds,
   type MountedSubmoduleWorktree,
 } from "./git-worktree-isolation.js";
 import { OrphanSweeper, type OrphanSweepSummary } from "./orphan-sweeper.js";
@@ -21,8 +22,11 @@ import { resolve } from "node:path";
 import {
   buildIncidentContext,
   sanitizeJsonObject,
+  type BlockedIncidentDetails,
+  type DispatchCommandResult,
   type DispatchPhaseTelemetry,
   type DispatchIncidentContext,
+  type DispatchRelevantShas,
 } from "./forensics.js";
 import {
   appendTelemetryEvent,
@@ -661,6 +665,7 @@ export class DispatcherRuntime {
     let hostWorktreeCommit = input.hostWorktreeCommit;
     let refreshedMountedSubmodules = input.mountedSubmodules;
     let treeState: "clean" | "dirty" = "clean";
+    const correlationIds = buildMergeBackCorrelationIds(input.prepared.mountedSubmodules);
 
     await this.appendRuntimeTelemetry(input.telemetryBase, [
       {
@@ -677,6 +682,7 @@ export class DispatcherRuntime {
           final_state: input.finalState,
           dirty_retry_count: input.dirtyRetryCount,
         }),
+        merge_attempt_id: correlationIds.mergeAttemptId,
       },
     ]);
 
@@ -693,6 +699,7 @@ export class DispatcherRuntime {
           hostWorktreeCommit,
           mountedSubmodules: refreshedMountedSubmodules,
           commitMessage: input.commitMessage,
+          correlationIds,
         });
         hostWorktreeCommit = refreshResult.hostWorktreeCommit;
         refreshedMountedSubmodules = refreshResult.mountedSubmodules;
@@ -726,6 +733,17 @@ export class DispatcherRuntime {
             mountedSubmodules: refreshedMountedSubmodules,
             error: error instanceof Error ? error.message : String(error),
             incidentKind: "merge_back_failed",
+            incidentDetails: {
+              phase: "merge_back",
+              repoRole: "host",
+              repoPath: ".",
+              mergeAttemptId: correlationIds.mergeAttemptId,
+              repoAttemptId: correlationIds.hostRepoAttemptId,
+              relevantShas: {
+                base_commit: input.prepared.baseCommit,
+                worktree_commit: hostWorktreeCommit,
+              },
+            },
             retryCount: 0,
           };
         }
@@ -738,6 +756,7 @@ export class DispatcherRuntime {
             mountedSubmodules: refreshedMountedSubmodules,
             error: refreshResult.error,
             incidentKind: refreshResult.incidentKind,
+            incidentDetails: refreshResult.incidentDetails,
             retryCount: 0,
           };
         }
@@ -747,6 +766,7 @@ export class DispatcherRuntime {
           hostCommitMessage: input.commitMessage,
           hostWorktreeCommit,
           mountedSubmodules: refreshedMountedSubmodules,
+          correlationIds,
         });
       },
     );
@@ -786,6 +806,7 @@ export class DispatcherRuntime {
           mergeResult,
           mountedSubmodules: mergedMountedSubmodules,
           dirtyRetryCount: input.dirtyRetryCount,
+          mergeAttemptId: correlationIds.mergeAttemptId,
         }),
       };
     }
@@ -882,6 +903,7 @@ export class DispatcherRuntime {
     dispatchId: string;
     itemId: string;
     tickId: string | null;
+    mergeAttemptId: string;
     worktreePath: string;
     baseCommit: string;
     finalState: string;
@@ -895,6 +917,7 @@ export class DispatcherRuntime {
       integratedCommit: string | null;
       error: string | null;
       incidentKind: string | null;
+      incidentDetails?: BlockedIncidentDetails | null;
       retryCount: number;
     };
     mountedSubmodules: RuntimeMountedSubmoduleRecord[];
@@ -907,17 +930,32 @@ export class DispatcherRuntime {
       input.dirtyRetryCount,
       input.mergeResult.retryCount,
     );
+    const incidentDetails = input.mergeResult.incidentDetails ?? null;
     const incidentContext = buildRuntimeIncidentContext({
       incidentKind: blockedIncident.kind,
       dispatchId: input.dispatchId,
       tickId: input.tickId,
+      mergeAttemptId: incidentDetails?.mergeAttemptId ?? input.mergeAttemptId,
+      repoAttemptId: incidentDetails?.repoAttemptId ?? null,
       worktreePath: input.worktreePath,
       baseCommit: input.baseCommit,
       worktreeCommit: input.mergeResult.worktreeCommit,
       integratedCommit: input.mergeResult.integratedCommit,
       mountedSubmodules: input.mountedSubmodules,
-      phaseOverride: inferBlockedIncidentPhase(blockedIncident.kind),
+      phaseOverride: incidentDetails?.phase ?? inferBlockedIncidentPhase(blockedIncident.kind),
+      repoRole: incidentDetails?.repoRole,
+      repoPath: incidentDetails?.repoPath,
+      commandLabel: incidentDetails?.commandLabel,
+      commandResult: incidentDetails?.commandResult,
+      relevantShas: incidentDetails?.relevantShas ?? null,
+      dirtyPaths: incidentDetails?.dirtyPaths,
+      touchedPaths: incidentDetails?.touchedPaths,
+      movedPaths: incidentDetails?.movedPaths,
+      overlappingPaths: incidentDetails?.overlappingPaths,
+      unmergedPaths: incidentDetails?.unmergedPaths,
       retryableOverride: blockedIncident.kind === DIRTY_INTEGRATION_INCIDENT,
+      recoveryHint: incidentDetails?.recoveryHint ?? null,
+      canonicalRef: incidentDetails?.canonicalRef ?? null,
     });
 
     await this.registry.updateByItemId(input.itemId, (record) => ({
@@ -1080,6 +1118,27 @@ export class DispatcherRuntime {
 
 function buildDispatchId(): string {
   return `d-${crypto.randomUUID().replaceAll("-", "").slice(0, 12)}`;
+}
+
+function buildMergeAttemptId(): string {
+  return `m-${crypto.randomUUID().replaceAll("-", "").slice(0, 12)}`;
+}
+
+function buildRepoAttemptId(): string {
+  return `r-${crypto.randomUUID().replaceAll("-", "").slice(0, 12)}`;
+}
+
+function buildMergeBackCorrelationIds(
+  mountedSubmodules: ReadonlyArray<MountedSubmoduleWorktree>,
+): MergeBackCorrelationIds {
+  const mountedRepoAttemptIds = Object.fromEntries(
+    mountedSubmodules.map((entry) => [entry.repoPath, buildRepoAttemptId()]),
+  );
+  return {
+    mergeAttemptId: buildMergeAttemptId(),
+    hostRepoAttemptId: buildRepoAttemptId(),
+    mountedRepoAttemptIds,
+  };
 }
 
 function buildActiveRecord(
@@ -1265,6 +1324,8 @@ function buildRuntimeIncidentContext(input: {
   repoRole?: string | null;
   repoPath?: string | null;
   commandLabel?: string | null;
+  commandResult?: DispatchCommandResult | null;
+  relevantShas?: Partial<DispatchRelevantShas> | null;
   dirtyPaths?: ReadonlyArray<string>;
   touchedPaths?: ReadonlyArray<string>;
   movedPaths?: ReadonlyArray<string>;
@@ -1285,15 +1346,16 @@ function buildRuntimeIncidentContext(input: {
     repo_role: input.repoRole ?? descriptor.repoRole,
     repo_path: input.repoPath ?? ".",
     command_label: input.commandLabel ?? descriptor.commandLabel,
+    command_result: input.commandResult ?? null,
     relevant_shas: {
-      base_commit: input.baseCommit ?? null,
-      current_head: null,
-      worktree_commit: input.worktreeCommit ?? null,
-      integrated_commit: input.integratedCommit ?? null,
-      remote_head_before: null,
-      remote_head_after: null,
-      theirs_commit: null,
-      pre_integration_head: null,
+      base_commit: input.relevantShas?.base_commit ?? input.baseCommit ?? null,
+      current_head: input.relevantShas?.current_head ?? null,
+      worktree_commit: input.relevantShas?.worktree_commit ?? input.worktreeCommit ?? null,
+      integrated_commit: input.relevantShas?.integrated_commit ?? input.integratedCommit ?? null,
+      remote_head_before: input.relevantShas?.remote_head_before ?? null,
+      remote_head_after: input.relevantShas?.remote_head_after ?? null,
+      theirs_commit: input.relevantShas?.theirs_commit ?? null,
+      pre_integration_head: input.relevantShas?.pre_integration_head ?? null,
     },
     touched_paths: [...input.touchedPaths ?? []],
     moved_paths: [...input.movedPaths ?? []],

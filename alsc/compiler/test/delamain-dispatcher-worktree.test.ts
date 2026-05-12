@@ -6,6 +6,7 @@ import { join } from "node:path";
 import {
   DIRTY_INTEGRATION_RETRY_LIMIT,
   DispatcherRuntime,
+  type BlockedDirtyRetryResult,
 } from "../../../delamain-dispatcher/src/dispatcher-runtime.ts";
 import { RepoMutationLock } from "../../../delamain-dispatcher/src/repo-mutation-lock.ts";
 import { scan, scanWithDiagnostics } from "../../../delamain-dispatcher/src/watcher.ts";
@@ -15,7 +16,12 @@ import {
   type RuntimeDispatchState,
 } from "../../../delamain-dispatcher/src/runtime-state.ts";
 import { runCommand, runGit } from "../../../delamain-dispatcher/src/git.ts";
-import { readTelemetryEvents } from "../../../delamain-dispatcher/src/telemetry.ts";
+import {
+  DISPATCH_INCIDENT_BUNDLE_SCHEMA,
+  readDispatchTelemetrySlice,
+  readTelemetryEvents,
+  writeIncidentBundle,
+} from "../../../delamain-dispatcher/src/telemetry.ts";
 import type { DispatchEntry } from "../../../delamain-dispatcher/src/dispatcher.ts";
 
 const ENTRY: DispatchEntry = {
@@ -1009,12 +1015,34 @@ test("runtime reclassifies dirty retry failures when the clean tree reveals a re
     expect(retries[0]?.action).toBe("blocked");
     expect(retries[0]?.treeState).toBe("clean");
     expect(retries[0]?.incidentKind).toBe("tracked_path_conflict");
+    await materializeBlockedIncidentBundle(bundleRoot, retries[0]!);
 
     const state = await readRuntimeState(bundleRoot);
     expect(state.records[0]?.status).toBe("blocked");
     expect(state.records[0]?.incident?.kind).toBe("tracked_path_conflict");
     expect(state.records[0]?.incident?.retry_count).toBe(0);
     expect(state.records[0]?.base_commit).toBe(await runGit(systemRoot, ["rev-parse", "HEAD"]));
+
+    const incidentContext = state.records[0]?.incident?.incident_context;
+    assertTrackedPathConflictFacts(incidentContext, "als-factory/jobs/ALS-001.md");
+
+    const bundle = await readIncidentBundle(bundleRoot, prepared!.dispatchId);
+    assertTrackedPathConflictFacts(bundle.incident_context, "als-factory/jobs/ALS-001.md");
+    expect(bundle.incident_context.unmerged_paths).toEqual(incidentContext?.unmerged_paths ?? []);
+    expect(bundle.incident_context.overlapping_paths).toEqual(incidentContext?.overlapping_paths ?? []);
+    expect(bundle.incident_context.correlation_ids.merge_attempt_id).toBe(
+      incidentContext?.correlation_ids.merge_attempt_id ?? null,
+    );
+    expect(bundle.incident_context.correlation_ids.repo_attempt_id).toBe(
+      incidentContext?.correlation_ids.repo_attempt_id ?? null,
+    );
+
+    const dispatchTelemetry = (await readTelemetryEvents(bundleRoot, 50)).events.filter(
+      (event) => event.dispatch_id === prepared!.dispatchId,
+    );
+    const trackedConflictEvent = dispatchTelemetry.find((event) => event.cause === "tracked_path_conflict");
+    expect(trackedConflictEvent?.merge_attempt_id).toBe(incidentContext?.correlation_ids.merge_attempt_id ?? null);
+    expect(trackedConflictEvent?.repo_attempt_id).toBe(incidentContext?.correlation_ids.repo_attempt_id ?? null);
   });
 });
 
@@ -1171,18 +1199,67 @@ test("runtime preserves blocked worktrees when stale-base refresh hits a conflic
     expect(existsSync(prepared!.worktreePath)).toBe(true);
     expect(await readFrontmatterStatus(itemFile)).toBe("operator-edit");
     expect(prepared!.baseCommit).toBe(operatorHead);
+    await materializeBlockedIncidentBundle(bundleRoot, {
+      itemId: "ALS-001",
+      dispatchId: prepared!.dispatchId,
+      attempt: 0,
+      action: "blocked",
+      previousIncidentKind: "dirty_integration_checkout",
+      treeState: "clean",
+      itemFile,
+      isolatedItemFile: prepared!.isolatedItemFile,
+      state: ENTRY.state,
+      agentName: ENTRY.agentName,
+      provider: ENTRY.provider,
+      resumable: ENTRY.resumable,
+      sessionField: ENTRY.sessionField ?? null,
+      transitionTargets: ENTRY.transitions.map((transition) => transition.to),
+      worktreePath: prepared!.worktreePath,
+      branchName: prepared!.branchName,
+      sessionId: null,
+      durationMs: 1_500,
+      numTurns: 3,
+      costUsd: 0.1,
+      mergeOutcome: result.mergeOutcome,
+      worktreeCommit: result.worktreeCommit,
+      integratedCommit: result.integratedCommit,
+      mountedSubmodules: result.mountedSubmodules,
+      incidentKind: result.incidentKind,
+      incidentMessage: result.incidentMessage,
+      incidentContext: result.incidentContext,
+    });
 
     const state = await readRuntimeState(bundleRoot);
     expect(state.records[0]?.status).toBe("blocked");
     expect(state.records[0]?.incident?.kind).toBe("tracked_path_conflict");
-    expect(state.records[0]?.incident?.incident_context?.phase).toBe("integration");
-    expect(state.records[0]?.incident?.incident_context?.cause).toBe("tracked_path_conflict");
+    assertTrackedPathConflictFacts(
+      state.records[0]?.incident?.incident_context,
+      "als-factory/jobs/ALS-001.md",
+      "host_refresh",
+    );
     expect(state.records[0]?.base_commit).toBe(operatorHead);
     expect(state.records[0]?.worktree_commit).not.toBeNull();
 
-    const telemetry = await readTelemetryEvents(bundleRoot, 50);
-    expect(telemetry.events.some((event) => event.event_type === "merge_attempt_start")).toBe(true);
-    expect(telemetry.events.some((event) => event.event_type === "refresh_decision")).toBe(true);
+    const bundle = await readIncidentBundle(bundleRoot, prepared!.dispatchId);
+    assertTrackedPathConflictFacts(bundle.incident_context, "als-factory/jobs/ALS-001.md", "host_refresh");
+    expect(bundle.incident_context.unmerged_paths).toEqual(
+      state.records[0]?.incident?.incident_context?.unmerged_paths ?? [],
+    );
+    expect(bundle.incident_context.overlapping_paths).toEqual(
+      state.records[0]?.incident?.incident_context?.overlapping_paths ?? [],
+    );
+
+    const telemetry = (await readTelemetryEvents(bundleRoot, 50)).events.filter(
+      (event) => event.dispatch_id === prepared!.dispatchId,
+    );
+    const mergeAttemptStart = telemetry.find((event) => event.event_type === "merge_attempt_start");
+    const trackedConflictEvent = telemetry.find((event) => event.cause === "tracked_path_conflict");
+    expect(mergeAttemptStart?.merge_attempt_id).toBe(
+      state.records[0]?.incident?.incident_context?.correlation_ids.merge_attempt_id ?? null,
+    );
+    expect(trackedConflictEvent?.repo_attempt_id).toBe(
+      state.records[0]?.incident?.incident_context?.correlation_ids.repo_attempt_id ?? null,
+    );
   });
 });
 
@@ -1721,6 +1798,96 @@ async function captureConsole<T>(
     console.log = originalLog;
     console.warn = originalWarn;
   }
+}
+
+async function readIncidentBundle(
+  bundleRoot: string,
+  dispatchId: string,
+): Promise<{
+  incident_context: {
+    phase: string;
+    cause: string;
+    overlapping_paths: string[];
+    unmerged_paths: string[];
+    correlation_ids: {
+      merge_attempt_id: string | null;
+      repo_attempt_id: string | null;
+    };
+  };
+}> {
+  return JSON.parse(
+    await readFile(join(bundleRoot, "runtime", "incidents", `${dispatchId}.json`), "utf-8"),
+  ) as {
+    incident_context: {
+      phase: string;
+      cause: string;
+      overlapping_paths: string[];
+      unmerged_paths: string[];
+      correlation_ids: {
+        merge_attempt_id: string | null;
+        repo_attempt_id: string | null;
+      };
+    };
+  };
+}
+
+async function materializeBlockedIncidentBundle(
+  bundleRoot: string,
+  retry: BlockedDirtyRetryResult,
+): Promise<void> {
+  if (!retry.incidentKind || !retry.incidentContext) {
+    throw new Error("blocked incident bundle requires incident context");
+  }
+
+  await writeIncidentBundle(bundleRoot, {
+    schema: DISPATCH_INCIDENT_BUNDLE_SCHEMA,
+    created_at: new Date().toISOString(),
+    dispatcher_name: "factory-jobs",
+    module_id: "als-factory",
+    tick_id: retry.incidentContext.correlation_ids.tick_id,
+    dispatch_id: retry.dispatchId,
+    merge_attempt_id: retry.incidentContext.correlation_ids.merge_attempt_id,
+    repo_attempt_id: retry.incidentContext.correlation_ids.repo_attempt_id,
+    item_id: retry.itemId,
+    item_file: retry.itemFile,
+    state: retry.state,
+    incident_kind: retry.incidentKind,
+    phase: retry.incidentContext.phase,
+    cause: retry.incidentContext.cause,
+    retryable: retry.incidentContext.retryable,
+    recommended_next_actor: retry.incidentContext.recommended_next_actor,
+    incident_context: retry.incidentContext,
+    events: await readDispatchTelemetrySlice(bundleRoot, retry.dispatchId),
+  });
+}
+
+function assertTrackedPathConflictFacts(
+  context: {
+    phase?: string | null;
+    cause?: string | null;
+    overlapping_paths?: string[];
+    unmerged_paths?: string[];
+    correlation_ids?: {
+      merge_attempt_id?: string | null;
+      repo_attempt_id?: string | null;
+    };
+  } | null | undefined,
+  expectedConflictPath: string,
+  expectedPhase?: string,
+): void {
+  expect(context?.cause).toBe("tracked_path_conflict");
+  if (expectedPhase) {
+    expect(context?.phase).toBe(expectedPhase);
+  }
+  expect(context?.correlation_ids?.merge_attempt_id).toEqual(expect.any(String));
+  expect(context?.correlation_ids?.repo_attempt_id).toEqual(expect.any(String));
+
+  const conflictPaths = [
+    ...(context?.unmerged_paths ?? []),
+    ...(context?.overlapping_paths ?? []),
+  ];
+  expect(conflictPaths.length).toBeGreaterThan(0);
+  expect(conflictPaths).toContain(expectedConflictPath);
 }
 
 async function markRecordDead(bundleRoot: string, itemId: string): Promise<void> {

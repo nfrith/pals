@@ -99,6 +99,8 @@ ALS-102 widens that surface substantially:
 
 The load-bearing rationale for this contract lives in [`als-factory/artifacts/ALS-102/dispatcher-incident-forensics-architecture.md`](../../../../als-factory/artifacts/ALS-102/dispatcher-incident-forensics-architecture.md).
 
+ALS-109 tightens the `tracked_path_conflict` writer boundary specifically: the blocking refresh/integration branch now owns the authoritative conflict facts (`unmerged_paths` vs `overlapping_paths`, plus merge/repo attempt ids) before cleanup erases them. The rationale for that boundary lives in [`als-factory/artifacts/ALS-109/tracked-path-conflict-incident-context-architecture.md`](../../../../als-factory/artifacts/ALS-109/tracked-path-conflict-incident-context-architecture.md).
+
 Older dispatcher copies that only emit `status.json` remain valid. Consumers must degrade to heartbeat-only mode instead of failing when `telemetry/events.jsonl` is absent.
 
 ## Concurrency Gates

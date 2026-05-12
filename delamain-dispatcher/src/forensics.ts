@@ -58,6 +58,24 @@ export interface DispatchIncidentContext {
   correlation_ids: DispatchCorrelationIds;
 }
 
+export interface BlockedIncidentDetails {
+  phase?: string | null;
+  repoRole?: string | null;
+  repoPath?: string | null;
+  commandLabel?: string | null;
+  commandResult?: DispatchCommandResult | null;
+  relevantShas?: Partial<DispatchRelevantShas> | null;
+  dirtyPaths?: ReadonlyArray<string>;
+  touchedPaths?: ReadonlyArray<string>;
+  movedPaths?: ReadonlyArray<string>;
+  overlappingPaths?: ReadonlyArray<string>;
+  unmergedPaths?: ReadonlyArray<string>;
+  recoveryHint?: string | null;
+  canonicalRef?: string | null;
+  mergeAttemptId?: string | null;
+  repoAttemptId?: string | null;
+}
+
 export interface DispatchPhaseTelemetry {
   event_type: string;
   phase?: string | null;
