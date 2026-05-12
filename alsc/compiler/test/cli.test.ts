@@ -683,9 +683,14 @@ test("als stop hook blocks Codex stop with JSON output", async () => {
       const output = JSON.parse(process.stdout) as {
         decision: string;
         reason: string;
+        systemMessage?: string;
+        hookSpecificOutput?: unknown;
       };
       expect(output.decision).toBe("block");
       expect(output.reason).toContain("still have errors");
+      expect(output.systemMessage).toBeUndefined();
+      expect(output.hookSpecificOutput).toBeUndefined();
+      expect(Object.keys(output).sort()).toEqual(["decision", "reason"]);
       expect(existsSync(breadcrumbPath)).toBe(true);
     } finally {
       rmSync(breadcrumbPath, { force: true });

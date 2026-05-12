@@ -32,6 +32,15 @@ Before Claude finishes, reads the breadcrumb file for this session. If ALS syste
 
 Claude keeps the warn-only reminder summary through `hookSpecificOutput.additionalContext`. Codex uses the safe ALS-104 contract instead: clean or warn-only success exits silently, and only hard failures emit a JSON block decision. If no breadcrumb file exists (session didn't touch ALS files), exits immediately — no validation, no blocking.
 
+ALS-105 locks the Codex side of that contract and records the rationale in [`../../als-factory/artifacts/ALS-105/codex-stop-no-slot-architecture.md`](../../als-factory/artifacts/ALS-105/codex-stop-no-slot-architecture.md). Current official Codex `Stop` docs only allow common output fields plus `decision: "block"` continuation output on `stdout` ([docs](https://developers.openai.com/codex/hooks)), and the generated `stop.command.output` schema omits `hookSpecificOutput` entirely while setting `additionalProperties: false` ([schema](https://raw.githubusercontent.com/openai/codex/main/codex-rs/hooks/schema/generated/stop.command.output.schema.json)).
+
+That absence is structural, not just undocumented. The generated Codex `PostToolUse`, `SessionStart`, and `UserPromptSubmit` output schemas do declare `hookSpecificOutput.additionalContext`, which is why ALS uses a Codex additional-context writer for `PostToolUse` but not for `Stop`.
+
+ALS therefore treats Codex `Stop` as a confirmed platform limitation:
+- no named non-blocking additional-context slot exists there today
+- `systemMessage` is not treated as a replacement contract
+- `hookSpecificOutput` is invalid on Codex `Stop` and must not be emitted
+
 ### delamain-stop.sh (SessionEnd)
 
 On session end, kills running delamain dispatchers and removes their heartbeat files (`status.json`). Skips cleanup when reason is `clear` or `resume` — dispatchers survive those transitions.
