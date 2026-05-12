@@ -1,6 +1,6 @@
 ---
 name: install
-description: Bootstrap ALS into a fresh project — author the empty skeleton (`.als/system.ts` with an empty `modules: {}`), validate and deploy it, create the operator profile if missing, then hand off to `/foundry` or `/new` for module work. Use this when the operator is starting from zero on a non-ALS project.
+description: 'Bootstrap ALS into a fresh project — author the empty skeleton (`.als/system.ts` with an empty `modules: {}`), validate and deploy it, create the operator profile if missing, then hand off to `/foundry` or `/new` for module work. Use this when the operator is starting from zero on a non-ALS project.'
 allowed-tools: AskUserQuestion, Bash(bash *), Read, Write, Edit, Skill
 ---
 
