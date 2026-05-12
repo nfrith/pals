@@ -4,6 +4,14 @@ For pre-2026-04-29 release history, see git tags.
 
 ## [Unreleased]
 
+## 0.20.3 - 2026-05-12
+
+### ALS-108
+- Compatibility: additive
+- Summary: `/update` transaction wrapper gains a tri-state execute result (`completed | requires_postcondition_input | failed`) plus a structured `postconditions[]` ledger that surfaces every load-bearing follow-through the wrapper used to leave to orchestrator prose. Singleton active-operator selector follow-through (the v4→v5 hop class previously caught only by `/update` skill prose) now self-heals inside the wrapper, and multi-operator systems escalate to `requires_postcondition_input` instead of silently returning `completed` with a null `manual_follow_up_note`. `manual_follow_up_note` is now a synthesized projection of unresolved ledger rows, no longer an independent truth surface. `requires_postcondition_input` exits non-zero from the CLI so an unchanged orchestrator cannot silently drop unresolved postconditions on the floor. SDR 057 is the accepted parent contract; `/update` and `/upgrade-language` skill prose now point operators at the structured ledger instead of carrying load-bearing conditional checklists, and the `/update` skill is required to turn `requires_postcondition_input` into an interactive `AskUserQuestion` rather than a silent report. First-slice ledger coverage lands rows for language target-version, active-operator selector self-heal vs escalate, statusline staleness warning, and per-construct `lifecycle-actions-completed`; ALS-106 (dispatcher lifecycle fresh-process / new `CLAUDE_PLUGIN_ROOT` proof) and ALS-107 (selector follow-through hardening) remain open as instance jobs that will deepen the ledger.
+- Operator action: None for ALS-managed systems — run `/update` as usual and the new wrapper contract takes effect on the next `/update`. Any third-party orchestrator that invokes `alsc update-transaction` directly must accept the new tri-state status and the `postconditions[]` ledger; `requires_postcondition_input` exits non-zero by design, so unchanged callers fail loudly rather than silently treating unresolved postconditions as success.
+- Affected surfaces: `nfrith-repos/als/alsc/update-transaction/src/index.ts`, `nfrith-repos/als/alsc/update-transaction/src/cli.ts`, `nfrith-repos/als/alsc/update-transaction/test/engine.test.ts`, `nfrith-repos/als/skills/update/SKILL.md`, `nfrith-repos/als/skills/upgrade-language/SKILL.md`, `nfrith-repos/als/skills/docs/references/language-upgrades.md`, `nfrith-repos/als/skills/docs/references/vocabulary.md`, `nfrith-repos/als/sdr/057-update-transaction-postcondition-contract.md`.
+
 ## 0.20.2 - 2026-05-12
 
 ### ALS-105
