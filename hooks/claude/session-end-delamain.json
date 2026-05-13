@@ -1,5 +1,5 @@
 {
-  "_comment": "Claude Code per-hook config. Keep plugin-rooted script paths in args using ${CLAUDE_PLUGIN_ROOT}; see hooks/CLAUDE.md for the Claude/Codex split.",
+  "_comment": "Claude Code per-hook config under hooks/claude/. Keep plugin-rooted script paths in args using ${CLAUDE_PLUGIN_ROOT}; see hooks/CLAUDE.md for the Claude/Codex split.",
   "description": "Kill Delamain dispatchers and clean heartbeat files on real session exit (not clear/resume)",
   "hooks": {
     "SessionEnd": [

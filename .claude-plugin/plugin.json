@@ -6,10 +6,10 @@
     "name": "Nicholas Frith"
   },
   "hooks": [
-    "./hooks/session-start-operator.json",
-    "./hooks/post-edit-validate.json",
-    "./hooks/post-edit-breadcrumb.json",
-    "./hooks/stop-validate.json",
-    "./hooks/session-end-delamain.json"
+    "./hooks/claude/session-start-operator.json",
+    "./hooks/claude/post-edit-validate.json",
+    "./hooks/claude/post-edit-breadcrumb.json",
+    "./hooks/claude/stop-validate.json",
+    "./hooks/claude/session-end-delamain.json"
   ]
 }

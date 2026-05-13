@@ -28,6 +28,8 @@ The compiler needs the path to the system root — the directory that contains `
 3. Otherwise, check if the current working directory (or a parent) contains `.als/system.ts` and use that.
 4. If none of the above, ask the user.
 
+Do not point `validate` at the ALS plugin repo unless it is also an operator system root. Bundled plugin layout checks are covered by repo-local `bun test`, not by `alsc validate`.
+
 ## Determine the module filter
 
 The compiler can validate all modules or a single module.

@@ -13,6 +13,8 @@ bun src/cli.ts validate <system-root>
 bun src/cli.ts validate <system-root> <module-id>
 ```
 
+`<system-root>` must contain `.als/system.ts`. Plugin repos and harness bundles are not validate targets; bundled hook layout regressions are covered by `bun test` instead. See [SDR 058](../../sdr/058-validate-command-and-plugin-layout-boundary-contract.md).
+
 Deploy active Claude harness assets from the validated ALS system:
 
 ```bash
@@ -35,6 +37,7 @@ The compiler-owned Claude hook cohort uses the public hook-runtime boundary at `
 - Supported ALS language versions are declared in `src/contracts.ts`.
 - Validation output is versioned as `als-validation-output@1`.
 - Filtered validation remains trustworthy for the selected module by loading its declared dependency closure.
+- `validate` only accepts ALS system roots; plugin-layout lint is intentionally outside the validator boundary.
 - Claude deploy is the only harness projection surfaced by this preview.
 - Claude deploy manages one generated system-root file at `.als/CLAUDE.md` plus skill and Delamain projections under `.claude/`.
 - The hook-runtime API is shared by CLI callers and hook adapters; transport-specific hook JSON is not part of the stable compiler contract.
