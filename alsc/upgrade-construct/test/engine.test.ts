@@ -5,9 +5,10 @@ import { dirname, join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import {
-  createStatuslineProcessDefinition,
+  createDashboardProcessDefinition,
   executeDelamainConstructUpgrade,
   executeProcessConstructUpgrade,
+  executeStatuslineConstructUpgrade,
   findPidInProcessTable,
   preflightDelamainConstructUpgrade,
   runConstructActionManifest,
@@ -172,14 +173,39 @@ test("delamain construct preflight and execute stage the fleet upgrade without m
   });
 });
 
-test("process construct execute records the applied version and emits start-only when the process is absent", async () => {
+test("statusline construct execute records the applied version without lifecycle actions", async () => {
   await withTempDir("statusline-state", async (root) => {
     const liveSystemRoot = join(root, "live");
     const stagingSystemRoot = join(root, "staging");
     await mkdir(join(liveSystemRoot, ".als"), { recursive: true });
     await cp(liveSystemRoot, stagingSystemRoot, { recursive: true });
 
-    const definition = createStatuslineProcessDefinition(alsRepoRoot);
+    const execute = await executeStatuslineConstructUpgrade({
+      live_system_root: liveSystemRoot,
+      staging_system_root: stagingSystemRoot,
+      plugin_root: alsRepoRoot,
+    });
+
+    expect(execute.needs_upgrade).toBe(true);
+    expect(execute.action_manifest).toBeNull();
+    const state = JSON.parse(await readFile(
+      join(stagingSystemRoot, ".als", "runtime", "construct-upgrades", "state.json"),
+      "utf-8",
+    )) as {
+      constructs: Record<string, { applied_version: number }>;
+    };
+    expect(state.constructs.statusline.applied_version).toBe(2);
+  });
+});
+
+test("process construct execute records the applied version and emits start-only when the process is absent", async () => {
+  await withTempDir("dashboard-state", async (root) => {
+    const liveSystemRoot = join(root, "live");
+    const stagingSystemRoot = join(root, "staging");
+    await mkdir(join(liveSystemRoot, ".als"), { recursive: true });
+    await cp(liveSystemRoot, stagingSystemRoot, { recursive: true });
+
+    const definition = createDashboardProcessDefinition(alsRepoRoot);
     const execute = await executeProcessConstructUpgrade({
       live_system_root: liveSystemRoot,
       staging_system_root: stagingSystemRoot,
@@ -195,7 +221,7 @@ test("process construct execute records the applied version and emits start-only
     )) as {
       constructs: Record<string, { applied_version: number }>;
     };
-    expect(state.constructs.statusline.applied_version).toBe(1);
+    expect(state.constructs.dashboard.applied_version).toBe(1);
   });
 });
 

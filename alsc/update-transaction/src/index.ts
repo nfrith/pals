@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { realpathSync } from "node:fs";
 import { readdir, rm, stat } from "node:fs/promises";
 import { basename, dirname, join, relative, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 import { deployClaudeSkills } from "../../compiler/src/claude-skills.ts";
 import type { ConstructFailureState } from "../../compiler/src/construct-contracts.ts";
 import type { ConstructActionManifest } from "../../compiler/src/construct-upgrade.ts";
@@ -16,11 +17,12 @@ import {
 import { validateSystem } from "../../compiler/src/validate.ts";
 import {
   createDashboardProcessDefinition,
-  createStatuslineProcessDefinition,
   executeDelamainConstructUpgrade,
   executeProcessConstructUpgrade,
+  executeStatuslineConstructUpgrade,
   preflightDelamainConstructUpgrade,
   preflightProcessConstructUpgrade,
+  preflightStatuslineConstructUpgrade,
   runConstructActionManifest,
   type ConstructActionRunnerResult,
   type ConstructUpgradeExecuteResult,
@@ -264,7 +266,7 @@ export async function prepareUpdateTransaction(input: {
     prompts,
     requires_changes: requiresChanges,
     manual_follow_up_note: constructs.statusline.needs_upgrade
-      ? "If statusline data goes stale, run `/bootup` or `/reboot`."
+      ? "If statusline data goes stale, run `/reload-plugins`."
       : null,
   };
 }
@@ -369,11 +371,10 @@ export async function runPreparedUpdateTransaction(input: {
     }
 
     if (prepared.constructs.statusline.needs_upgrade) {
-      stagedConstructResults.push(await executeProcessConstructUpgrade({
+      stagedConstructResults.push(await executeStatuslineConstructUpgrade({
         live_system_root: prepared.system_root,
         staging_system_root: stagingSystemRoot,
         plugin_root: prepared.plugin_root,
-        definition: createStatuslineProcessDefinition(prepared.plugin_root),
       }));
     }
 
@@ -496,6 +497,26 @@ export async function runPreparedUpdateTransaction(input: {
       ...evaluateActiveOperatorPostconditions(prepared),
       ...buildWarningPostconditions(prepared),
     ];
+    try {
+      await runStatuslineCutoverIfNeeded(prepared, stagedConstructResults);
+    } catch (error) {
+      await removeWorktree(prepared.repo_root, stagingRepoRoot);
+      return {
+        status: "failed",
+        failure_surface: "lifecycle-failed",
+        diagnostic: formatError(error),
+        staging_worktree_path: null,
+        commit_oid: commitOid,
+        lifecycle_failure_state: null,
+        precise_lifecycle_failure_state: null,
+        postconditions,
+        manual_follow_up_note: synthesizeManualFollowUpNote(postconditions),
+        language_phase: languagePhase,
+        language_error_code: languageErrorCode,
+        language_checkpoint_mismatch: languageCheckpointMismatch,
+        construct_phase: constructPhase,
+      };
+    }
     if (actionManifest.actions.length > 0) {
       try {
         const lifecycle = await services.run_action_manifest(actionManifest, {
@@ -578,10 +599,9 @@ async function preflightConstructs(
       system_root: systemRoot,
       plugin_root: pluginRoot,
     }),
-    statusline: await preflightProcessConstructUpgrade({
+    statusline: await preflightStatuslineConstructUpgrade({
       system_root: systemRoot,
       plugin_root: pluginRoot,
-      definition: createStatuslineProcessDefinition(pluginRoot),
     }),
     dashboard: await preflightProcessConstructUpgrade({
       system_root: systemRoot,
@@ -760,8 +780,8 @@ function buildWarningPostconditions(
       phase: "statusline",
       status: "unresolved",
       severity: "warning",
-      why: "Statusline pulse is not yet a construct participant. If statusline data goes stale after this update, refresh the runtime surfaces manually.",
-      command_to_run: "/bootup or /reboot",
+      why: "Statusline pulse now lives under Claude's plugin MCP lifecycle. If the cache stays stale after this update, reload the plugin MCP servers to respawn pulse.",
+      command_to_run: "/reload-plugins",
       operator_input_required: false,
     });
   }
@@ -816,6 +836,46 @@ function buildSuccessfulResult(input: {
     language_checkpoint_mismatch: input.language_checkpoint_mismatch,
     construct_phase: input.construct_phase,
   };
+}
+
+async function runStatuslineCutoverIfNeeded(
+  prepared: PreparedUpdateTransaction,
+  constructResults: ConstructUpgradeExecuteResult[],
+): Promise<void> {
+  const statuslineResult = constructResults.find((result) => result.construct === "statusline");
+  if (!statuslineResult?.needs_upgrade || statuslineResult.target_version < 2) {
+    return;
+  }
+
+  const migrationPath = join(
+    prepared.plugin_root,
+    "statusline",
+    "migrations",
+    "v1-to-v2.ts",
+  );
+  const migrationModule = await import(pathToFileURL(migrationPath).href) as {
+    migrate?: (context: {
+      system_root: string;
+      target_root: string;
+      construct_name: string;
+      instance_id: string | null;
+      from_version: number;
+      to_version: number;
+    }) => Promise<void>;
+  };
+
+  if (typeof migrationModule.migrate !== "function") {
+    throw new Error(`Statusline cutover migration is missing migrate() at ${migrationPath}.`);
+  }
+
+  await migrationModule.migrate({
+    system_root: prepared.system_root,
+    target_root: prepared.system_root,
+    construct_name: "statusline",
+    instance_id: null,
+    from_version: Math.max(statuslineResult.current_version ?? 1, 1),
+    to_version: 2,
+  });
 }
 
 function validateLanguageCommitTruth(input: {

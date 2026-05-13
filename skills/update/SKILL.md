@@ -291,7 +291,7 @@ EXECUTE_STATUS=$(jq -r '.status // empty' "$RESULT_JSON" 2>/dev/null || true)
 
 See [SDR 039](../../sdr/039-update-transaction-wrapper-contract.md) for the shared `/update` transaction contract, [SDR 038](../../sdr/038-construct-upgrade-engine-contract.md) for construct-upgrade semantics, and [SDR 057](../../sdr/057-update-transaction-postcondition-contract.md) for the postcondition ledger contract. Do not restate or special-case that orchestration here.
 
-Known v1 gap: if statusline data goes stale after a successful run, the operator may still need `/bootup` or `/reboot` until pulse becomes a construct participant.
+Statusline follow-through: pulse now lives under Claude's plugin MCP lifecycle. If statusline data stays stale after a successful run, the manual recovery command is `/reload-plugins`.
 
 ## Phase 7: Final report
 

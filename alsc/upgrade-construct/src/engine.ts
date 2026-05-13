@@ -365,19 +365,93 @@ export async function executeProcessConstructUpgrade(input: {
   };
 }
 
-export function createStatuslineProcessDefinition(pluginRoot: string): ProcessConstructDefinition {
+export async function preflightStatuslineConstructUpgrade(input: {
+  system_root: string;
+  plugin_root: string;
+}): Promise<ConstructUpgradePreflightResult> {
+  const state = await readConstructUpgradeRuntimeState(input.system_root);
+  const bundle = loadConstructBundle(join(input.plugin_root, "statusline"));
+  const currentVersion = state.constructs["statusline"]?.applied_version ?? 0;
+
+  if (currentVersion === bundle.manifest.version) {
+    return {
+      construct: "statusline",
+      current_version: currentVersion,
+      target_version: bundle.manifest.version,
+      needs_upgrade: false,
+      prompts: [],
+      validation: null,
+      telemetry: [
+        createConstructUpgradeTelemetryEvent("statusline", "preflight_clean", "Statusline construct already matches the recorded applied version."),
+      ],
+    };
+  }
+
   return {
     construct: "statusline",
-    bundle_root: join(pluginRoot, "statusline"),
-    start: {
-      command: ["bun", "run", "$CLAUDE_PLUGIN_ROOT/statusline/pulse.ts", "$ALS_SYSTEM_ROOT"],
-      cwd: "$ALS_SYSTEM_ROOT",
+    current_version: currentVersion,
+    target_version: bundle.manifest.version,
+    needs_upgrade: true,
+    prompts: [],
+    validation: {
+      requires_claude_deploy: false,
+      touched_paths: [".als/runtime/construct-upgrades/state.json"],
     },
-    process_locator: {
-      kind: "json-file-pid",
-      path: "$ALS_SYSTEM_ROOT/.claude/scripts/.cache/pulse/meta.json",
-      pid_field: "pid",
+    telemetry: [
+      createConstructUpgradeTelemetryEvent("statusline", "preflight_ready", "Statusline construct requires a version-state refresh.", {
+        current_version: currentVersion,
+        target_version: bundle.manifest.version,
+      }),
+    ],
+  };
+}
+
+export async function executeStatuslineConstructUpgrade(input: {
+  live_system_root: string;
+  staging_system_root: string;
+  plugin_root: string;
+}): Promise<ConstructUpgradeExecuteResult> {
+  const preflight = await preflightStatuslineConstructUpgrade({
+    system_root: input.live_system_root,
+    plugin_root: input.plugin_root,
+  });
+  if (!preflight.needs_upgrade) {
+    return {
+      construct: "statusline",
+      current_version: preflight.current_version,
+      target_version: preflight.target_version,
+      needs_upgrade: false,
+      staged_paths: [],
+      action_manifest: null,
+      validation: preflight.validation,
+      telemetry: [
+        createConstructUpgradeTelemetryEvent("statusline", "execute_skipped", "No statusline construct upgrade was needed."),
+      ],
+    };
+  }
+
+  await recordAppliedConstructVersion(
+    input.staging_system_root,
+    "statusline",
+    preflight.target_version,
+  );
+
+  return {
+    construct: "statusline",
+    current_version: preflight.current_version,
+    target_version: preflight.target_version,
+    needs_upgrade: true,
+    staged_paths: [".als/runtime/construct-upgrades/state.json"],
+    action_manifest: null,
+    validation: {
+      requires_claude_deploy: false,
+      touched_paths: [".als/runtime/construct-upgrades/state.json"],
     },
+    telemetry: [
+      createConstructUpgradeTelemetryEvent("statusline", "execute_staged", "Statusline construct upgrade staged runtime state only; Claude-owned MCP lifecycle handles the running pulse.", {
+        target_version: preflight.target_version,
+      }),
+    ],
   };
 }
 

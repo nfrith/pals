@@ -11,7 +11,7 @@ Accepted
 - ALS-067 shipped `alsc/upgrade-construct/` and SDR 038. It already provides the staged preflight/execute split, deterministic `als-construct-action-manifest@1`, runtime-token rules, manifest concatenation order, and named lifecycle failure vocabulary that the wrapper must consume unchanged.
 - `alsc deploy claude` is fail-closed at the command/result layer but not filesystem-atomic while it writes. That is acceptable only when projection happens inside a disposable staging worktree whose contents can be discarded wholesale on failure.
 - ALS-067 UAT clarified that bundled-surface refresh belongs inside staging during validation. Treating `alsc deploy claude` as a separate post-commit phase would reintroduce an avoidable partial-failure surface.
-- Pulse respawn remains outside ALS-067's action manifest. This job must finish the `/update` transaction contract without pretending pulse is already a construct participant.
+- Statusline pulse respawn remains outside ALS-067's action manifest. This job must finish the `/update` transaction contract without pretending pulse restart belongs in the post-commit action manifest.
 
 ## Decision
 
@@ -51,7 +51,7 @@ Accepted
   - `lifecycle-start-failed`
   - `lifecycle-partial`
 - Pre-commit failures leave the live system unchanged and preserve the staging worktree for inspection. Post-commit lifecycle failures leave the committed filesystem in place and inherit ALS-067's fix-forward support posture.
-- Pulse respawn is not part of the v1 action manifest. If statusline data goes stale after an update, the operator may still need `/bootup` or `/reboot` as a manual follow-up.
+- Statusline pulse respawn is not part of the action manifest. If statusline data goes stale after an update, the manual follow-up command is `/reload-plugins`.
 
 ## Normative Effect
 

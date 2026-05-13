@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "pulse": {
+      "command": "bun",
+      "args": [
+        "${CLAUDE_PLUGIN_ROOT}/statusline/mcp-server/index.ts"
+      ]
+    }
+  }
+}

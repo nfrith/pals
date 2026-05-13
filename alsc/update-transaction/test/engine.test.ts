@@ -368,7 +368,7 @@ test("runPreparedUpdateTransaction commits once, runs lifecycle after writeback,
     if (result.status === "completed") {
       expect(result.commit_oid).not.toBeNull();
       expect(result.action_count).toBeGreaterThan(0);
-      expect(result.manual_follow_up_note).toContain("/bootup");
+      expect(result.manual_follow_up_note).toContain("/reload-plugins");
       expect(result.commit_message).toContain("Construct deltas:");
       expect(result.postconditions).toEqual(expect.arrayContaining([
         expect.objectContaining({
@@ -376,12 +376,7 @@ test("runPreparedUpdateTransaction commits once, runs lifecycle after writeback,
           phase: "statusline",
           status: "unresolved",
           severity: "warning",
-        }),
-        expect.objectContaining({
-          code: "statusline.lifecycle-actions-completed",
-          phase: "statusline",
-          status: "satisfied",
-          severity: "required",
+          command_to_run: "/reload-plugins",
         }),
         expect.objectContaining({
           code: "dashboard.lifecycle-actions-completed",

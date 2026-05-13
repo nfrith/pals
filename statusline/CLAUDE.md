@@ -4,12 +4,12 @@ Canonical ALS statusline for Claude Code. Installed into operator projects via `
 
 The statusline is the compact badge surface for Delamain health. It is not the canonical monitoring implementation. Rich dispatcher history, queue state, and failure context belong to `nfrith-repos/als/delamain-dashboard/`.
 
-## Architecture — PULSE + FACE (GF-034, Phase 2 landed 2026-04-24)
+## Architecture — MCP PULSE + FACE (ALS-112, statusline v2)
 
 The statusline is split into two independent halves, connected through a source-agnostic raw-state cache:
 
 ```
-pulse.ts (background, long-running, spawned by /bootup)
+statusline/mcp-server/index.ts (plugin-resident MCP server, auto-spawned by Claude)
   │
   │  writes every 3s (atomic .tmp + rename)
   ▼
@@ -28,14 +28,24 @@ statusline.sh (face, invoked by Claude Code per tick / per event)
 
 ### PULSE — the background data producer
 
-`pulse.ts` runs as a long-lived bun process spawned by `/bootup` alongside delamain dispatchers. It probes:
+`statusline/mcp-server/index.ts` is a zero-tool stdio MCP server built on the official `@modelcontextprotocol/sdk`. Claude starts it automatically when the ALS plugin is enabled. The server launches the background pulse loop on startup and lets Claude own the steady-state lifecycle: session start auto-spawns it, `/reload-plugins` refreshes or resurrects it, and server death is visible at the MCP layer.
+
+System-root discovery is MCP-specific:
+
+1. If `ALS_SYSTEM_ROOT` or `SYSTEM_ROOT` is present, use it only when it resolves to a directory containing `.als/system.ts`. This exists for test harnesses and explicit local overrides.
+2. Otherwise walk up from `process.cwd()` looking for `.als/system.ts`.
+3. If nothing resolves, pulse enters a graceful no-op mode: it stays connected as an MCP server, writes nothing, and never creates `.claude/` garbage in non-ALS projects.
+
+When a system root is present, pulse probes:
 
 - **delamains** — walks `{SYSTEM_ROOT}/.claude/delamains/*/status.json`, reads `pid / active_dispatches / blocked_dispatches / last_error`, maps to 5 states (`offline / idle / active / warn / error`). Same mapping as the face's inline fallback so switching paths yields byte-identical badges.
 - **OBS WebSocket v5** — unauthenticated Hello→Identify→GetStreamStatus→GetRecordStatus sequence against `localhost:4455` with a 500ms timeout. Ported from the legacy `obs-status.py` onto bun's native `WebSocket`. Produces `{connected, streaming, recording, state: "live"|"offline"}`.
 
 Every write is atomic (`.tmp + rename`). `meta.json` is written **last** on each tick so its mtime is the canonical freshness signal — when meta looks fresh, the topic files behind it are guaranteed fresh.
 
-Lifecycle: survives `/clear` and `/resume` (same policy as dispatchers — matches GF-034 Q4(a)). Lone `SIGTERM` / `SIGHUP` / `SIGINT` signals are treated as advisory and logged to `shutdown.log`; pulse only exits on a confirmed shutdown pair inside the signal-confirm window. `hooks/delamain-stop.sh` still emits the SessionEnd reap signal and logs each invocation to `sessionend.log`, which gives operators enough context to tell hook-driven deaths from parent-shell-driven ones.
+Recovery contract: `/bootup` no longer owns pulse. If the statusline cache stays stale or the MCP server dies, run `/reload-plugins`. The face still falls back to inline scan while the cache is stale or missing, so badge rendering degrades cleanly instead of disappearing.
+
+Signal behavior stays the same as GF-034: lone `SIGTERM` / `SIGHUP` / `SIGINT` signals are advisory and logged to `shutdown.log`; pulse only exits on a confirmed shutdown pair inside the signal-confirm window. `hooks/delamain-stop.sh` still emits the SessionEnd reap signal and logs each invocation to `sessionend.log`, which gives operators enough context to tell hook-driven deaths from parent-shell-driven ones.
 
 ### FACE — the Claude Code statusline renderer
 
@@ -66,7 +76,7 @@ No pulse changes required to add a face. Adding a new probe (e.g. YouTube live, 
 
 ### Legacy files (deprecated, pending Phase 3 cleanup)
 
-`statusline-daemon.sh`, `obs-status.py`, and `deploy.sh` still exist on disk as the pre-GF-034 two-process deploy. They are deprecated and no longer consulted by either half of the new architecture. The history-of-why content below is preserved because the GHOST-163 lessons (stderr kills statusline, `.tmp + mv` atomic writes, render budget discipline) still govern this module.
+`statusline-daemon.sh`, `obs-status.py`, and `deploy.sh` still exist on disk as the pre-GF-034 two-process deploy. `pulse.ts` also remains as a legacy compatibility wrapper for smoke tests and migration-era diagnostics, but production ownership is `statusline/mcp-server/`. The history-of-why content below is preserved because the GHOST-163 lessons (stderr kills statusline, `.tmp + mv` atomic writes, render budget discipline) still govern this module.
 
 ## Legacy architecture: Two-process model (deprecated)
 

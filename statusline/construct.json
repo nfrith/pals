@@ -1,9 +1,9 @@
 {
   "schema": "als-construct-manifest@1",
   "name": "statusline",
-  "version": 1,
+  "version": 2,
   "migration_strategy": "sequential",
-  "lifecycle_strategy": "process-lifecycle",
+  "lifecycle_strategy": "none",
   "migrations_dir": "migrations",
   "source_paths": [
     {
@@ -15,7 +15,11 @@
       "owner": "vendor"
     },
     {
-      "path": "pulse.ts",
+      "path": "mcp-server",
+      "owner": "vendor"
+    },
+    {
+      "path": "package.json",
       "owner": "vendor"
     },
     {
