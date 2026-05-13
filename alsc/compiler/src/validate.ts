@@ -63,6 +63,7 @@ import {
   inferredSkillsPath,
   toRepoRelative,
 } from "./system-paths.ts";
+import { validateBundledHookConfigs } from "./plugin-hook-config-validation.ts";
 import type { CompilerDiagnostic, ModuleValidationReport, ModuleValidationSummary, SystemValidationOutput } from "./types.ts";
 
 interface LoadedModuleContext {
@@ -231,6 +232,7 @@ export interface LoadedSystemValidationContext {
   system_config: SystemConfig | null;
   als_version: number | null;
   initial_diagnostics: CompilerDiagnostic[];
+  plugin_surface_only: boolean;
 }
 
 export function validateSystem(systemRootInput: string, moduleFilter?: string): SystemValidationOutput {
@@ -241,6 +243,19 @@ export function loadSystemValidationContext(systemRootInput: string): LoadedSyst
   const systemRootAbs = resolve(systemRootInput);
   const systemRootRel = toRepoRelative(systemRootAbs);
   const systemConfigPathAbs = resolve(systemRootAbs, inferredSystemPath());
+
+  if (isStandalonePluginSurface(systemRootAbs, systemConfigPathAbs)) {
+    return {
+      system_root_abs: systemRootAbs,
+      system_root_rel: systemRootRel,
+      system_config_path_abs: systemConfigPathAbs,
+      system_config: null,
+      als_version: null,
+      initial_diagnostics: validateBundledHookConfigs(systemRootAbs),
+      plugin_surface_only: true,
+    };
+  }
+
   const parsedSystem = parseAuthoredSourceFile<SystemConfig>(
     systemConfigPathAbs,
     "system",
@@ -258,6 +273,7 @@ export function loadSystemValidationContext(systemRootInput: string): LoadedSyst
       system_config: null,
       als_version: null,
       initial_diagnostics: parsedSystem.diagnostics,
+      plugin_surface_only: false,
     };
   }
 
@@ -270,6 +286,7 @@ export function loadSystemValidationContext(systemRootInput: string): LoadedSyst
     system_config: systemConfig,
     als_version: systemConfig.als_version,
     initial_diagnostics: alsVersionDiagnostics,
+    plugin_surface_only: false,
   };
 }
 
@@ -280,6 +297,10 @@ export function validateLoadedSystem(
   const systemDiagnostics: CompilerDiagnostic[] = [...context.initial_diagnostics];
   const moduleReports: ModuleValidationReport[] = [];
   const outputModuleFilter = moduleFilter ?? null;
+
+  if (context.plugin_surface_only) {
+    return buildSystemOutput(context.system_root_rel, systemDiagnostics, moduleReports, context.als_version, outputModuleFilter);
+  }
 
   if (!context.system_config || systemDiagnostics.length > 0) {
     return buildSystemOutput(context.system_root_rel, systemDiagnostics, moduleReports, context.als_version, outputModuleFilter);
@@ -296,6 +317,8 @@ export function validateLoadedSystem(
   if (layoutDiagnostics.length > 0) {
     return buildSystemOutput(context.system_root_rel, systemDiagnostics.concat(layoutDiagnostics), moduleReports, systemConfig.als_version, outputModuleFilter);
   }
+
+  systemDiagnostics.push(...validateBundledHookConfigs(context.system_root_abs));
 
   const moduleStates = moduleFilter
     ? loadModuleDependencyClosure(context.system_root_abs, systemConfig, reportingModuleIds)
@@ -391,6 +414,15 @@ export function validateLoadedSystem(
 
   const reportedModuleReports = moduleReports.filter((report) => reportingModuleIds.includes(report.module_id));
   return buildSystemOutput(context.system_root_rel, systemDiagnostics, reportedModuleReports, systemConfig.als_version, outputModuleFilter);
+}
+
+function isStandalonePluginSurface(systemRootAbs: string, systemConfigPathAbs: string): boolean {
+  if (safeStatResult(systemConfigPathAbs).kind !== "missing") {
+    return false;
+  }
+
+  return safeStatResult(resolve(systemRootAbs, ".claude-plugin/plugin.json")).kind === "ok"
+    || safeStatResult(resolve(systemRootAbs, ".codex-plugin/plugin.json")).kind === "ok";
 }
 
 function loadModuleDependencyClosure(

@@ -1,4 +1,5 @@
 {
+  "_comment": "Claude Code per-hook config. Keep plugin-rooted script paths in args using ${CLAUDE_PLUGIN_ROOT}; see hooks/CLAUDE.md for the Claude/Codex split.",
   "description": "Inject stable operator profile context into Claude sessions",
   "hooks": {
     "SessionStart": [
@@ -6,7 +7,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bun $CLAUDE_PLUGIN_ROOT/hooks/operator-config-session-start.ts",
+            "command": "bun",
+            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/operator-config-session-start.ts"],
             "timeout": 10
           }
         ]

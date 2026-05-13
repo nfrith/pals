@@ -1,5 +1,13 @@
 # ALS Hooks
 
+> Two parallel plugin systems
+>
+> - Claude Code: `.claude-plugin/plugin.json` declares five per-hook JSON files in `hooks/`. Those launcher files must keep the executable in `command`, the plugin-rooted script path in `args`, and the Claude-side placeholder as `${CLAUDE_PLUGIN_ROOT}`.
+> - Codex: `.codex-plugin/plugin.json` declares the bundled `hooks/hooks.json` file. That bundle keeps the Codex-side placeholder `${PLUGIN_ROOT}`.
+> - Shared runtime: both platforms launch the same entrypoints in `hooks/*.ts`, derive plugin root through `hook-adapter.ts`, and translate harness output through `claude-hook-adapter.ts` or `codex-hook-adapter.ts` above the shared compiler hook runtime.
+>
+> Load-bearing rationale: [`../../als-factory/artifacts/ALS-113/claude-hook-launcher-contract-architecture.md`](../../als-factory/artifacts/ALS-113/claude-hook-launcher-contract-architecture.md).
+
 The four compiler-owned hooks now run as Bun TypeScript adapters above the public compiler hook-runtime boundary at `alsc/compiler/src/hook-runtime.ts`. The normative decision is [SDR 053](../sdr/053-public-hook-runtime-api-and-harness-adapter-contract.md); ALS-099's load-bearing rationale note lives at [`../../als-factory/artifacts/ALS-099/hook-runtime-public-api-architecture.md`](../../als-factory/artifacts/ALS-099/hook-runtime-public-api-architecture.md).
 
 ALS-104 adds the Codex hook bundle at [`hooks.json`](./hooks.json) and keeps the same semantic runtime. The load-bearing Codex rationale note is [`../../als-factory/artifacts/ALS-104/codex-hook-wiring-architecture.md`](../../als-factory/artifacts/ALS-104/codex-hook-wiring-architecture.md): plugin-bundled wiring only, no fake `SessionEnd`, and no Codex-specific semantic fork below the adapter seam.

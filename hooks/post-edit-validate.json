@@ -1,4 +1,5 @@
 {
+  "_comment": "Claude Code per-hook config. Keep plugin-rooted script paths in args using ${CLAUDE_PLUGIN_ROOT}; see hooks/CLAUDE.md for the Claude/Codex split.",
   "description": "Runs ALS compiler against the affected module after file edits",
   "hooks": {
     "PostToolUse": [
@@ -7,7 +8,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bun $CLAUDE_PLUGIN_ROOT/hooks/als-validate.ts",
+            "command": "bun",
+            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/als-validate.ts"],
             "timeout": 15
           }
         ]

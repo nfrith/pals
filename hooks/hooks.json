@@ -1,4 +1,5 @@
 {
+  "_comment": "Codex hook bundle. Keep plugin-rooted script paths on the Codex side using ${PLUGIN_ROOT}; see hooks/CLAUDE.md for the Claude/Codex split.",
   "hooks": {
     "SessionStart": [
       {
