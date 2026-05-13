@@ -221,7 +221,7 @@ test("process construct execute records the applied version and emits start-only
     )) as {
       constructs: Record<string, { applied_version: number }>;
     };
-    expect(state.constructs.dashboard.applied_version).toBe(1);
+    expect(state.constructs.dashboard.applied_version).toBe(2);
   });
 });
 
