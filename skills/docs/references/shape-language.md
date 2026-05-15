@@ -135,6 +135,7 @@ Rules:
 import { defineModule } from "als:authoring";
 
 export const module = defineModule({
+  ignored_directories: ["doctrine", "meta/drafts"],
   dependencies: [{ module: "people" }],
   delamains: {
     "development-pipeline": {
@@ -188,9 +189,12 @@ export default module;
 Rules:
 
 - Every required module version bundle contains `module.ts`.
+- `ignored_directories` is optional. Omit it when the module mount has no explicit non-record-bearing subtrees.
+- `ignored_directories` entries are relative directory paths under the module's mounted record root.
 - `dependencies` names other modules whose entities may be referenced from this module.
 - `delamains.{name}.path` is module-bundle-relative and points at an authored `delamain.ts`.
 - `entities` defines the valid authored record contract for the mounted module path.
+- Declared ignored directories remain module-owned, but record discovery skips validation beneath them and counts record-like files there as ignored.
 - If authored source needs compatibility-class runtime values, import them from `als:contracts`.
 
 ## Entity Source Formats
@@ -671,6 +675,13 @@ Authored Delamains are TypeScript, but Claude deploy still writes a runtime `del
 ### module.ts Detailed Rules
 
 - Every required module version bundle contains `module.ts`.
+- `ignored_directories` is optional. Omit it when the module does not need explicit non-record-bearing subtrees.
+- `ignored_directories` entries must be normalized relative directory paths using slash-separated lowercase slug segments.
+- `ignored_directories` entries must not be absolute, contain empty segments, contain `.` or `..`, contain hidden segments, or end with a trailing slash.
+- Duplicate ignored-directory entries and ancestor-descendant ignored-directory overlap are rejected.
+- An ignored directory must not be able to contain records for any declared entity path template in the same module.
+- Ignored directories remain owned by the module, but record discovery does not parse or validate record-like files beneath them.
+- Missing declared ignored directories emit a warning so operators can stage directory moves without turning validation red.
 - `dependencies` is required. Use an empty array when the module has no cross-module refs.
 - `delamains` is optional. Omit it when the module does not use Delamain-bound fields.
 - `delamains.{name}.path` must resolve to a file inside the same active module version bundle.
@@ -1028,7 +1039,8 @@ Use `outline` when the heading tree itself is part of the schema contract. Use `
 - Record ids may be any non-empty string but must match the filename stem.
 - Authoring workflows should default skill ids to `<module-id>-<base-skill-name>`. When the base phrase already repeats the module name, normalize to one leading module prefix.
 - `AGENTS.md` and `CLAUDE.md` at any depth in the module subtree are reserved non-record files, matched case-insensitively (including the `.md` extension), and ignored during record validation.
-- Other markdown record files must use lowercase `.md`; `README.MD` is invalid. JSONL record files must use lowercase `.jsonl`.
+- Module-declared `ignored_directories` add a second explicit non-record carve-out: files beneath those directories stay module-owned, but record discovery skips validation there and counts record-like files as ignored.
+- Other markdown record files outside reserved agent files and ignored directories must use lowercase `.md`; `README.MD` is invalid. JSONL record files outside those carve-outs must use lowercase `.jsonl`.
 
 ### Record Layout
 

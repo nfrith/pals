@@ -298,6 +298,89 @@ test("jsonl entity shapes validate without markdown-only surfaces", () => {
   expect(result.success).toBe(true);
 });
 
+test("module shape schema accepts ignored_directories with multi-segment paths", () => {
+  const result = moduleShapeSchema.safeParse({
+    ignored_directories: ["doctrine", "meta/drafts"],
+    dependencies: [],
+    entities: {
+      item: {
+        source_format: "markdown",
+        path: "items/{id}.md",
+        identity: {
+          id_field: "id",
+        },
+        fields: {
+          id: {
+            type: "id",
+            allow_null: false,
+          },
+        },
+        body: {
+          sections: [
+            {
+              name: "DESCRIPTION",
+              allow_null: false,
+              content: {
+                mode: "freeform",
+                blocks: {
+                  paragraph: {},
+                },
+              },
+            },
+          ],
+        },
+      },
+    },
+  });
+
+  expect(result.success).toBe(true);
+});
+
+test("module shape schema rejects ignored_directories that can contain entity records through placeholders", () => {
+  const result = moduleShapeSchema.safeParse({
+    ignored_directories: ["meta/drafts"],
+    dependencies: [],
+    entities: {
+      item: {
+        source_format: "markdown",
+        path: "meta/{collection}/{id}.md",
+        identity: {
+          id_field: "id",
+        },
+        fields: {
+          id: {
+            type: "id",
+            allow_null: false,
+          },
+        },
+        body: {
+          sections: [
+            {
+              name: "DESCRIPTION",
+              allow_null: false,
+              content: {
+                mode: "freeform",
+                blocks: {
+                  paragraph: {},
+                },
+              },
+            },
+          ],
+        },
+      },
+    },
+  });
+
+  expect(result.success).toBe(false);
+  if (result.success) {
+    throw new Error("Expected ignored_directories conflict to fail schema validation");
+  }
+
+  expect(result.error.issues.some((issue) =>
+    issue.path.join(".") === "ignored_directories.0"
+    && issue.message.includes("can contain records for entity path meta/{collection}/{id}.md"))).toBe(true);
+});
+
 test("deprecated enum values downgrade otherwise-valid records to warn with a structured payload", async () => {
   await withFixtureSandbox("validate-unit-deprecation-warn", async ({ root }) => {
     await configureSyntheticDeprecationFixture(root);

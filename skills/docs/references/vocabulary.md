@@ -95,7 +95,7 @@ A dispatched LLM instance. Driven by the prompt at the state's `path` (e.g. `age
 
 ### Module Data Record
 
-An item flowing through a delamain (e.g. a `job` in als-factory, a `client` in client-registry). Lives as a markdown file with frontmatter under the module's mounted record root: `<system_root>/<modules.{module_id}.path>/<entities.{entity}.path with placeholders bound>`. Module data records live outside `.als/`. The dispatcher reads the record's `status` field to decide which state's agent to run.
+An item flowing through a delamain (e.g. a `job` in als-factory, a `client` in client-registry). Lives as a markdown file with frontmatter under the module's mounted record root: `<system_root>/<modules.{module_id}.path>/<entities.{entity}.path with placeholders bound>`. Module data records live outside `.als/`. A module version may also declare `ignored_directories` in `module.ts`; those subtrees stay module-owned but are non-record-bearing for validation. The dispatcher reads the record's `status` field to decide which state's agent to run.
 
 ---
 

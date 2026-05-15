@@ -144,6 +144,62 @@ test.concurrent("duplicate dependencies are rejected", async () => {
   });
 });
 
+test.concurrent("ignored_directories entries must use normalized relative directory paths", async () => {
+  await withFixtureSandbox("shape-ignored-directory-invalid-path", async ({ root }) => {
+    await updateShapeYaml(root, "backlog", 1, (shape) => {
+      shape.ignored_directories = ["meta/./drafts"];
+    });
+
+    const result = validateFixture(root);
+    expect(result.status).toBe("fail");
+    const diagnostic = expectModuleDiagnostic(result, "backlog", codes.SHAPE_INVALID, ".als/modules/backlog/v1/module.ts");
+    expect(diagnostic.field).toBe("ignored_directories.0");
+    expect(diagnostic.message).toContain("ignored_directories entries must be normalized relative directory paths");
+  });
+});
+
+test.concurrent("duplicate ignored_directories entries are rejected", async () => {
+  await withFixtureSandbox("shape-ignored-directory-duplicate", async ({ root }) => {
+    await updateShapeYaml(root, "backlog", 1, (shape) => {
+      shape.ignored_directories = ["doctrine", "doctrine"];
+    });
+
+    const result = validateFixture(root);
+    expect(result.status).toBe("fail");
+    const diagnostic = expectModuleDiagnostic(result, "backlog", codes.SHAPE_INVALID, ".als/modules/backlog/v1/module.ts");
+    expect(diagnostic.field).toBe("ignored_directories.1");
+    expect(diagnostic.message).toContain("duplicates ignored directory doctrine");
+  });
+});
+
+test.concurrent("overlapping ignored_directories entries are rejected", async () => {
+  await withFixtureSandbox("shape-ignored-directory-overlap", async ({ root }) => {
+    await updateShapeYaml(root, "backlog", 1, (shape) => {
+      shape.ignored_directories = ["meta", "meta/drafts"];
+    });
+
+    const result = validateFixture(root);
+    expect(result.status).toBe("fail");
+    const diagnostic = expectModuleDiagnostic(result, "backlog", codes.SHAPE_INVALID, ".als/modules/backlog/v1/module.ts");
+    expect(diagnostic.field).toBe("ignored_directories.1");
+    expect(diagnostic.message).toContain("overlaps ignored directory meta");
+  });
+});
+
+test.concurrent("ignored_directories cannot contain declared entity paths", async () => {
+  await withFixtureSandbox("shape-ignored-directory-entity-conflict", async ({ root }) => {
+    await updateShapeYaml(root, "backlog", 1, (shape) => {
+      shape.ignored_directories = ["items"];
+    });
+
+    const result = validateFixture(root);
+    expect(result.status).toBe("fail");
+    const diagnostic = expectModuleDiagnostic(result, "backlog", codes.SHAPE_INVALID, ".als/modules/backlog/v1/module.ts");
+    expect(diagnostic.field).toBe("ignored_directories.0");
+    expect(diagnostic.message).toContain("can contain records for entity path items/{id}.md");
+  });
+});
+
 test.concurrent("dependencies must point at declared modules", async () => {
   await withFixtureSandbox("shape-unknown-dependency", async ({ root }) => {
     await updateShapeYaml(root, "backlog", 1, (shape) => {

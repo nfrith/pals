@@ -79,7 +79,13 @@ interface LoadedModuleContext {
   shape: ModuleShape;
   delamains: Map<string, LoadedDelamainBundle>;
   operator_roster: LoadedOperatorRoster;
+  ignored_directories: IgnoredDirectory[];
   templates: Map<string, ParsedPathTemplate>;
+}
+
+interface IgnoredDirectory {
+  path: string;
+  segments: string[];
 }
 
 interface LoadedDelamainBundle {
@@ -479,13 +485,23 @@ function loadModuleState(systemRootAbs: string, systemConfig: SystemConfig, modu
     shape: shapeResult.data,
     delamains: delamainLoad.bundles,
     operator_roster: operatorRoster,
+    ignored_directories: (shapeResult.data.ignored_directories ?? []).map((path) => ({
+      path,
+      segments: splitModuleMountPath(path),
+    })),
     templates: new Map(Object.entries(shapeResult.data.entities).map(([entityName, entity]) => [entityName, parsePathTemplate(entity.path, entityName)])),
   };
 
   const diagnostics: CompilerDiagnostic[] = [...shapeResult.diagnostics, ...delamainLoad.diagnostics];
   diagnostics.push(...validateShapeContracts(context, systemConfig));
 
-  const discovery = discoverRecordFiles(context.module_path_abs, context.module_id);
+  const discovery = discoverRecordFiles(
+    context.module_path_abs,
+    context.module_path_rel,
+    context.shape_path_rel,
+    context.module_id,
+    context.ignored_directories,
+  );
   diagnostics.push(...discovery.diagnostics);
   const fileErrorMap = new Map<string, boolean>();
   for (const fileAbs of discovery.record_file_paths.concat(discovery.errored_file_paths)) {
@@ -4096,7 +4112,13 @@ function safeReadTextFile(pathAbs: string): { contents: string; error: null } | 
   }
 }
 
-function discoverRecordFiles(rootAbs: string, moduleId: string): RecordDiscoveryResult {
+function discoverRecordFiles(
+  rootAbs: string,
+  modulePathRel: string,
+  shapePathRel: string,
+  moduleId: string,
+  ignoredDirectories: IgnoredDirectory[],
+): RecordDiscoveryResult {
   const result: RecordDiscoveryResult = {
     record_file_paths: [],
     errored_file_paths: [],
@@ -4104,7 +4126,32 @@ function discoverRecordFiles(rootAbs: string, moduleId: string): RecordDiscovery
     diagnostics: [],
   };
 
-  function walk(dir: string): void {
+  const ignoredDirectoryByPath = new Map(ignoredDirectories.map((entry) => [entry.path, entry]));
+  const foundIgnoredDirectories = new Set<string>();
+
+  function collectIgnoredRecordLikeFiles(dir: string): void {
+    const readDirResult = safeReadDir(dir);
+    if (readDirResult.error) {
+      return;
+    }
+
+    for (const entry of readDirResult.entries) {
+      const fullPath = join(dir, entry.name);
+      if (entry.isDirectory()) {
+        if (entry.name.startsWith(".")) continue;
+        collectIgnoredRecordLikeFiles(fullPath);
+        continue;
+      }
+
+      if (!entry.isFile()) continue;
+
+      if (isReservedAgentMarkdownFile(entry.name) || detectRecordSourceFormat(entry.name)) {
+        result.ignored_file_paths.push(fullPath);
+      }
+    }
+  }
+
+  function walk(dir: string, relativeSegments: string[]): void {
     const readDirResult = safeReadDir(dir);
     if (readDirResult.error) {
       result.diagnostics.push(
@@ -4133,7 +4180,14 @@ function discoverRecordFiles(rootAbs: string, moduleId: string): RecordDiscovery
       const fullPath = join(dir, entry.name);
       if (entry.isDirectory()) {
         if (entry.name.startsWith(".")) continue;
-        walk(fullPath);
+        const entrySegments = relativeSegments.concat(entry.name);
+        const entryRelativePath = entrySegments.join("/");
+        if (ignoredDirectoryByPath.has(entryRelativePath)) {
+          foundIgnoredDirectories.add(entryRelativePath);
+          collectIgnoredRecordLikeFiles(fullPath);
+          continue;
+        }
+        walk(fullPath, entrySegments);
         continue;
       }
 
@@ -4191,7 +4245,32 @@ function discoverRecordFiles(rootAbs: string, moduleId: string): RecordDiscovery
     }
   }
 
-  walk(rootAbs);
+  walk(rootAbs, []);
+
+  for (const ignoredDirectory of ignoredDirectories) {
+    if (foundIgnoredDirectories.has(ignoredDirectory.path)) {
+      continue;
+    }
+
+    result.diagnostics.push(
+      diag(
+        codes.SHAPE_CONTRACT_INVALID,
+        "warning",
+        "module_shape",
+        shapePathRel,
+        `Module '${moduleId}' declares ignored directory '${ignoredDirectory.path}', but no such directory exists under '${modulePathRel}/'.`,
+        {
+          module_id: moduleId,
+          field: "ignored_directories",
+          reason: reasons.MODULE_IGNORED_DIRECTORY_MISSING,
+          expected: `existing directory under ${modulePathRel}/`,
+          actual: ignoredDirectory.path,
+          hint: "Create the directory under the module mount, move non-record files there, or remove the stale ignored_directories entry.",
+        },
+      ),
+    );
+  }
+
   result.errored_file_paths.sort();
   result.record_file_paths.sort();
   result.ignored_file_paths.sort();

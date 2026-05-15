@@ -2,12 +2,14 @@ import { expect, test } from "bun:test";
 import { existsSync } from "node:fs";
 import { chmod } from "node:fs/promises";
 import { join } from "node:path";
-import { codes } from "../src/diagnostics.ts";
+import { codes, reasons } from "../src/diagnostics.ts";
 import {
   expectModuleDiagnostic,
+  expectModuleDiagnosticContaining,
   expectNoModuleDiagnostic,
   renamePath,
   updateRecord,
+  updateShapeYaml,
   updateTextFile,
   validateFixture,
   withFixtureSandbox,
@@ -89,6 +91,75 @@ test.concurrent("reserved agent markdown files win over record path matching", a
     expect(moduleIgnoredCount(result, "backlog")).toBe(moduleIgnoredCount(baseline, "backlog") + backlogDelta);
     expectNoModuleDiagnostic(result, "backlog", codes.PARSE_FRONTMATTER, "Agents.md");
     expectNoModuleDiagnostic(result, "backlog", codes.PARSE_ENTITY_INFER, "Agents.md");
+  });
+});
+
+test.concurrent("module-declared ignored directories skip subtree validation and count record-like files as ignored", async () => {
+  await withFixtureSandbox("discovery-ignored-directories", async ({ root }) => {
+    const baseline = validateFixture(root);
+
+    await updateShapeYaml(root, "backlog", 1, (shape) => {
+      shape.ignored_directories = ["doctrine", "meta/drafts"];
+    });
+    await writePath(root, "workspace/backlog/doctrine/BRAND.md", "# Brand\n");
+    await writePath(root, "workspace/backlog/doctrine/CURRENT.MD", "# Current\n");
+    await writePath(root, "workspace/backlog/doctrine/archive.jsonl", "{broken\n");
+    await writePath(root, "workspace/backlog/meta/drafts/launch-outline.md", "# Draft\n");
+
+    const result = validateFixture(root);
+    expect(result.status).toBe("pass");
+    expect(result.summary.files_checked).toBe(baseline.summary.files_checked);
+    expect(result.summary.files_ignored).toBe(baseline.summary.files_ignored + 4);
+    expect(moduleIgnoredCount(result, "backlog")).toBe(moduleIgnoredCount(baseline, "backlog") + 4);
+    expectNoModuleDiagnostic(result, "backlog", codes.PARSE_ENTITY_INFER, "BRAND.md");
+    expectNoModuleDiagnostic(result, "backlog", codes.PARSE_MARKDOWN_EXTENSION_CASE, "CURRENT.MD");
+    expectNoModuleDiagnostic(result, "backlog", codes.PARSE_JSONL, "archive.jsonl");
+    expectNoModuleDiagnostic(result, "backlog", codes.PARSE_ENTITY_INFER, "launch-outline.md");
+  });
+});
+
+test.concurrent("ignored directories do not weaken stray markdown rejection outside ignored subtrees", async () => {
+  await withFixtureSandbox("discovery-ignored-directories-strict-outside", async ({ root }) => {
+    await updateShapeYaml(root, "backlog", 1, (shape) => {
+      shape.ignored_directories = ["doctrine"];
+    });
+    await writePath(root, "workspace/backlog/doctrine/ignored.md", "# Ignored\n");
+    await writePath(root, "workspace/backlog/README.md", "# Stray\n");
+
+    const result = validateFixture(root);
+    expect(result.status).toBe("fail");
+    expectModuleDiagnostic(result, "backlog", codes.PARSE_ENTITY_INFER, "workspace/backlog/README.md");
+    expectNoModuleDiagnostic(result, "backlog", codes.PARSE_ENTITY_INFER, "ignored.md");
+  });
+});
+
+test.concurrent("missing ignored directories surface warnings without failing validation", async () => {
+  await withFixtureSandbox("discovery-ignored-directories-missing", async ({ root }) => {
+    await updateShapeYaml(root, "backlog", 1, (shape) => {
+      shape.ignored_directories = ["doctrine", "meta/drafts", "incubator/sketches"];
+    });
+    await writePath(root, "workspace/backlog/doctrine/BRAND.md", "# Brand\n");
+    await writePath(root, "workspace/backlog/meta/drafts/launch-outline.md", "# Draft\n");
+
+    const result = validateFixture(root);
+    expect(result.status).toBe("warn");
+    expect(result.summary.error_count).toBe(0);
+    expect(result.summary.warning_count).toBe(1);
+
+    const backlogReport = result.modules.find((report) => report.module_id === "backlog");
+    expect(backlogReport).toBeDefined();
+    expect(backlogReport?.status).toBe("warn");
+    expect(backlogReport?.summary.warning_count).toBe(1);
+
+    const diagnostic = expectModuleDiagnosticContaining(
+      result,
+      "backlog",
+      codes.SHAPE_CONTRACT_INVALID,
+      "incubator/sketches",
+      ".als/modules/backlog/v1/module.ts",
+    );
+    expect(diagnostic.severity).toBe("warning");
+    expect(diagnostic.reason).toBe(reasons.MODULE_IGNORED_DIRECTORY_MISSING);
   });
 });
 

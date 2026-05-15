@@ -1,7 +1,12 @@
 import { z } from "zod";
 import { fieldNameSchema as fieldName, kebabNameSchema as entityName, nonEmptyStringSchema as nonEmptyString } from "./naming.ts";
 import { parsePathTemplate } from "./parser/path-template.ts";
-const moduleMountPath = z.string().regex(/^[a-z][a-z0-9]*(?:-[a-z0-9]+)*(?:\/[a-z][a-z0-9]*(?:-[a-z0-9]+)*)*$/);
+const relativeSlugPathPattern = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*(?:\/[a-z][a-z0-9]*(?:-[a-z0-9]+)*)*$/;
+const moduleMountPath = z.string().regex(relativeSlugPathPattern);
+const ignoredDirectoryPath = z.string().regex(
+  relativeSlugPathPattern,
+  "ignored_directories entries must be normalized relative directory paths using lowercase slug segments",
+);
 const positiveInt = z.number().int().positive();
 
 export interface GuidanceShape {
@@ -123,6 +128,31 @@ export function isPathPrefix(prefix: string[], full: string[]): boolean {
 
 export function modulePathsOverlap(left: string[], right: string[]): boolean {
   return isPathPrefix(left, right) || isPathPrefix(right, left);
+}
+
+function templateSegmentCanMatchValue(templateSegment: string, value: string): boolean {
+  const match = templateSegment.match(/^(.*)\{[^}]+\}(.*)$/);
+  if (!match) {
+    return templateSegment === value;
+  }
+
+  const prefix = match[1];
+  const suffix = match[2];
+  if (prefix && !value.startsWith(prefix)) return false;
+  if (suffix && !value.endsWith(suffix)) return false;
+
+  const captured = value.slice(prefix.length, suffix ? value.length - suffix.length : undefined);
+  return captured.length > 0;
+}
+
+function ignoredDirectoryCanContainEntityRecords(ignoredDirectory: string, entityPath: string, entityName: string): boolean {
+  const ignoredSegments = splitModuleMountPath(ignoredDirectory);
+  const template = parsePathTemplate(entityPath, entityName);
+  if (template.segments.length <= ignoredSegments.length) {
+    return false;
+  }
+
+  return ignoredSegments.every((segment, index) => templateSegmentCanMatchValue(template.segments[index]!.text, segment));
 }
 
 const targetSchema = z.object({
@@ -663,12 +693,45 @@ const entitySourceFormatGateSchema = z.object({
 const entitySchema = entitySourceFormatGateSchema.pipe(z.union([markdownEntitySchema, jsonlEntitySchema]));
 
 export const moduleShapeSchema = z.object({
+  ignored_directories: z.array(ignoredDirectoryPath).optional(),
   dependencies: z.array(z.object({
     module: entityName,
   })),
   delamains: z.record(entityName, delamainRegistryEntrySchema).optional(),
   entities: z.record(entityName, entitySchema),
 }).superRefine((value, ctx) => {
+  const seenIgnoredDirectories: Array<{ path: string; segments: string[] }> = [];
+  for (const [index, ignoredDirectory] of (value.ignored_directories ?? []).entries()) {
+    const segments = splitModuleMountPath(ignoredDirectory);
+    const overlappingDirectory = seenIgnoredDirectories.find((existing) => modulePathsOverlap(segments, existing.segments));
+    if (overlappingDirectory) {
+      const message = ignoredDirectory === overlappingDirectory.path
+        ? `ignored directory ${ignoredDirectory} duplicates ignored directory ${overlappingDirectory.path}`
+        : `ignored directory ${ignoredDirectory} overlaps ignored directory ${overlappingDirectory.path}`;
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message,
+        path: ["ignored_directories", index],
+      });
+      continue;
+    }
+
+    for (const [entityKey, entity] of Object.entries(value.entities)) {
+      if (ignoredDirectoryCanContainEntityRecords(ignoredDirectory, entity.path, entityKey)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `ignored directory ${ignoredDirectory} can contain records for entity path ${entity.path}`,
+          path: ["ignored_directories", index],
+        });
+      }
+    }
+
+    seenIgnoredDirectories.push({
+      path: ignoredDirectory,
+      segments,
+    });
+  }
+
   const seenDependencies = new Set<string>();
   for (const dependency of value.dependencies) {
     const key = dependency.module;

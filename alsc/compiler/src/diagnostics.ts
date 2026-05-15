@@ -105,6 +105,7 @@ export const reasons = {
   SYSTEM_MIGRATION_MANIFEST_NOT_FILE: "system.migration_manifest.not_file",
   SYSTEM_MIGRATION_ASSET_MISSING: "system.migration_asset.missing",
   MODULE_SHAPE_SCHEMA_REMOVED: "module_shape.schema.removed",
+  MODULE_IGNORED_DIRECTORY_MISSING: "module_shape.ignored_directory.missing",
   DELAMAIN_BUNDLE_TARGET_MISSING: "delamain.bundle.target_missing",
   DELAMAIN_BUNDLE_TARGET_NOT_FILE: "delamain.bundle.target_not_file",
   DELAMAIN_BUNDLE_TARGET_UNREADABLE: "delamain.bundle.target_unreadable",
