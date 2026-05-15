@@ -85,6 +85,46 @@ async function configureFactoryOperatorAssignmentRequirement(
   );
 }
 
+function groupedMarkdownEntity(path: string): Record<string, unknown> {
+  return {
+    source_format: "markdown",
+    path,
+    identity: {
+      id_field: "id",
+    },
+    fields: {
+      id: {
+        type: "id",
+        allow_null: false,
+      },
+      title: {
+        type: "string",
+        allow_null: false,
+      },
+    },
+    body: {
+      title: {
+        source: {
+          kind: "field",
+          field: "title",
+        },
+      },
+      sections: [
+        {
+          name: "SUMMARY",
+          allow_null: false,
+          content: {
+            mode: "freeform",
+            blocks: {
+              paragraph: {},
+            },
+          },
+        },
+      ],
+    },
+  };
+}
+
 test.concurrent("stale top-level schema fields in shape files are rejected", async () => {
   await withFixtureSandbox("shape-stale-schema-field", async ({ root }) => {
     await updateShapeYaml(root, "backlog", 1, (shape) => {
@@ -266,6 +306,49 @@ test.concurrent("entity paths must include the id placeholder", async () => {
     const result = validateFixture(root);
     expect(result.status).toBe("fail");
     expectModuleDiagnostic(result, "backlog", codes.SHAPE_INVALID, ".als/modules/backlog/v1/module.ts");
+  });
+});
+
+test.concurrent("grouped markdown leaves must stay literal when they omit the current {id}", async () => {
+  await withFixtureSandbox("shape-markdown-literal-leaf-required", async ({ root }) => {
+    await updateShapeYaml(root, "factory", 1, (shape) => {
+      const entities = shape.entities as Record<string, Record<string, unknown>>;
+      entities["work-item"].path = "{id}/{slug}.md";
+    });
+
+    const result = validateFixture(root, "factory");
+    expect(result.status).toBe("fail");
+    const diagnostic = expectModuleDiagnostic(
+      result,
+      "factory",
+      codes.SHAPE_MARKDOWN_LITERAL_LEAF_REQUIRED,
+      ".als/modules/factory/v1/module.ts",
+    );
+    expect(diagnostic.reason).toBe(reasons.SHAPE_MARKDOWN_LITERAL_LEAF_REQUIRED);
+    expect(diagnostic.message).toContain("must be a stable literal filename");
+  });
+});
+
+test.concurrent("grouped markdown literal leaf collisions are rejected at shape time", async () => {
+  await withFixtureSandbox("shape-markdown-literal-leaf-collision", async ({ root }) => {
+    await updateShapeYaml(root, "factory", 1, (shape) => {
+      delete shape.delamains;
+      shape.entities = {
+        "video-analysis": groupedMarkdownEntity("{id}/notes.md"),
+        "launch-session": groupedMarkdownEntity("{id}/notes.md"),
+      };
+    });
+
+    const result = validateFixture(root, "factory");
+    expect(result.status).toBe("fail");
+    const diagnostic = expectModuleDiagnostic(
+      result,
+      "factory",
+      codes.SHAPE_MARKDOWN_LITERAL_LEAF_COLLISION,
+      ".als/modules/factory/v1/module.ts",
+    );
+    expect(diagnostic.reason).toBe(reasons.SHAPE_MARKDOWN_LITERAL_LEAF_COLLISION);
+    expect(diagnostic.message).toContain("collides with entity");
   });
 });
 

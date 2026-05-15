@@ -699,12 +699,15 @@ Path templates use `{placeholder}` segments to map records to filesystem locatio
 - `{parent_entity_name}` captures an ancestor id using the ancestor entity name, not the ref field name.
 - Every path must contain `{id}`.
 - Markdown entities must end in `.md`.
+- Markdown current identity comes from the current entity's `{id}` path binding wherever it appears in the path.
+- If a markdown leaf omits `{id}`, the full leaf filename must be a stable literal.
 - JSONL entities must end in `.jsonl`.
 - Nested entities should include ancestor placeholders so lineage is encoded in the path.
 
 Examples:
 
 - Flat markdown: `items/{id}.md`
+- Grouped markdown siblings: `{id}/video-analysis.md`
 - Self-named directory: `items/{id}/{id}.md`
 - Nested markdown: `programs/{program}/experiments/{id}/{id}.md`
 - Deep nested markdown: `programs/{program}/experiments/{experiment}/runs/{id}.md`
@@ -724,7 +727,7 @@ id: { type: "id", allow_null: false }
 
 - Primary key.
 - Must be a non-empty string.
-- Must match the filename stem.
+- Must match the current entity's path-bound `{id}` capture.
 - `allow_null: true` is invalid on `id`.
 
 #### string
@@ -1036,7 +1039,7 @@ Use `outline` when the heading tree itself is part of the schema contract. Use `
 - Field names must match `^[a-z][a-z0-9_]*$`.
 - `system_id` may be any non-empty string, though kebab-case is recommended.
 - Section names may be any non-empty string; `UPPER_SNAKE_CASE` is recommended.
-- Record ids may be any non-empty string but must match the filename stem.
+- Record ids may be any non-empty string but must match the current entity's path-bound `{id}` capture.
 - Authoring workflows should default skill ids to `<module-id>-<base-skill-name>`. When the base phrase already repeats the module name, normalize to one leading module prefix.
 - `AGENTS.md` and `CLAUDE.md` at any depth in the module subtree are reserved non-record files, matched case-insensitively (including the `.md` extension), and ignored during record validation.
 - Module-declared `ignored_directories` add a second explicit non-record carve-out: files beneath those directories stay module-owned, but record discovery skips validation there and counts record-like files as ignored.

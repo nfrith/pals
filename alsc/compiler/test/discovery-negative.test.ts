@@ -8,6 +8,7 @@ import {
   expectModuleDiagnosticContaining,
   expectNoModuleDiagnostic,
   renamePath,
+  removePath,
   updateRecord,
   updateShapeYaml,
   updateTextFile,
@@ -31,6 +32,111 @@ function reservedPathDelta(root: string, relativePath: string): 0 | 1 {
 
 function isRootUser(): boolean {
   return typeof process.getuid === "function" && process.getuid() === 0;
+}
+
+function groupedFactoryEntity(path: string): Record<string, unknown> {
+  return {
+    source_format: "markdown",
+    path,
+    identity: {
+      id_field: "id",
+    },
+    fields: {
+      id: {
+        type: "id",
+        allow_null: false,
+      },
+      title: {
+        type: "string",
+        allow_null: false,
+      },
+    },
+    body: {
+      title: {
+        source: {
+          kind: "field",
+          field: "title",
+        },
+      },
+      sections: [
+        {
+          name: "SUMMARY",
+          allow_null: false,
+          content: {
+            mode: "freeform",
+            blocks: {
+              paragraph: {},
+            },
+          },
+        },
+      ],
+    },
+  };
+}
+
+async function configureFactoryGroupedMarkdownFixture(root: string): Promise<void> {
+  await updateShapeYaml(root, "factory", 1, (shape) => {
+    delete shape.delamains;
+    shape.entities = {
+      "video-analysis": groupedFactoryEntity("{id}/video-analysis.md"),
+      "launch-session": groupedFactoryEntity("{id}/launch-session.md"),
+      "thumbnail-design": groupedFactoryEntity("{id}/thumbnail-design.md"),
+    };
+  });
+
+  await removePath(root, "workspace/factory/items");
+
+  await writePath(
+    root,
+    "workspace/factory/b71-bmad-poem/video-analysis.md",
+    [
+      "---",
+      "id: b71-bmad-poem",
+      "title: BMAD poem video analysis",
+      "---",
+      "",
+      "# BMAD poem video analysis",
+      "",
+      "## SUMMARY",
+      "",
+      "Grouped markdown validation fixture.",
+      "",
+    ].join("\n"),
+  );
+  await writePath(
+    root,
+    "workspace/factory/b71-bmad-poem/launch-session.md",
+    [
+      "---",
+      "id: b71-bmad-poem",
+      "title: BMAD poem launch session",
+      "---",
+      "",
+      "# BMAD poem launch session",
+      "",
+      "## SUMMARY",
+      "",
+      "Grouped markdown validation fixture.",
+      "",
+    ].join("\n"),
+  );
+  await writePath(
+    root,
+    "workspace/factory/b71-bmad-poem/thumbnail-design.md",
+    [
+      "---",
+      "id: b71-bmad-poem",
+      "title: BMAD poem thumbnail design",
+      "---",
+      "",
+      "# BMAD poem thumbnail design",
+      "",
+      "## SUMMARY",
+      "",
+      "Grouped markdown validation fixture.",
+      "",
+    ].join("\n"),
+  );
 }
 
 test.concurrent("invalid frontmatter syntax fails parsing", async () => {
@@ -288,7 +394,7 @@ test.concurrent("unreadable record files fail cleanly and validation continues",
   });
 });
 
-test.concurrent("record ids must match filename stems", async () => {
+test.concurrent("record ids must match current entity path bindings", async () => {
   await withFixtureSandbox("discovery-filename-id", async ({ root }) => {
     await renamePath(
       root,
@@ -298,7 +404,9 @@ test.concurrent("record ids must match filename stems", async () => {
 
     const result = validateFixture(root);
     expect(result.status).toBe("fail");
-    expectModuleDiagnostic(result, "backlog", codes.ID_FILENAME_MISMATCH, "ITEM-9999.md");
+    const diagnostic = expectModuleDiagnostic(result, "backlog", codes.ID_PATH_BINDING_MISMATCH, "ITEM-9999.md");
+    expect(diagnostic.reason).toBe(reasons.ID_PATH_BINDING_MISMATCH);
+    expect(diagnostic.message).toContain("path-bound id");
   });
 });
 
@@ -316,7 +424,63 @@ test.concurrent("records moved outside their declared path templates fail entity
   });
 });
 
-test.concurrent("duplicate canonical identities are rejected", async () => {
+test.concurrent("grouped markdown sibling records can bind ids from directory segments", async () => {
+  await withFixtureSandbox("discovery-grouped-markdown-pass", async ({ root }) => {
+    await configureFactoryGroupedMarkdownFixture(root);
+
+    const result = validateFixture(root, "factory");
+    expect(result.status).toBe("pass");
+    expectNoModuleDiagnostic(result, "factory", codes.PARSE_ENTITY_INFER, "video-analysis.md");
+    expectNoModuleDiagnostic(result, "factory", codes.PARSE_ENTITY_INFER, "launch-session.md");
+    expectNoModuleDiagnostic(result, "factory", codes.PARSE_ENTITY_INFER, "thumbnail-design.md");
+  });
+});
+
+test.concurrent("grouped markdown frontmatter ids must match the directory-bound {id}", async () => {
+  await withFixtureSandbox("discovery-grouped-markdown-id-mismatch", async ({ root }) => {
+    await configureFactoryGroupedMarkdownFixture(root);
+    await updateRecord(root, "workspace/factory/b71-bmad-poem/video-analysis.md", (record) => {
+      record.data.id = "b65-guy-monroe-marketing-plan";
+    });
+
+    const result = validateFixture(root, "factory");
+    expect(result.status).toBe("fail");
+    const diagnostic = expectModuleDiagnostic(result, "factory", codes.ID_PATH_BINDING_MISMATCH, "video-analysis.md");
+    expect(diagnostic.reason).toBe(reasons.ID_PATH_BINDING_MISMATCH);
+    expect(diagnostic.hint).toContain("Update the markdown frontmatter id");
+  });
+});
+
+test.concurrent("undeclared grouped literal leaf variants fail entity inference", async () => {
+  await withFixtureSandbox("discovery-grouped-markdown-literal-leaf-variant", async ({ root }) => {
+    await configureFactoryGroupedMarkdownFixture(root);
+    await renamePath(
+      root,
+      "workspace/factory/b71-bmad-poem/video-analysis.md",
+      "workspace/factory/b71-bmad-poem/video-analysis-draft.md",
+    );
+
+    const result = validateFixture(root, "factory");
+    expect(result.status).toBe("fail");
+    expectModuleDiagnostic(result, "factory", codes.PARSE_ENTITY_INFER, "video-analysis-draft.md");
+  });
+});
+
+test.concurrent("repeated current-entity {id} bindings must agree across directory and leaf segments", async () => {
+  await withFixtureSandbox("discovery-repeated-id-disagreement", async ({ root }) => {
+    await renamePath(
+      root,
+      "workspace/experiments/programs/PRG-0001/PRG-0001.md",
+      "workspace/experiments/programs/PRG-0001/PRG-9999.md",
+    );
+
+    const result = validateFixture(root, "experiments");
+    expect(result.status).toBe("fail");
+    expectModuleDiagnostic(result, "experiments", codes.PARSE_ENTITY_INFER, "PRG-9999.md");
+  });
+});
+
+test.concurrent("frontmatter-only id collisions do not override path-bound canonical identity", async () => {
   await withFixtureSandbox("discovery-duplicate-id", async ({ root }) => {
     await updateRecord(root, "workspace/backlog/items/ITEM-0002.md", (record) => {
       record.data.id = "ITEM-0001";
@@ -324,6 +488,7 @@ test.concurrent("duplicate canonical identities are rejected", async () => {
 
     const result = validateFixture(root);
     expect(result.status).toBe("fail");
-    expectModuleDiagnostic(result, "backlog", codes.ID_DUPLICATE, "ITEM-0002.md");
+    expectNoModuleDiagnostic(result, "backlog", codes.ID_DUPLICATE, "ITEM-0002.md");
+    expectModuleDiagnostic(result, "backlog", codes.ID_PATH_BINDING_MISMATCH, "ITEM-0002.md");
   });
 });

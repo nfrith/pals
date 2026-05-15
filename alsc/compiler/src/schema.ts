@@ -155,6 +155,267 @@ function ignoredDirectoryCanContainEntityRecords(ignoredDirectory: string, entit
   return ignoredSegments.every((segment, index) => templateSegmentCanMatchValue(template.segments[index]!.text, segment));
 }
 
+function finalPathSegment(pathTemplate: string): string {
+  return splitModuleMountPath(pathTemplate).at(-1) ?? pathTemplate;
+}
+
+function markdownLeafOmitsCurrentId(pathTemplate: string): boolean {
+  return !finalPathSegment(pathTemplate).includes("{id}");
+}
+
+function markdownLeafContainsPlaceholder(pathTemplate: string): boolean {
+  return /\{[^}]+\}/.test(finalPathSegment(pathTemplate));
+}
+
+interface PlaceholderSegmentPattern {
+  entity_name: string;
+  prefix: string;
+  suffix: string;
+}
+
+function parsePlaceholderSegmentPattern(
+  segment: ReturnType<typeof parsePathTemplate>["segments"][number],
+): PlaceholderSegmentPattern | null {
+  if (segment.kind !== "placeholder" || !segment.entity_name) {
+    return null;
+  }
+
+  const match = segment.text.match(/^(.*)\{[^}]+\}(.*)$/);
+  if (!match) {
+    return null;
+  }
+
+  return {
+    entity_name: segment.entity_name,
+    prefix: match[1],
+    suffix: match[2],
+  };
+}
+
+function captureSegmentBinding(pattern: PlaceholderSegmentPattern, concrete: string): string | null {
+  if (pattern.prefix && !concrete.startsWith(pattern.prefix)) {
+    return null;
+  }
+
+  if (pattern.suffix && !concrete.endsWith(pattern.suffix)) {
+    return null;
+  }
+
+  const captured = concrete.slice(
+    pattern.prefix.length,
+    pattern.suffix ? concrete.length - pattern.suffix.length : undefined,
+  );
+  return captured.length > 0 ? captured : null;
+}
+
+function materializeSegmentBinding(pattern: PlaceholderSegmentPattern, binding: string): string {
+  return `${pattern.prefix}${binding}${pattern.suffix}`;
+}
+
+function combineCompatiblePrefixes(left: string, right: string): string | null {
+  if (left.length >= right.length) {
+    return left.startsWith(right) ? left : null;
+  }
+
+  return right.startsWith(left) ? right : null;
+}
+
+function combineCompatibleSuffixes(left: string, right: string): string | null {
+  if (left.length >= right.length) {
+    return left.endsWith(right) ? left : null;
+  }
+
+  return right.endsWith(left) ? right : null;
+}
+
+function buildSharedConcreteSegment(left: PlaceholderSegmentPattern, right: PlaceholderSegmentPattern): string | null {
+  const prefix = combineCompatiblePrefixes(left.prefix, right.prefix);
+  if (prefix === null) {
+    return null;
+  }
+
+  const suffix = combineCompatibleSuffixes(left.suffix, right.suffix);
+  if (suffix === null) {
+    return null;
+  }
+
+  const minimumLength = Math.max(
+    left.prefix.length + left.suffix.length + 1,
+    right.prefix.length + right.suffix.length + 1,
+  );
+  const fillerLength = Math.max(0, minimumLength - prefix.length - suffix.length);
+  return `${prefix}${"x".repeat(fillerLength)}${suffix}`;
+}
+
+function addBindingHint(hints: Map<string, Set<string>>, entityName: string, binding: string): void {
+  if (!hints.has(entityName)) {
+    hints.set(entityName, new Set());
+  }
+  hints.get(entityName)!.add(binding);
+}
+
+function collectLiteralBindingHints(
+  leftTemplate: ReturnType<typeof parsePathTemplate>,
+  rightTemplate: ReturnType<typeof parsePathTemplate>,
+): { left: Map<string, Set<string>>; right: Map<string, Set<string>> } | null {
+  const leftHints = new Map<string, Set<string>>();
+  const rightHints = new Map<string, Set<string>>();
+
+  for (let index = 0; index < leftTemplate.segments.length; index += 1) {
+    const leftSegment = leftTemplate.segments[index]!;
+    const rightSegment = rightTemplate.segments[index]!;
+
+    if (leftSegment.kind === "literal" && rightSegment.kind === "literal") {
+      if (leftSegment.text !== rightSegment.text) {
+        return null;
+      }
+      continue;
+    }
+
+    if (leftSegment.kind === "literal") {
+      const rightPattern = parsePlaceholderSegmentPattern(rightSegment);
+      if (!rightPattern) {
+        return null;
+      }
+      const captured = captureSegmentBinding(rightPattern, leftSegment.text);
+      if (!captured) {
+        return null;
+      }
+      addBindingHint(rightHints, rightPattern.entity_name, captured);
+      continue;
+    }
+
+    if (rightSegment.kind === "literal") {
+      const leftPattern = parsePlaceholderSegmentPattern(leftSegment);
+      if (!leftPattern) {
+        return null;
+      }
+      const captured = captureSegmentBinding(leftPattern, rightSegment.text);
+      if (!captured) {
+        return null;
+      }
+      addBindingHint(leftHints, leftPattern.entity_name, captured);
+    }
+  }
+
+  return {
+    left: leftHints,
+    right: rightHints,
+  };
+}
+
+function markdownTemplatesCanCollide(
+  leftTemplate: ReturnType<typeof parsePathTemplate>,
+  rightTemplate: ReturnType<typeof parsePathTemplate>,
+): boolean {
+  if (leftTemplate.segments.length !== rightTemplate.segments.length) {
+    return false;
+  }
+
+  const literalHints = collectLiteralBindingHints(leftTemplate, rightTemplate);
+  if (!literalHints) {
+    return false;
+  }
+
+  const search = (
+    index: number,
+    leftBindings: Map<string, string>,
+    rightBindings: Map<string, string>,
+  ): boolean => {
+    if (index >= leftTemplate.segments.length) {
+      return true;
+    }
+
+    const leftSegment = leftTemplate.segments[index]!;
+    const rightSegment = rightTemplate.segments[index]!;
+
+    if (leftSegment.kind === "literal" && rightSegment.kind === "literal") {
+      return leftSegment.text === rightSegment.text && search(index + 1, leftBindings, rightBindings);
+    }
+
+    const concreteCandidates = new Set<string>();
+
+    if (leftSegment.kind === "literal") {
+      concreteCandidates.add(leftSegment.text);
+    } else if (rightSegment.kind === "literal") {
+      concreteCandidates.add(rightSegment.text);
+    } else {
+      const leftPattern = parsePlaceholderSegmentPattern(leftSegment);
+      const rightPattern = parsePlaceholderSegmentPattern(rightSegment);
+      if (!leftPattern || !rightPattern) {
+        return false;
+      }
+
+      const leftBinding = leftBindings.get(leftPattern.entity_name);
+      const rightBinding = rightBindings.get(rightPattern.entity_name);
+
+      if (leftBinding) {
+        concreteCandidates.add(materializeSegmentBinding(leftPattern, leftBinding));
+      } else {
+        for (const hint of literalHints.left.get(leftPattern.entity_name) ?? []) {
+          concreteCandidates.add(materializeSegmentBinding(leftPattern, hint));
+        }
+      }
+
+      if (rightBinding) {
+        concreteCandidates.add(materializeSegmentBinding(rightPattern, rightBinding));
+      } else {
+        for (const hint of literalHints.right.get(rightPattern.entity_name) ?? []) {
+          concreteCandidates.add(materializeSegmentBinding(rightPattern, hint));
+        }
+      }
+
+      const genericShared = buildSharedConcreteSegment(leftPattern, rightPattern);
+      if (genericShared) {
+        concreteCandidates.add(genericShared);
+      }
+    }
+
+    for (const concrete of concreteCandidates) {
+      const nextLeftBindings = new Map(leftBindings);
+      const nextRightBindings = new Map(rightBindings);
+
+      const leftPattern = parsePlaceholderSegmentPattern(leftSegment);
+      if (leftPattern) {
+        const captured = captureSegmentBinding(leftPattern, concrete);
+        if (!captured) {
+          continue;
+        }
+        const existing = nextLeftBindings.get(leftPattern.entity_name);
+        if (existing && existing !== captured) {
+          continue;
+        }
+        nextLeftBindings.set(leftPattern.entity_name, captured);
+      } else if (leftSegment.text !== concrete) {
+        continue;
+      }
+
+      const rightPattern = parsePlaceholderSegmentPattern(rightSegment);
+      if (rightPattern) {
+        const captured = captureSegmentBinding(rightPattern, concrete);
+        if (!captured) {
+          continue;
+        }
+        const existing = nextRightBindings.get(rightPattern.entity_name);
+        if (existing && existing !== captured) {
+          continue;
+        }
+        nextRightBindings.set(rightPattern.entity_name, captured);
+      } else if (rightSegment.text !== concrete) {
+        continue;
+      }
+
+      if (search(index + 1, nextLeftBindings, nextRightBindings)) {
+        return true;
+      }
+    }
+
+    return false;
+  };
+
+  return search(0, new Map(), new Map());
+}
+
 const targetSchema = z.object({
   module: entityName,
   entity: entityName,
@@ -515,6 +776,14 @@ const markdownEntitySchema = z.union([plainMarkdownEntitySchema, variantMarkdown
     });
   }
 
+  if (markdownLeafOmitsCurrentId(value.path) && markdownLeafContainsPlaceholder(value.path)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: `markdown literal leaf required: leaf '${finalPathSegment(value.path)}' omits {id}; if the leaf does not contain {id}, it must be a stable literal filename such as 'video-analysis.md'`,
+      path: ["path"],
+    });
+  }
+
   if (value.body?.title) {
     validateTitleSource(value.body.title.source, value.fields, ctx, ["body", "title", "source"]);
   }
@@ -781,6 +1050,34 @@ export const moduleShapeSchema = z.object({
           path: ["entities", entityKey, "path"],
         });
       }
+    }
+  }
+
+  const markdownEntities = Object.entries(value.entities)
+    .filter(([, entity]) => entity.source_format === "markdown")
+    .map(([entityKey, entity]) => ({
+      entity_key: entityKey,
+      path: entity.path,
+      template: parsePathTemplate(entity.path, entityKey),
+      uses_literal_leaf: markdownLeafOmitsCurrentId(entity.path),
+    }));
+
+  for (let leftIndex = 0; leftIndex < markdownEntities.length; leftIndex += 1) {
+    const leftEntity = markdownEntities[leftIndex]!;
+    for (let rightIndex = leftIndex + 1; rightIndex < markdownEntities.length; rightIndex += 1) {
+      const rightEntity = markdownEntities[rightIndex]!;
+      if (!leftEntity.uses_literal_leaf && !rightEntity.uses_literal_leaf) {
+        continue;
+      }
+      if (!markdownTemplatesCanCollide(leftEntity.template, rightEntity.template)) {
+        continue;
+      }
+
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `markdown literal leaf collision: entity '${rightEntity.entity_key}' path '${rightEntity.path}' collides with entity '${leftEntity.entity_key}' path '${leftEntity.path}'; grouped literal leaves must remain uniquely identifiable within the shared directory shape`,
+        path: ["entities", rightEntity.entity_key, "path"],
+      });
     }
   }
 });

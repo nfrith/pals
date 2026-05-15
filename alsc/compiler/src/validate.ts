@@ -1,4 +1,4 @@
-import { basename, dirname, isAbsolute, join, parse, relative, resolve } from "node:path";
+import { dirname, isAbsolute, join, parse, relative, resolve } from "node:path";
 import { readFileSync, readdirSync, statSync, type Dirent } from "node:fs";
 import matter from "gray-matter";
 import { ZodError } from "zod";
@@ -2226,16 +2226,29 @@ function validateIdentity(record: ParsedRecord): CompilerDiagnostic[] {
     return diagnostics;
   }
 
-  const fileStem = basename(record.file_rel).replace(/\.md$/, "");
-  if (fileStem !== idValue) {
+  const pathBoundId = record.bindings.get(record.entity_name);
+  if (!pathBoundId) {
+    return diagnostics;
+  }
+
+  if (pathBoundId !== idValue) {
     diagnostics.push(
-      diag(codes.ID_FILENAME_MISMATCH, "error", "identity", record.file_rel, `Filename stem '${fileStem}' does not match id '${idValue}'`, {
-        module_id: record.module_id,
-        entity: record.entity_name,
-        field: "id",
-        expected: idValue,
-        actual: fileStem,
-      }),
+      diag(
+        codes.ID_PATH_BINDING_MISMATCH,
+        "error",
+        "identity",
+        record.file_rel,
+        `Frontmatter id '${idValue}' does not match path-bound id '${pathBoundId}'`,
+        {
+          module_id: record.module_id,
+          entity: record.entity_name,
+          field: "id",
+          reason: reasons.ID_PATH_BINDING_MISMATCH,
+          expected: pathBoundId,
+          actual: idValue,
+          hint: "Update the markdown frontmatter id or move the record so the current entity's {id} path binding matches it.",
+        },
+      ),
     );
   }
 
@@ -3046,8 +3059,8 @@ function buildCanonicalUri(
     return buildJsonlCanonicalUri(context, entityName, bindings);
   }
 
-  const idValue = record.frontmatter?.id;
-  if (typeof idValue !== "string" || idValue.length === 0) return null;
+  const idValue = bindings.get(entityName);
+  if (!idValue) return null;
 
   const segments: string[] = [];
   const lineage: string[] = [];
@@ -4419,6 +4432,24 @@ function resolveParseIssueCode(
   phase: "system_config" | "module_shape",
   issue: ZodError["issues"][number],
 ): string {
+  if (
+    phase === "module_shape"
+    && issue.code === "custom"
+    && typeof issue.message === "string"
+    && issue.message.startsWith("markdown literal leaf required:")
+  ) {
+    return codes.SHAPE_MARKDOWN_LITERAL_LEAF_REQUIRED;
+  }
+
+  if (
+    phase === "module_shape"
+    && issue.code === "custom"
+    && typeof issue.message === "string"
+    && issue.message.startsWith("markdown literal leaf collision:")
+  ) {
+    return codes.SHAPE_MARKDOWN_LITERAL_LEAF_COLLISION;
+  }
+
   if (phase === "system_config" && issue.path[0] === "als_version") {
     return codes.SYSTEM_ALS_VERSION_INVALID;
   }
@@ -4441,6 +4472,24 @@ function resolveParseIssueReason(
   phase: "system_config" | "module_shape",
   issue: ZodError["issues"][number],
 ): string | undefined {
+  if (
+    phase === "module_shape"
+    && issue.code === "custom"
+    && typeof issue.message === "string"
+    && issue.message.startsWith("markdown literal leaf required:")
+  ) {
+    return reasons.SHAPE_MARKDOWN_LITERAL_LEAF_REQUIRED;
+  }
+
+  if (
+    phase === "module_shape"
+    && issue.code === "custom"
+    && typeof issue.message === "string"
+    && issue.message.startsWith("markdown literal leaf collision:")
+  ) {
+    return reasons.SHAPE_MARKDOWN_LITERAL_LEAF_COLLISION;
+  }
+
   if (phase === "system_config" && issue.path[0] === "als_version") {
     return reasons.SYSTEM_ALS_VERSION_INVALID;
   }
