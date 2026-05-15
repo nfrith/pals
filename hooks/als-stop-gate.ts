@@ -26,7 +26,6 @@ try {
     context: {
       plugin_root: derivePluginRootFromEntrypoint(import.meta.url),
     },
-    demo_mode: process.env.ALS_DEMO_MODE === "1",
     session_id: input?.session_id ?? "",
   });
 

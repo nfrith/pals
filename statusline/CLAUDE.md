@@ -181,10 +181,7 @@ All stored in `$SCRIPT_DIR/.cache/` (under the deployed scripts directory):
 
 ## Delamain discovery
 
-The daemon discovers delamains from two sources:
-
-1. **Walk up from cwd** — finds `.claude/delamains/` in the project tree
-2. **`.claude/delamain-roots`** — a file listing additional system roots to scan (one path per line). Written by `/run-demo`, removed by `/reset-demo`.
+The daemon discovers delamains by walking up from `cwd` until it finds `.claude/delamains/` in the current ALS system.
 
 ## References
 

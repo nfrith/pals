@@ -12,7 +12,7 @@ Accepted
   - plain `bun run` plus later in-code env deletion still billed API credits when `ANTHROPIC_API_KEY` was present
   - `env -u ANTHROPIC_API_KEY` at spawn time held balance steady
   - a sibling preflight module imported before every other import also held balance steady under plain `bun run`
-- The leak class exists in the canonical `/new` dispatcher template, already-copied latest-version dispatcher bundles, deployed `.claude/delamains/**` projections, `skills/run-demo/dispatcher`, and Ghost's `cyber-brain` construct.
+- The leak class exists in the canonical `/new` dispatcher template, already-copied latest-version dispatcher bundles, deployed `.claude/delamains/**` projections, and Ghost's `cyber-brain` construct.
 - Operator direction for this pass is latest-version-only propagation. Older dispatcher versions remain immutable snapshots unless they are later revived as the latest version.
 
 ## Decision
@@ -24,7 +24,6 @@ Accepted
   - `delete process.env.ANTHROPIC_API_KEY;`
 - The preflight module must execute before any direct or transitive import can cause `@anthropic-ai/claude-agent-sdk` to evaluate.
 - The canonical dispatcher template at `skills/new/references/dispatcher/` is the source of truth for this contract. Future `/new` copies must inherit the preflight pattern by default.
-- `skills/run-demo/dispatcher/` follows the same preflight contract because it is also an SDK-backed dispatcher entrypoint.
 - Ghost's `cyber-brain` construct follows the same sibling-file contract, but its entrypoint uses its existing `.ts` local-import convention:
   - `import "./preflight.ts";`
 - Canonical dispatcher sources remain the edit surface for deployed `.claude/delamains/**` bundles. Projection refresh happens through `alsc deploy claude .`, not by hand-editing deployed mirrors.
@@ -34,7 +33,7 @@ Accepted
 
 - Required: every latest-version Delamain dispatcher `src/index.ts` begins with `import "./preflight.js";` as literal line 1.
 - Required: every latest-version Delamain dispatcher `src/preflight.ts` exists beside `src/index.ts` and contains the why-comment plus `delete process.env.ANTHROPIC_API_KEY;`.
-- Required: the `/new` dispatcher template and `run-demo` dispatcher continue to implement the same first-import preflight rule.
+- Required: the `/new` dispatcher template continues to implement the first-import preflight rule.
 - Required: Ghost `cyber-brain` begins with `import "./preflight.ts";` and carries the sibling `src/preflight.ts` file.
 - Required: projected `.claude/delamains/**` copies stay aligned with authored dispatcher sources after deploy.
 - Allowed: later defensive deletions from cloned SDK env objects remain in place after preflight has already stripped the process environment.
@@ -48,9 +47,9 @@ Accepted
 ## Compiler Impact
 
 - No ALS shape syntax, parser semantics, or schema rules change in this decision.
-- `alsc/compiler/test/delamain-dispatcher-template.test.ts` must assert the canonical dispatcher template and `run-demo` dispatcher both:
-  - open `src/index.ts` with the required first-line preflight import
-  - ship a sibling `src/preflight.ts` containing `delete process.env.ANTHROPIC_API_KEY;`
+- `alsc/compiler/test/delamain-dispatcher-template.test.ts` must assert the canonical dispatcher template:
+  - opens `src/index.ts` with the required first-line preflight import
+  - ships a sibling `src/preflight.ts` containing `delete process.env.ANTHROPIC_API_KEY;`
 - `alsc/compiler/test/deploy.test.ts` must assert deployed dispatcher projections preserve:
   - the first-line `import "./preflight.js";` contract in projected `src/index.ts`
   - the projected `src/preflight.ts` file with the auth-strip statement

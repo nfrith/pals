@@ -185,12 +185,6 @@ if (( ${#real_badges[@]} == 0 )); then
     [[ -d "$sr/.claude/delamains" ]] && delamain_dirs+=("$sr/.claude/delamains") && break
     sr=$(dirname "$sr")
   done
-  rf="$cwd/.claude/delamain-roots"
-  if [[ -f "$rf" ]]; then
-    while IFS= read -r er; do
-      [[ -n "$er" && -d "$er/.claude/delamains" ]] && delamain_dirs+=("$er/.claude/delamains")
-    done < "$rf"
-  fi
 
   for dp in "${delamain_dirs[@]}"; do
     for dy in "$dp"/*/delamain.yaml; do

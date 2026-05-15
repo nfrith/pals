@@ -112,7 +112,7 @@ The selector is written through compiler-owned helpers in the `alsc operator-con
 - Fresh `/install` lands directly on the ALS v5 roster surface.
 - `/configure-operator` is the canonical managed writer for roster entries and the local selector.
 - SessionStart injects identity only when the roster and local selector both resolve.
-- `.als/skip-operator-config` suppresses SessionStart identity injection for demo/reference systems.
+- `.als/skip-operator-config` suppresses SessionStart identity injection for systems that intentionally opt out of operator injection, including the canonical reference system.
 - `/upgrade-language` migrates v4 `.als/operator.md` into the v5 roster surface, then a live-machine helper writes the local selector after commit.
 
 ## Validation and Remediation

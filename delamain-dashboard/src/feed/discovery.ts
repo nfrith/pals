@@ -1,4 +1,4 @@
-import { readFile, readdir } from "fs/promises";
+import { readdir } from "fs/promises";
 import { join, resolve as resolvePath } from "path";
 
 export interface DiscoveredBundle {
@@ -8,21 +8,7 @@ export interface DiscoveredBundle {
 }
 
 export async function discoverDelamainRoots(systemRoot: string): Promise<string[]> {
-  const roots = [resolvePath(systemRoot)];
-  const rootsFile = join(systemRoot, ".claude", "delamain-roots");
-
-  try {
-    const raw = await readFile(rootsFile, "utf-8");
-    for (const line of raw.split(/\r?\n/)) {
-      const trimmed = line.trim();
-      if (!trimmed || trimmed.startsWith("#")) continue;
-      roots.push(resolvePath(trimmed));
-    }
-  } catch {
-    // Optional roots file.
-  }
-
-  return [...new Set(roots)];
+  return [resolvePath(systemRoot)];
 }
 
 export async function discoverDelamainBundles(systemRoot: string): Promise<{

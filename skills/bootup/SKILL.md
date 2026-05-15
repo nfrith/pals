@@ -16,20 +16,26 @@ The power button. Kills all running dispatchers, clears all state, starts everyt
 
 ### 1. Parse scan results
 
-Extract `SYSTEM_ROOT` and delamain names from the scan output. The plugin root resolves at tool-call time via harness substitution of `${CLAUDE_PLUGIN_ROOT}` in the dispatcher spawn command below.
+Extract `SYSTEM_ROOT` and delamain names from the scan output. The shared scan now reports real OS-process state:
+
+- `RUNNING_PIDS` = live `bun` dispatcher PIDs for this ALS system
+- `WRAPPER_PIDS` = related shell wrappers for those dispatchers
+- `PROCESS_COUNT: <name> <count>` = live `bun` dispatcher count per delamain
+
+The plugin root resolves at tool-call time via harness substitution of `${CLAUDE_PLUGIN_ROOT}` in the dispatcher spawn command below.
 
 - `NO_SYSTEM` → "Not an ALS system." Exit.
 - `NO_DELAMAINS` → "No delamains found." Exit.
 
 ### 2. Kill running dispatchers
 
-If `RUNNING_PIDS` is present in the scan output, kill them all:
+Always run the shared cleanup seam before spawning. It kills live dispatcher `bun` children and any related shell wrappers with `kill -9`, clears stale `status.json` heartbeat files, and aborts if any targeted PIDs survive the SIGKILL pass.
 
 ```bash
-kill {pid1} {pid2} {pid3} 2>/dev/null; rm -f {SYSTEM_ROOT}/.claude/delamains/*/status.json
+bash ${CLAUDE_PLUGIN_ROOT}/hooks/delamain-fleet.sh cleanup --system-root {SYSTEM_ROOT} --caller bootup
 ```
 
-If no running PIDs, still clear stale status files.
+If the cleanup command exits non-zero, stop immediately. Do not spawn a new fleet on top of survivors.
 
 ### 3. Start all dispatchers
 
@@ -45,10 +51,17 @@ Use the Bash tool with `run_in_background: true`. One call per dispatcher, all i
 
 ### 4. Verify
 
-Check status files. Dispatchers write `status.json` on startup — if missing, they haven't started yet. Run without sleep; if any show ✗, wait a moment and retry once.
+Re-run the scan after spawn. Success requires both:
+
+- `status.json` exists for each delamain
+- every `PROCESS_COUNT: <name> <count>` line reports exactly `1`
+
+`status.json` is only a heartbeat. It is not proof of uniqueness by itself. If any count is `0`, the dispatcher is down. If any count is greater than `1`, bootup failed to normalize the fleet and must report a duplicate-process error instead of claiming success.
+
+Run without sleep first; if any delamain still shows `status.json` missing or `PROCESS_COUNT != 1`, wait a moment and retry once.
 
 ```bash
-for name in {all_names}; do sf="{SYSTEM_ROOT}/.claude/delamains/$name/status.json"; [ -f "$sf" ] && echo "$name: ✓" || echo "$name: ✗"; done
+scan=$(bash ${CLAUDE_PLUGIN_ROOT}/skills/bootup/scan.sh)
 ```
 
 ### 5. Start the delamain dashboard service

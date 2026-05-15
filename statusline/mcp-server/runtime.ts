@@ -426,24 +426,6 @@ function scanDelamains(systemRoot: string): DelamainRecord[] {
     dirs.push(primary);
   }
 
-  const rootsFile = join(systemRoot, ".claude", "delamain-roots");
-  if (existsSync(rootsFile)) {
-    try {
-      const extra = readFileSync(rootsFile, "utf8")
-        .split("\n")
-        .map((entry) => entry.trim())
-        .filter((entry) => entry.length > 0);
-      for (const root of extra) {
-        const path = join(root, ".claude", "delamains");
-        if (existsSync(path)) {
-          dirs.push(path);
-        }
-      }
-    } catch {
-      // Unreadable roots file is not fatal.
-    }
-  }
-
   const out: DelamainRecord[] = [];
   for (const dir of dirs) {
     let entries: string[];

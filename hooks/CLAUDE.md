@@ -52,19 +52,13 @@ ALS therefore treats Codex `Stop` as a confirmed platform limitation:
 
 ### delamain-stop.sh (SessionEnd)
 
-On session end, kills running delamain dispatchers and removes their heartbeat files (`status.json`). Skips cleanup when reason is `clear` or `resume` — dispatchers survive those transitions.
+On session end, skips `clear` / `resume` exits, then runs the shared dispatcher cleanup seam at [`delamain-fleet.sh`](./delamain-fleet.sh). That seam enumerates the real dispatcher fleet for the current ALS system, kills live `bun` children and related shell wrappers with `kill -9`, removes heartbeat files (`status.json`), and verifies the targeted PIDs are actually gone before the hook continues.
 
 The hook also appends one JSONL entry to `{SYSTEM_ROOT}/.claude/scripts/.cache/pulse/sessionend.log` for every invocation, including skipped `clear` / `resume` exits. When pulse is running, the hook records the target PID before attempting the SessionEnd reap signal. Pulse uses that breadcrumb plus its own `shutdown.log` entries to diagnose whether a shutdown came from the hook path or from its parent shell.
 
 Dispatchers live and die with their Claude session. On next session start, `delamain-start.sh` detects them as offline and suggests restarting.
 
 `delamain-stop.sh` is intentionally outside SDR 053's compiler-owned cohort. It stays on its shell/lifecycle boundary until a lifecycle-focused job reopens that contract explicitly.
-
-## Environment variables
-
-### `ALS_DEMO_MODE`
-
-When set to `"1"`, `als-validate.ts` and `als-stop-gate.ts` skip all validation. Used by the reference-system [`/run-demo`](../reference-system/.claude/skills/run-demo/SKILL.md) traffic generators so seed agents can write items without triggering the compiler on every write.
 
 ## Requirements
 

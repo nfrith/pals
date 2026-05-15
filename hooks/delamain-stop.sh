@@ -5,6 +5,8 @@
 
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+
 input=$(cat)
 reason=$(echo "$input" | jq -r '.reason // "other"')
 cwd=$(echo "$input" | jq -r '.cwd // empty')
@@ -15,10 +17,11 @@ session_id=$(echo "$input" | jq -r '.session_id // .sessionId // empty')
 # Walk up from cwd to find system root
 sys_root="$cwd"
 while [[ "$sys_root" != "/" ]]; do
-    [[ -d "$sys_root/.claude/delamains" ]] && break
+    [[ -f "$sys_root/.als/system.ts" ]] && break
     sys_root=$(dirname "$sys_root")
 done
 
+[[ ! -f "$sys_root/.als/system.ts" ]] && exit 0
 [[ ! -d "$sys_root/.claude/delamains" ]] && exit 0
 
 pulse_cache_dir="$sys_root/.claude/scripts/.cache/pulse"
@@ -63,19 +66,7 @@ case "$reason" in
         ;;
 esac
 
-for sf in "$sys_root"/.claude/delamains/*/status.json; do
-    [[ -f "$sf" ]] || continue
-    pid=$(jq -r '.pid // empty' "$sf" 2>/dev/null)
-    d_name=$(jq -r '.name // "unknown"' "$sf" 2>/dev/null)
-
-    # Kill the dispatcher process
-    if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
-        kill "$pid" 2>/dev/null || true
-    fi
-
-    # Clean up heartbeat file
-    rm -f "$sf"
-done
+bash "$SCRIPT_DIR/delamain-fleet.sh" cleanup --system-root "$sys_root" --caller session-end --quiet || true
 
 # Reap PULSE (statusline background data producer, GF-034 Phase 2).
 # Shares the same reason filter as dispatchers — already skipped clear|resume

@@ -30,7 +30,6 @@ interface ClaudePostToolUsePayload {
 try {
   const input = await parseHookInput<ClaudePostToolUsePayload | CodexHookPayload>();
   const pluginRoot = derivePluginRootFromEntrypoint(import.meta.url);
-  const demoMode = process.env.ALS_DEMO_MODE === "1";
   const isCodex = isCodexHookPayload(input);
   const touchedPaths = isCodex
     ? extractCodexTouchedPaths(input)
@@ -48,7 +47,6 @@ try {
       context: {
         plugin_root: pluginRoot,
       },
-      demo_mode: demoMode,
       file_path: validationPaths[0],
     });
     emitValidationResult(result, isCodex);
@@ -60,7 +58,6 @@ try {
       context: {
         plugin_root: pluginRoot,
       },
-      demo_mode: demoMode,
       file_path: filePath,
     })
   );

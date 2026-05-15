@@ -9,7 +9,7 @@
 # Usage:
 #   bash statusline-daemon.sh /path/to/project &
 #
-# The daemon writes its PID to .cache/daemon.pid for cleanup by /reset-demo.
+# The daemon writes its PID to .cache/daemon.pid for local cleanup/diagnostics.
 # Kill it with: kill $(cat .cache/daemon.pid)
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -36,12 +36,6 @@ while true; do
     [[ -d "$sr/.claude/delamains" ]] && delamain_dirs+=("$sr/.claude/delamains") && break
     sr=$(dirname "$sr")
   done
-  rf="$CWD/.claude/delamain-roots"
-  if [[ -f "$rf" ]]; then
-    while IFS= read -r er; do
-      [[ -n "$er" && -d "$er/.claude/delamains" ]] && delamain_dirs+=("$er/.claude/delamains")
-    done < "$rf"
-  fi
 
   if [[ -f "$CACHE_DIR/test-mode" ]]; then
     # Test mode: mock badges from test-mode file

@@ -147,18 +147,6 @@ test("canonical dispatcher template strips ANTHROPIC_API_KEY before SDK imports"
   expect(preflightText).toContain("delete process.env.ANTHROPIC_API_KEY;");
 });
 
-test("run-demo dispatcher strips ANTHROPIC_API_KEY before SDK imports", async () => {
-  const indexText = await Bun.file(
-    new URL("../../../skills/run-demo/dispatcher/src/index.ts", import.meta.url),
-  ).text();
-  const preflightText = await Bun.file(
-    new URL("../../../skills/run-demo/dispatcher/src/preflight.ts", import.meta.url),
-  ).text();
-
-  expect(indexText.split("\n")[0]).toBe('import "./preflight.js";');
-  expect(preflightText).toContain("delete process.env.ANTHROPIC_API_KEY;");
-});
-
 test("canonical dispatcher template ships worktree runtime modules", async () => {
   const runtimeText = await Bun.file(
     new URL("../../../delamain-dispatcher/src/dispatcher-runtime.ts", import.meta.url),

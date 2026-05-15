@@ -547,28 +547,6 @@ test("als post-edit hook blocks Codex apply_patch edits with JSON output", async
   });
 });
 
-test("als post-edit hook bypasses validation in demo mode", async () => {
-  await withFixtureSandbox("cli-hook-post-demo", async ({ root }) => {
-    await updateRecord(root, "workspace/backlog/items/ITEM-0001.md", (record) => {
-      delete record.data.title;
-    });
-
-    const process = runHook(postValidateHookPath, {
-      tool_input: {
-        file_path: `${root}/workspace/backlog/items/ITEM-0001.md`,
-      },
-    }, {
-      env: {
-        ALS_DEMO_MODE: "1",
-      },
-    });
-
-    expect(process.exitCode).toBe(0);
-    expect(process.stdout).toBe("");
-    expect(process.stderr).toBe("");
-  });
-});
-
 test("als stop hook surfaces a final warn-only reminder without blocking", async () => {
   await withFixtureSandbox("cli-hook-stop-warn", async ({ root }) => {
     await configureSyntheticDeprecationFixture(root);
@@ -691,31 +669,6 @@ test("als stop hook blocks Codex stop with JSON output", async () => {
       expect(output.systemMessage).toBeUndefined();
       expect(output.hookSpecificOutput).toBeUndefined();
       expect(Object.keys(output).sort()).toEqual(["decision", "reason"]);
-      expect(existsSync(breadcrumbPath)).toBe(true);
-    } finally {
-      rmSync(breadcrumbPath, { force: true });
-    }
-  });
-});
-
-test("als stop hook bypasses validation in demo mode", async () => {
-  await withFixtureSandbox("cli-hook-stop-demo", async ({ root }) => {
-    const sessionId = `als099-demo-${randomUUID()}`;
-    const breadcrumbPath = `/tmp/als-touched-${sessionId}`;
-
-    try {
-      await Bun.write(breadcrumbPath, `${root}:backlog\n`);
-      const process = runHook(stopHookPath, {
-        session_id: sessionId,
-      }, {
-        env: {
-          ALS_DEMO_MODE: "1",
-        },
-      });
-
-      expect(process.exitCode).toBe(0);
-      expect(process.stdout).toBe("");
-      expect(process.stderr).toBe("");
       expect(existsSync(breadcrumbPath)).toBe(true);
     } finally {
       rmSync(breadcrumbPath, { force: true });
