@@ -14,6 +14,19 @@
         ]
       }
     ],
+    "PreToolUse": [
+      {
+        "matcher": "apply_patch|Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bun ${PLUGIN_ROOT}/hooks/als-pre-edit-baseline.ts",
+            "timeout": 15,
+            "statusMessage": "Capturing ALS baseline"
+          }
+        ]
+      }
+    ],
     "PostToolUse": [
       {
         "matcher": "apply_patch|Edit|Write",

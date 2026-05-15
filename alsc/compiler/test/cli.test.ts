@@ -33,6 +33,7 @@ const compilerRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const alsRepoRoot = resolve(compilerRoot, "../..");
 const v5FixtureRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../../../language-upgrades/fixtures/v5");
 const sessionStartHookPath = resolve(alsRepoRoot, "hooks/operator-config-session-start.ts");
+const preBaselineHookPath = resolve(alsRepoRoot, "hooks/als-pre-edit-baseline.ts");
 const postBreadcrumbHookPath = resolve(alsRepoRoot, "hooks/als-breadcrumb.ts");
 const postValidateHookPath = resolve(alsRepoRoot, "hooks/als-validate.ts");
 const stopHookPath = resolve(alsRepoRoot, "hooks/als-stop-gate.ts");
@@ -340,8 +341,22 @@ test("alsc validate exits zero and reports warn when only deprecations are prese
 test("als post-edit hook surfaces warn-only context without blocking", async () => {
   await withFixtureSandbox("cli-hook-post-warn", async ({ root }) => {
     await configureSyntheticDeprecationFixture(root);
+    const sessionId = `als117-post-warn-${randomUUID()}`;
+
+    const baseline = runHook(preBaselineHookPath, {
+      session_id: sessionId,
+      tool_input: {
+        file_path: `${root}/workspace/backlog/items/ITEM-0001.md`,
+      },
+    }, {
+      env: syntheticDeprecationFixtureEnv(),
+    });
+    expect(baseline.exitCode).toBe(0);
+    expect(baseline.stdout).toBe("");
+    expect(baseline.stderr).toBe("");
 
     const process = runHook(postValidateHookPath, {
+      session_id: sessionId,
       tool_input: {
         file_path: `${root}/workspace/backlog/items/ITEM-0001.md`,
       },
@@ -359,6 +374,7 @@ test("als post-edit hook surfaces warn-only context without blocking", async () 
     };
     expect(output.decision).toBeUndefined();
     expect(output.hookSpecificOutput?.additionalContext).toContain("synthetic-deprecated");
+    expect(output.hookSpecificOutput?.additionalContext).toContain("\"classification\": \"pre-existing\"");
     expect(output.hookSpecificOutput?.additionalContext).toContain("do not block");
   });
 });
@@ -439,7 +455,18 @@ test("als breadcrumb hook parses Codex apply_patch payloads across add update de
 
 test("als post-edit hook stays silent on clean success", async () => {
   await withFixtureSandbox("cli-hook-post-pass", async ({ root }) => {
+    const sessionId = `als117-post-pass-${randomUUID()}`;
+
+    const baseline = runHook(preBaselineHookPath, {
+      session_id: sessionId,
+      tool_input: {
+        file_path: `${root}/workspace/backlog/items/ITEM-0001.md`,
+      },
+    });
+    expect(baseline.exitCode).toBe(0);
+
     const process = runHook(postValidateHookPath, {
+      session_id: sessionId,
       tool_input: {
         file_path: `${root}/workspace/backlog/items/ITEM-0001.md`,
       },
@@ -451,40 +478,73 @@ test("als post-edit hook stays silent on clean success", async () => {
   });
 });
 
-test("als post-edit hook blocks further edits when validation fails", async () => {
+test("als post-edit hook surfaces non-blocking failure advisories", async () => {
   await withFixtureSandbox("cli-hook-post-fail", async ({ root }) => {
+    const sessionId = `als117-post-fail-${randomUUID()}`;
+
+    const baseline = runHook(preBaselineHookPath, {
+      session_id: sessionId,
+      tool_input: {
+        file_path: `${root}/workspace/backlog/items/ITEM-0001.md`,
+      },
+    });
+    expect(baseline.exitCode).toBe(0);
+
     await updateRecord(root, "workspace/backlog/items/ITEM-0001.md", (record) => {
       delete record.data.title;
     });
 
     const process = runHook(postValidateHookPath, {
+      session_id: sessionId,
       tool_input: {
         file_path: `${root}/workspace/backlog/items/ITEM-0001.md`,
       },
     });
 
-    expect(process.exitCode).toBe(2);
+    expect(process.exitCode).toBe(0);
     expect(process.stderr).toBe("");
     const output = JSON.parse(process.stdout) as {
-      decision: string;
-      reason: string;
+      decision?: string;
       hookSpecificOutput?: {
         additionalContext?: string;
       };
     };
-    expect(output.decision).toBe("block");
-    expect(output.reason).toContain("STOP: fix all errors");
+    expect(output.decision).toBeUndefined();
     expect(output.hookSpecificOutput?.additionalContext).toContain("\"status\": \"fail\"");
+    expect(output.hookSpecificOutput?.additionalContext).toContain("PAL-RV-FM-001");
+    expect(output.hookSpecificOutput?.additionalContext).toContain("\"classification\": \"fresh\"");
   });
 });
 
 test("als post-edit hook parses Codex apply_patch payloads and dedupes module validation", async () => {
   await withFixtureSandbox("cli-hook-post-codex-warn", async ({ root }) => {
     await configureSyntheticDeprecationFixture(root);
+    const sessionId = `als117-post-codex-warn-${randomUUID()}`;
+
+    const baseline = runHook(preBaselineHookPath, {
+      hook_event_name: "PreToolUse",
+      cwd: root,
+      session_id: sessionId,
+      tool_name: "apply_patch",
+      tool_input: {
+        command: [
+          "*** Begin Patch",
+          "*** Update File: workspace/backlog/items/ITEM-0001.md",
+          "*** Update File: workspace/backlog/items/ITEM-0002.md",
+          "*** End Patch",
+        ].join("\n"),
+      },
+    }, {
+      env: syntheticDeprecationFixtureEnv(),
+    });
+    expect(baseline.exitCode).toBe(0);
+    expect(baseline.stdout).toBe("");
+    expect(baseline.stderr).toBe("");
 
     const process = runHook(postValidateHookPath, {
       hook_event_name: "PostToolUse",
       cwd: root,
+      session_id: sessionId,
       tool_name: "apply_patch",
       tool_input: {
         command: [
@@ -508,13 +568,31 @@ test("als post-edit hook parses Codex apply_patch payloads and dedupes module va
     };
     expect(output.decision).toBeUndefined();
     expect(output.hookSpecificOutput?.additionalContext).toContain("synthetic-deprecated");
-    expect(output.hookSpecificOutput?.additionalContext?.match(/ALS validation warnings for module "backlog"/g))
+    expect(output.hookSpecificOutput?.additionalContext).toContain("\"classification\": \"pre-existing\"");
+    expect(output.hookSpecificOutput?.additionalContext?.match(/ALS validation advisory for module "backlog"/g))
       .toHaveLength(1);
   });
 });
 
-test("als post-edit hook blocks Codex apply_patch edits with JSON output", async () => {
+test("als post-edit hook keeps Codex apply_patch failures advisory-only", async () => {
   await withFixtureSandbox("cli-hook-post-codex-fail", async ({ root }) => {
+    const sessionId = `als117-post-codex-fail-${randomUUID()}`;
+
+    const baseline = runHook(preBaselineHookPath, {
+      hook_event_name: "PreToolUse",
+      cwd: root,
+      session_id: sessionId,
+      tool_name: "apply_patch",
+      tool_input: {
+        command: [
+          "*** Begin Patch",
+          "*** Update File: workspace/backlog/items/ITEM-0001.md",
+          "*** End Patch",
+        ].join("\n"),
+      },
+    });
+    expect(baseline.exitCode).toBe(0);
+
     await updateRecord(root, "workspace/backlog/items/ITEM-0001.md", (record) => {
       delete record.data.title;
     });
@@ -522,6 +600,7 @@ test("als post-edit hook blocks Codex apply_patch edits with JSON output", async
     const process = runHook(postValidateHookPath, {
       hook_event_name: "PostToolUse",
       cwd: root,
+      session_id: sessionId,
       tool_name: "apply_patch",
       tool_input: {
         command: [
@@ -535,15 +614,15 @@ test("als post-edit hook blocks Codex apply_patch edits with JSON output", async
     expect(process.exitCode).toBe(0);
     expect(process.stderr).toBe("");
     const output = JSON.parse(process.stdout) as {
-      decision: string;
-      reason: string;
+      decision?: string;
       hookSpecificOutput?: {
         additionalContext?: string;
       };
     };
-    expect(output.decision).toBe("block");
-    expect(output.reason).toContain("STOP: fix all errors");
+    expect(output.decision).toBeUndefined();
     expect(output.hookSpecificOutput?.additionalContext).toContain("\"status\": \"fail\"");
+    expect(output.hookSpecificOutput?.additionalContext).toContain("PAL-RV-FM-001");
+    expect(output.hookSpecificOutput?.additionalContext).toContain("\"classification\": \"fresh\"");
   });
 });
 
@@ -672,6 +751,30 @@ test("als stop hook blocks Codex stop with JSON output", async () => {
       expect(existsSync(breadcrumbPath)).toBe(true);
     } finally {
       rmSync(breadcrumbPath, { force: true });
+    }
+  });
+});
+
+test("als stop hook skips stale missing roots and clears breadcrumbs", async () => {
+  await withFixtureSandbox("cli-hook-stop-skip-missing-root", async ({ root }) => {
+    const sessionId = `als117-stop-skip-${randomUUID()}`;
+    const breadcrumbPath = `/tmp/als-touched-${sessionId}`;
+    const missingRoot = join(tmpdir(), `als117-missing-root-${randomUUID()}`);
+
+    try {
+      await Bun.write(breadcrumbPath, `${missingRoot}:backlog\n${root}:backlog\n`);
+      const process = runHook(stopHookPath, {
+        session_id: sessionId,
+      });
+
+      expect(process.exitCode).toBe(0);
+      expect(process.stdout).toBe("");
+      expect(process.stderr).toBe("");
+      expect(existsSync(breadcrumbPath)).toBe(false);
+    } finally {
+      if (existsSync(breadcrumbPath)) {
+        rmSync(breadcrumbPath, { force: true });
+      }
     }
   });
 });

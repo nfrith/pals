@@ -1,16 +1,16 @@
 {
   "_comment": "Claude Code per-hook config under hooks/claude/. Keep plugin-rooted script paths in args using ${CLAUDE_PLUGIN_ROOT}; see hooks/CLAUDE.md for the Claude/Codex split.",
-  "description": "Records which ALS systems and modules were touched during this session",
+  "description": "Captures a first-touch ALS validation baseline before file edits",
   "hooks": {
-    "PostToolUse": [
+    "PreToolUse": [
       {
         "matcher": "Write|Edit|MultiEdit",
         "hooks": [
           {
             "type": "command",
             "command": "bun",
-            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/als-breadcrumb.ts"],
-            "timeout": 5
+            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/als-pre-edit-baseline.ts"],
+            "timeout": 15
           }
         ]
       }

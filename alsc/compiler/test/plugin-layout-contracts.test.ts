@@ -60,6 +60,7 @@ async function writeMinimalPluginHookSurface(
       version: "0.0.0-test",
       hooks: [
         "./hooks/claude/session-start-operator.json",
+        "./hooks/claude/pre-edit-baseline.json",
         "./hooks/claude/post-edit-validate.json",
         "./hooks/claude/post-edit-breadcrumb.json",
         "./hooks/claude/stop-validate.json",
@@ -83,13 +84,18 @@ async function writeMinimalPluginHookSurface(
   );
   await writePath(
     root,
+    "hooks/claude/pre-edit-baseline.json",
+    JSON.stringify(commandHookConfig("PreToolUse", "bun", ["${CLAUDE_PLUGIN_ROOT}/hooks/als-pre-edit-baseline.ts"], "Write|Edit|MultiEdit"), null, 2) + "\n",
+  );
+  await writePath(
+    root,
     "hooks/claude/post-edit-validate.json",
-    JSON.stringify(commandHookConfig("PostToolUse", "bun", [options.claudeValidateArg ?? "${CLAUDE_PLUGIN_ROOT}/hooks/als-validate.ts"], "Write|Edit"), null, 2) + "\n",
+    JSON.stringify(commandHookConfig("PostToolUse", "bun", [options.claudeValidateArg ?? "${CLAUDE_PLUGIN_ROOT}/hooks/als-validate.ts"], "Write|Edit|MultiEdit"), null, 2) + "\n",
   );
   await writePath(
     root,
     "hooks/claude/post-edit-breadcrumb.json",
-    JSON.stringify(commandHookConfig("PostToolUse", "bun", ["${CLAUDE_PLUGIN_ROOT}/hooks/als-breadcrumb.ts"], "Write|Edit"), null, 2) + "\n",
+    JSON.stringify(commandHookConfig("PostToolUse", "bun", ["${CLAUDE_PLUGIN_ROOT}/hooks/als-breadcrumb.ts"], "Write|Edit|MultiEdit"), null, 2) + "\n",
   );
   await writePath(
     root,
@@ -113,6 +119,17 @@ async function writeMinimalPluginHookSurface(
               {
                 type: "command",
                 command: "bun ${PLUGIN_ROOT}/hooks/operator-config-session-start.ts",
+              },
+            ],
+          },
+        ],
+        PreToolUse: [
+          {
+            matcher: "apply_patch|Edit|Write",
+            hooks: [
+              {
+                type: "command",
+                command: "bun ${PLUGIN_ROOT}/hooks/als-pre-edit-baseline.ts",
               },
             ],
           },
@@ -148,6 +165,7 @@ async function writeMinimalPluginHookSurface(
 
   for (const relativePath of [
     "hooks/operator-config-session-start.ts",
+    "hooks/als-pre-edit-baseline.ts",
     "hooks/als-validate.ts",
     "hooks/als-breadcrumb.ts",
     "hooks/als-stop-gate.ts",

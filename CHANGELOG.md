@@ -4,6 +4,11 @@ For pre-2026-04-29 release history, see git tags.
 
 ## [Unreleased]
 
+### ALS-117
+- Compatibility: refresh_required
+- Summary: Move primary ALS validation discovery from the end-of-turn Stop gate into a two-phase write-time hook loop. `nfrith-repos/als/hooks/als-pre-edit-baseline.ts` is a new silent `PreToolUse` baseline on Claude `Write|Edit|MultiEdit` and Codex `apply_patch|Edit|Write`, and `nfrith-repos/als/hooks/als-validate.ts` now keeps both warnings and failures advisory-only instead of blocking edits. The shared hook seam at `nfrith-repos/als/alsc/compiler/src/hook-runtime.ts` adds session-scoped first-touch baseline state, stable diagnostic fingerprinting, `fresh` vs `pre-existing` classification, and duplicate suppression until a fingerprint disappears. Claude hook wiring adds `MultiEdit` coverage through `nfrith-repos/als/hooks/claude/pre-edit-baseline.json`, `post-edit-validate.json`, and `post-edit-breadcrumb.json`; Codex wiring in `nfrith-repos/als/hooks/codex/hooks.json` gains the matching `PreToolUse` baseline command. `evaluateStopGateValidation()` now skips breadcrumb targets whose `system_root` no longer contains `.als/system.ts`, so reaped worktree paths do not phantom-block Stop. Hook docs at `nfrith-repos/als/hooks/CLAUDE.md` document the new lifecycle, and focused coverage in `nfrith-repos/als/alsc/compiler/test/hook-runtime.test.ts`, `test/cli.test.ts`, and `test/plugin-layout-contracts.test.ts` locks the advisory contract, first-touch classification, duplicate suppression, stale-root skipping, and harness wiring.
+- Operator action: Run `/update`. The bundled hook refresh is enough — no authored ALS files, construct `VERSION` bumps, or migration scripts are involved. After the update, write-time validation advisories surface immediately and non-blockingly, duplicate advisories stay quiet until the diagnostic disappears, Claude `MultiEdit` participates in the same loop, and Stop no longer blocks on stale breadcrumb roots left behind by reaped worktrees.
+
 ## 0.27.0 - 2026-05-16
 
 ### ALS-111

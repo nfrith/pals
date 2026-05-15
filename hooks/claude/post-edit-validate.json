@@ -1,10 +1,10 @@
 {
   "_comment": "Claude Code per-hook config under hooks/claude/. Keep plugin-rooted script paths in args using ${CLAUDE_PLUGIN_ROOT}; see hooks/CLAUDE.md for the Claude/Codex split.",
-  "description": "Runs ALS compiler against the affected module after file edits",
+  "description": "Surfaces advisory ALS validation diagnostics for the affected module after file edits",
   "hooks": {
     "PostToolUse": [
       {
-        "matcher": "Write|Edit",
+        "matcher": "Write|Edit|MultiEdit",
         "hooks": [
           {
             "type": "command",

@@ -1,4 +1,14 @@
-import { appendFileSync, existsSync, readFileSync, rmSync } from "node:fs";
+import { createHash, randomUUID } from "node:crypto";
+import {
+  appendFileSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { join, relative, resolve, sep } from "node:path";
 import {
   buildOperatorConfigSessionStartOutput,
@@ -15,6 +25,13 @@ import { validateSystem } from "./validate.ts";
 export const DEFAULT_BREADCRUMB_DIRECTORY = "/tmp";
 export const SYSTEM_BREADCRUMB_ID = "__system__";
 
+const VALIDATION_STATE_PREFIX = "als-validation-state";
+const MODULE_STATE_DIRECTORY = "modules";
+const BASELINE_DIRECTORY = "baseline";
+const ACTIVE_DIRECTORY = "active";
+const BASELINE_COMPLETE_FILE = "baseline.complete";
+const STATE_FILE_SUFFIX = ".json";
+
 export interface HookRuntimeContext {
   plugin_root: string;
   breadcrumb_directory?: string;
@@ -25,6 +42,7 @@ export type HookResultStatus = "pass" | "warn" | "fail" | "skip";
 export type HookSkipReason =
   | "demo-mode"
   | "missing-input"
+  | "missing-session"
   | "outside-als"
   | "not-a-module"
   | "invalid-system"
@@ -53,8 +71,25 @@ export interface HookRuntimeResult {
   skip_reason: HookSkipReason | null;
 }
 
+export type HookValidationClassification = "fresh" | "pre-existing";
+
+export interface HookValidationAdvisoryDiagnostic {
+  classification: HookValidationClassification;
+  diagnostic: CompilerDiagnostic;
+  fingerprint: string;
+}
+
+export interface PreEditBaselineResult {
+  status: "captured" | "duplicate" | "skip";
+  skip_reason: HookSkipReason | null;
+  target: HookModuleTarget | null;
+  baseline_count: number;
+}
+
 export interface PostEditValidationResult extends HookRuntimeResult {
   target: HookModuleTarget | null;
+  output: SystemValidationOutput | null;
+  surfaced_diagnostics: HookValidationAdvisoryDiagnostic[];
 }
 
 export interface StopGateValidationResult extends HookRuntimeResult {
@@ -83,10 +118,18 @@ export interface SessionStartHookInput {
   cwd: string;
 }
 
+export interface PreEditBaselineInput {
+  context?: HookRuntimeContext;
+  demo_mode?: boolean;
+  file_path: string;
+  session_id: string;
+}
+
 export interface PostEditValidationInput {
   context?: HookRuntimeContext;
   demo_mode?: boolean;
   file_path: string;
+  session_id?: string;
 }
 
 export interface BreadcrumbRecordInput {
@@ -104,6 +147,18 @@ export interface StopGateValidationInput {
 interface LocatedPath {
   relative_path: string;
   system_root: string;
+}
+
+interface ValidationFingerprintEntry {
+  diagnostic: CompilerDiagnostic;
+  fingerprint: string;
+}
+
+interface ValidationStatePaths {
+  module_root: string;
+  baseline_directory: string;
+  active_directory: string;
+  baseline_complete_file: string;
 }
 
 export function buildOperatorConfigSessionStart(input: SessionStartHookInput): string {
@@ -181,6 +236,64 @@ export function resolveTouchedPathTarget(
   };
 }
 
+export function capturePreEditValidationBaseline(input: PreEditBaselineInput): PreEditBaselineResult {
+  if (input.demo_mode) {
+    return buildPreEditSkip("demo-mode");
+  }
+
+  if (!input.file_path) {
+    return buildPreEditSkip("missing-input");
+  }
+
+  if (!input.session_id) {
+    return buildPreEditSkip("missing-session");
+  }
+
+  const resolution = resolveTouchedPathTarget(input.file_path);
+  if (resolution.status === "invalid-system") {
+    return buildPreEditSkip("invalid-system");
+  }
+
+  if (resolution.status !== "module" || !resolution.target) {
+    return buildPreEditSkip("not-a-module");
+  }
+
+  const target = resolution.target as HookModuleTarget;
+  const statePaths = resolveValidationStatePaths(input.session_id, target, input.context);
+  if (existsSync(statePaths.baseline_complete_file)) {
+    return {
+      status: "duplicate",
+      skip_reason: null,
+      target,
+      baseline_count: readMarkerSet(statePaths.baseline_directory).size,
+    };
+  }
+
+  try {
+    const output = validateSystem(target.system_root, target.module_id);
+    const diagnostics = collectValidationDiagnostics(output);
+    ensureValidationStateDirectories(statePaths);
+
+    for (const entry of diagnostics) {
+      writeMarkerFile(
+        statePaths.baseline_directory,
+        entry.fingerprint,
+        JSON.stringify(buildMarkerPayload(entry.diagnostic), null, 2) + "\n",
+      );
+    }
+
+    writeAtomicFile(statePaths.baseline_complete_file, "");
+    return {
+      status: "captured",
+      skip_reason: null,
+      target,
+      baseline_count: diagnostics.length,
+    };
+  } catch {
+    return buildPreEditSkip("infrastructure-error");
+  }
+}
+
 export function evaluatePostEditValidation(input: PostEditValidationInput): PostEditValidationResult {
   if (input.demo_mode) {
     return buildPostEditSkip("demo-mode");
@@ -199,37 +312,27 @@ export function evaluatePostEditValidation(input: PostEditValidationInput): Post
     return buildPostEditSkip("not-a-module");
   }
 
-  try {
-    const output = validateSystem(resolution.target.system_root, resolution.target.module_id);
-    if (output.status === "fail") {
-      return {
-        status: "fail",
-        decision: "block",
-        reason: `ALS validation failed for module '${resolution.target.module_id}'. STOP: fix all errors before making any more edits.`,
-        additional_context: JSON.stringify(output, null, 2),
-        skip_reason: null,
-        target: resolution.target,
-      };
-    }
+  const target = resolution.target as HookModuleTarget;
 
-    if (output.status === "warn") {
-      return {
-        status: "warn",
-        decision: "allow",
-        reason: null,
-        additional_context: buildPostEditWarningContext(resolution.target.module_id, output),
-        skip_reason: null,
-        target: resolution.target,
-      };
-    }
+  try {
+    const output = validateSystem(target.system_root, target.module_id);
+    const surfacedDiagnostics = input.session_id
+      ? collectSessionScopedAdvisories(input.session_id, target, output, input.context)
+      : collectValidationDiagnostics(output).map((entry) => ({
+        classification: "fresh" as const,
+        diagnostic: entry.diagnostic,
+        fingerprint: entry.fingerprint,
+      }));
 
     return {
-      status: "pass",
+      status: output.status,
       decision: "allow",
       reason: null,
-      additional_context: null,
+      additional_context: buildPostEditAdvisoryContext(target.module_id, output, surfacedDiagnostics),
       skip_reason: null,
-      target: resolution.target,
+      target,
+      output,
+      surfaced_diagnostics: surfacedDiagnostics,
     };
   } catch {
     return buildPostEditSkip("infrastructure-error");
@@ -318,10 +421,17 @@ export function evaluateStopGateValidation(input: StopGateValidationInput): Stop
     return buildStopGateSkip("missing-breadcrumbs", input, breadcrumbFile);
   }
 
+  const liveTargets: HookTarget[] = [];
   const warningContexts: string[] = [];
   let failCount = 0;
 
   for (const target of targets) {
+    if (!existsSync(join(target.system_root, ".als", "system.ts"))) {
+      continue;
+    }
+
+    liveTargets.push(target);
+
     let output: SystemValidationOutput;
     try {
       output = target.kind === "system"
@@ -355,7 +465,7 @@ export function evaluateStopGateValidation(input: StopGateValidationInput): Stop
       skip_reason: null,
       breadcrumb_file: breadcrumbFile,
       cleared_breadcrumbs: true,
-      targets,
+      targets: liveTargets,
     };
   }
 
@@ -369,7 +479,16 @@ export function evaluateStopGateValidation(input: StopGateValidationInput): Stop
     skip_reason: null,
     breadcrumb_file: breadcrumbFile,
     cleared_breadcrumbs: false,
-    targets,
+    targets: liveTargets,
+  };
+}
+
+function buildPreEditSkip(skipReason: HookSkipReason): PreEditBaselineResult {
+  return {
+    status: "skip",
+    skip_reason: skipReason,
+    target: null,
+    baseline_count: 0,
   };
 }
 
@@ -381,6 +500,8 @@ function buildPostEditSkip(skipReason: HookSkipReason): PostEditValidationResult
     additional_context: null,
     skip_reason: skipReason,
     target: null,
+    output: null,
+    surfaced_diagnostics: [],
   };
 }
 
@@ -436,16 +557,33 @@ function isSystemOwnedRelativePath(relativePath: string): boolean {
   return relativePath === ".als" || relativePath.startsWith(".als/");
 }
 
-function buildPostEditWarningContext(moduleId: string, output: SystemValidationOutput): string | null {
-  const warningLines = renderWarningLines(output);
-  if (warningLines.length === 0) {
+function buildPostEditAdvisoryContext(
+  moduleId: string,
+  output: SystemValidationOutput,
+  surfacedDiagnostics: HookValidationAdvisoryDiagnostic[],
+): string | null {
+  if (surfacedDiagnostics.length === 0) {
     return null;
   }
 
+  const freshCount = surfacedDiagnostics.filter((entry) => entry.classification === "fresh").length;
+  const preExistingCount = surfacedDiagnostics.length - freshCount;
+  const payload = {
+    status: output.status,
+    system_path: output.system_path,
+    module_filter: output.module_filter,
+    current_summary: output.summary,
+    advisories: surfacedDiagnostics.map((entry) => ({
+      classification: entry.classification,
+      diagnostic: entry.diagnostic,
+    })),
+  };
+
   return [
-    `ALS validation warnings for module "${moduleId}". These warnings do not block further edits.`,
+    `ALS validation advisory for module "${moduleId}". These diagnostics do not block further edits.`,
+    `Surfaced now: ${freshCount} fresh, ${preExistingCount} pre-existing.`,
     buildValidationSummaryLine(output),
-    ...warningLines,
+    JSON.stringify(payload, null, 2),
   ].join("\n");
 }
 
@@ -468,6 +606,78 @@ function buildStopWarningContext(target: HookTarget, output: SystemValidationOut
 
 function buildValidationSummaryLine(output: SystemValidationOutput): string {
   return `Summary: ${output.summary.warning_count} warning(s), ${output.summary.error_count} error(s).`;
+}
+
+function collectSessionScopedAdvisories(
+  sessionId: string,
+  target: HookModuleTarget,
+  output: SystemValidationOutput,
+  context?: HookRuntimeContext,
+): HookValidationAdvisoryDiagnostic[] {
+  const diagnostics = collectValidationDiagnostics(output);
+  const statePaths = resolveValidationStatePaths(sessionId, target, context);
+  const currentFingerprints = new Set(diagnostics.map((entry) => entry.fingerprint));
+
+  pruneMarkers(statePaths.active_directory, currentFingerprints);
+  pruneMarkers(statePaths.baseline_directory, currentFingerprints);
+
+  const activeFingerprints = readMarkerSet(statePaths.active_directory);
+  const baselineFingerprints = readMarkerSet(statePaths.baseline_directory);
+  const surfacedDiagnostics = diagnostics
+    .filter((entry) => !activeFingerprints.has(entry.fingerprint))
+    .map((entry) => ({
+      classification: baselineFingerprints.has(entry.fingerprint) ? "pre-existing" as const : "fresh" as const,
+      diagnostic: entry.diagnostic,
+      fingerprint: entry.fingerprint,
+    }));
+
+  if (surfacedDiagnostics.length === 0) {
+    return [];
+  }
+
+  ensureValidationStateDirectories(statePaths);
+  for (const entry of surfacedDiagnostics) {
+    writeMarkerFile(
+      statePaths.active_directory,
+      entry.fingerprint,
+      JSON.stringify({
+        ...buildMarkerPayload(entry.diagnostic),
+        classification: entry.classification,
+      }, null, 2) + "\n",
+    );
+  }
+
+  return surfacedDiagnostics;
+}
+
+function collectValidationDiagnostics(output: SystemValidationOutput): ValidationFingerprintEntry[] {
+  const diagnostics: ValidationFingerprintEntry[] = [];
+  const seenFingerprints = new Set<string>();
+
+  const pushDiagnostic = (diagnostic: CompilerDiagnostic) => {
+    const fingerprint = fingerprintDiagnostic(diagnostic);
+    if (seenFingerprints.has(fingerprint)) {
+      return;
+    }
+
+    seenFingerprints.add(fingerprint);
+    diagnostics.push({
+      diagnostic,
+      fingerprint,
+    });
+  };
+
+  for (const diagnostic of output.system_diagnostics) {
+    pushDiagnostic(diagnostic);
+  }
+
+  for (const moduleReport of output.modules) {
+    for (const diagnostic of moduleReport.diagnostics) {
+      pushDiagnostic(diagnostic);
+    }
+  }
+
+  return diagnostics;
 }
 
 function renderWarningLines(output: SystemValidationOutput): string[] {
@@ -512,6 +722,138 @@ function formatDeprecationSuffix(deprecation: DeprecationDiagnosticPayload | nul
 function resolveBreadcrumbFile(sessionId: string, context?: HookRuntimeContext): string {
   const breadcrumbDirectory = context?.breadcrumb_directory ?? DEFAULT_BREADCRUMB_DIRECTORY;
   return join(breadcrumbDirectory, `als-touched-${sessionId}`);
+}
+
+function resolveValidationStatePaths(
+  sessionId: string,
+  target: HookModuleTarget,
+  context?: HookRuntimeContext,
+): ValidationStatePaths {
+  const breadcrumbDirectory = context?.breadcrumb_directory ?? DEFAULT_BREADCRUMB_DIRECTORY;
+  const sessionRoot = join(breadcrumbDirectory, `${VALIDATION_STATE_PREFIX}-${sessionId}`);
+  const moduleRoot = join(
+    sessionRoot,
+    MODULE_STATE_DIRECTORY,
+    buildModuleStateDirectoryName(target),
+  );
+
+  return {
+    module_root: moduleRoot,
+    baseline_directory: join(moduleRoot, BASELINE_DIRECTORY),
+    active_directory: join(moduleRoot, ACTIVE_DIRECTORY),
+    baseline_complete_file: join(moduleRoot, BASELINE_COMPLETE_FILE),
+  };
+}
+
+function buildModuleStateDirectoryName(target: HookModuleTarget): string {
+  const identity = `${target.system_root}\u0000${target.module_id}`;
+  const digest = createHash("sha256").update(identity).digest("hex");
+  return `${target.module_id}-${digest}`;
+}
+
+function ensureValidationStateDirectories(paths: ValidationStatePaths): void {
+  mkdirSync(paths.module_root, { recursive: true });
+  mkdirSync(paths.baseline_directory, { recursive: true });
+  mkdirSync(paths.active_directory, { recursive: true });
+}
+
+function readMarkerSet(directory: string): Set<string> {
+  if (!existsSync(directory)) {
+    return new Set<string>();
+  }
+
+  try {
+    return new Set(
+      readdirSync(directory)
+        .filter((entry) => entry.endsWith(STATE_FILE_SUFFIX))
+        .map((entry) => entry.slice(0, -STATE_FILE_SUFFIX.length)),
+    );
+  } catch {
+    return new Set<string>();
+  }
+}
+
+function pruneMarkers(directory: string, currentFingerprints: Set<string>): void {
+  if (!existsSync(directory)) {
+    return;
+  }
+
+  try {
+    for (const entry of readdirSync(directory)) {
+      if (!entry.endsWith(STATE_FILE_SUFFIX)) {
+        continue;
+      }
+
+      const fingerprint = entry.slice(0, -STATE_FILE_SUFFIX.length);
+      if (currentFingerprints.has(fingerprint)) {
+        continue;
+      }
+
+      rmSync(join(directory, entry), { force: true });
+    }
+  } catch {
+    return;
+  }
+}
+
+function writeMarkerFile(directory: string, fingerprint: string, contents: string): void {
+  mkdirSync(directory, { recursive: true });
+  writeAtomicFile(join(directory, `${fingerprint}${STATE_FILE_SUFFIX}`), contents);
+}
+
+function writeAtomicFile(filePath: string, contents: string): void {
+  const tempPath = `${filePath}.${process.pid}.${randomUUID()}.tmp`;
+  writeFileSync(tempPath, contents, "utf-8");
+  renameSync(tempPath, filePath);
+}
+
+function buildMarkerPayload(diagnostic: CompilerDiagnostic): Record<string, unknown> {
+  return {
+    code: diagnostic.code,
+    severity: diagnostic.severity,
+    file: diagnostic.file,
+    line: diagnostic.location.line,
+    column: diagnostic.location.column,
+    module_id: diagnostic.module_id,
+    entity: diagnostic.entity,
+    field: diagnostic.field,
+    message: diagnostic.message,
+  };
+}
+
+function fingerprintDiagnostic(diagnostic: CompilerDiagnostic): string {
+  return createHash("sha256").update(stableSerialize({
+    severity: diagnostic.severity,
+    code: diagnostic.code,
+    reason: diagnostic.reason,
+    phase: diagnostic.phase,
+    file: diagnostic.file,
+    location: diagnostic.location,
+    module_id: diagnostic.module_id,
+    entity: diagnostic.entity,
+    field: diagnostic.field,
+    message: diagnostic.message,
+    expected: diagnostic.expected,
+    actual: diagnostic.actual,
+    hint: diagnostic.hint,
+    deprecation: diagnostic.deprecation,
+  })).digest("hex");
+}
+
+function stableSerialize(value: unknown): string {
+  if (value === null || typeof value !== "object") {
+    return JSON.stringify(value);
+  }
+
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => stableSerialize(item)).join(",")}]`;
+  }
+
+  const record = value as Record<string, unknown>;
+  const entries = Object.keys(record)
+    .sort()
+    .map((key) => `${JSON.stringify(key)}:${stableSerialize(record[key])}`);
+  return `{${entries.join(",")}}`;
 }
 
 function renderBreadcrumbEntry(target: HookTarget): string {

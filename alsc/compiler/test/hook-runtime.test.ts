@@ -1,9 +1,11 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
+import { existsSync } from "node:fs";
 import { mkdtemp, mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import {
   buildOperatorConfigSessionStart,
+  capturePreEditValidationBaseline,
   evaluatePostEditValidation,
   evaluateStopGateValidation,
   recordTouchedPathBreadcrumb,
@@ -171,29 +173,148 @@ test("recordTouchedPathBreadcrumb deduplicates module entries and records system
   });
 });
 
-test("evaluatePostEditValidation returns warn-only context for deprecated values", async () => {
+test("capturePreEditValidationBaseline records only the first module baseline per session", async () => {
+  await withFixtureSandbox("hook-runtime-baseline-once", async ({ root }) => {
+    await configureSyntheticDeprecationFixture(root);
+    const breadcrumbDirectory = await mkdtemp(join(tmpdir(), "als-hook-baseline-"));
+
+    const first = capturePreEditValidationBaseline({
+      context: {
+        plugin_root: "/tmp/plugin-root",
+        breadcrumb_directory: breadcrumbDirectory,
+      },
+      file_path: `${root}/workspace/backlog/items/ITEM-0001.md`,
+      session_id: "session-2",
+    });
+    const duplicate = capturePreEditValidationBaseline({
+      context: {
+        plugin_root: "/tmp/plugin-root",
+        breadcrumb_directory: breadcrumbDirectory,
+      },
+      file_path: `${root}/workspace/backlog/items/ITEM-0001.md`,
+      session_id: "session-2",
+    });
+
+    expect(first.status).toBe("captured");
+    expect(first.baseline_count).toBeGreaterThan(0);
+    expect(duplicate.status).toBe("duplicate");
+    expect(duplicate.baseline_count).toBe(first.baseline_count);
+  });
+});
+
+test("evaluatePostEditValidation classifies first surfaced baseline warnings as pre-existing", async () => {
   await withFixtureSandbox("hook-runtime-post-warn", async ({ root }) => {
     await configureSyntheticDeprecationFixture(root);
+    const breadcrumbDirectory = await mkdtemp(join(tmpdir(), "als-hook-preexisting-"));
+    const sessionId = "session-3";
+
+    const baseline = capturePreEditValidationBaseline({
+      context: {
+        plugin_root: "/tmp/plugin-root",
+        breadcrumb_directory: breadcrumbDirectory,
+      },
+      file_path: `${root}/workspace/backlog/items/ITEM-0001.md`,
+      session_id: sessionId,
+    });
+    expect(baseline.status).toBe("captured");
 
     const result = evaluatePostEditValidation({
       context: {
         plugin_root: "/tmp/plugin-root",
+        breadcrumb_directory: breadcrumbDirectory,
       },
       demo_mode: false,
       file_path: `${root}/workspace/backlog/items/ITEM-0001.md`,
+      session_id: sessionId,
     });
 
     expect(result.status).toBe("warn");
     expect(result.decision).toBe("allow");
     expect(result.target?.module_id).toBe("backlog");
     expect(result.additional_context).toContain("synthetic-deprecated");
+    expect(result.surfaced_diagnostics.some((diagnostic) => diagnostic.classification === "pre-existing")).toBe(true);
+  });
+});
+
+test("evaluatePostEditValidation suppresses duplicates until resolution and re-emits reintroduced diagnostics as fresh", async () => {
+  await withFixtureSandbox("hook-runtime-post-dedupe", async ({ root }) => {
+    const breadcrumbDirectory = await mkdtemp(join(tmpdir(), "als-hook-post-dedupe-"));
+    const sessionId = "session-4";
+    const filePath = `${root}/workspace/backlog/items/ITEM-0001.md`;
+
+    await updateRecord(root, "workspace/backlog/items/ITEM-0001.md", (record) => {
+      delete record.data.title;
+    });
+
+    const baseline = capturePreEditValidationBaseline({
+      context: {
+        plugin_root: "/tmp/plugin-root",
+        breadcrumb_directory: breadcrumbDirectory,
+      },
+      file_path: filePath,
+      session_id: sessionId,
+    });
+    expect(baseline.status).toBe("captured");
+
+    const first = evaluatePostEditValidation({
+      context: {
+        plugin_root: "/tmp/plugin-root",
+        breadcrumb_directory: breadcrumbDirectory,
+      },
+      file_path: filePath,
+      session_id: sessionId,
+    });
+    expect(first.status).toBe("fail");
+    expect(first.additional_context).toContain("\"classification\": \"pre-existing\"");
+
+    const duplicate = evaluatePostEditValidation({
+      context: {
+        plugin_root: "/tmp/plugin-root",
+        breadcrumb_directory: breadcrumbDirectory,
+      },
+      file_path: filePath,
+      session_id: sessionId,
+    });
+    expect(duplicate.additional_context).toBeNull();
+    expect(duplicate.surfaced_diagnostics).toHaveLength(0);
+
+    await updateRecord(root, "workspace/backlog/items/ITEM-0001.md", (record) => {
+      record.data.title = "Recovered title";
+    });
+
+    const resolved = evaluatePostEditValidation({
+      context: {
+        plugin_root: "/tmp/plugin-root",
+        breadcrumb_directory: breadcrumbDirectory,
+      },
+      file_path: filePath,
+      session_id: sessionId,
+    });
+    expect(resolved.status).toBe("pass");
+    expect(resolved.additional_context).toBeNull();
+
+    await updateRecord(root, "workspace/backlog/items/ITEM-0001.md", (record) => {
+      delete record.data.title;
+    });
+
+    const reintroduced = evaluatePostEditValidation({
+      context: {
+        plugin_root: "/tmp/plugin-root",
+        breadcrumb_directory: breadcrumbDirectory,
+      },
+      file_path: filePath,
+      session_id: sessionId,
+    });
+    expect(reintroduced.status).toBe("fail");
+    expect(reintroduced.additional_context).toContain("\"classification\": \"fresh\"");
+    expect(reintroduced.surfaced_diagnostics.some((diagnostic) => diagnostic.classification === "fresh")).toBe(true);
   });
 });
 
 test("evaluateStopGateValidation collapses module entries under a system breadcrumb", async () => {
   await withFixtureSandbox("hook-runtime-stop-system-collapse", async ({ root }) => {
     const breadcrumbDirectory = await mkdtemp(join(tmpdir(), "als-hook-stop-"));
-    const breadcrumbPath = join(breadcrumbDirectory, "als-touched-session-2");
+    const breadcrumbPath = join(breadcrumbDirectory, "als-touched-session-5");
     await writeFile(
       breadcrumbPath,
       `${root}:backlog\n${root}:${SYSTEM_BREADCRUMB_ID}\n${root}:general-purpose-factory\n`,
@@ -205,7 +326,7 @@ test("evaluateStopGateValidation collapses module entries under a system breadcr
         plugin_root: "/tmp/plugin-root",
         breadcrumb_directory: breadcrumbDirectory,
       },
-      session_id: "session-2",
+      session_id: "session-5",
     });
 
     expect(result.targets).toEqual([
@@ -215,5 +336,37 @@ test("evaluateStopGateValidation collapses module entries under a system breadcr
         module_id: null,
       },
     ]);
+  });
+});
+
+test("evaluateStopGateValidation skips missing stale roots and clears breadcrumbs when live targets pass", async () => {
+  await withFixtureSandbox("hook-runtime-stop-skip-missing-root", async ({ root }) => {
+    const breadcrumbDirectory = await mkdtemp(join(tmpdir(), "als-hook-stop-skip-"));
+    const breadcrumbPath = join(breadcrumbDirectory, "als-touched-session-6");
+    const missingRoot = join(tmpdir(), "als-hook-runtime-missing-root");
+    await writeFile(
+      breadcrumbPath,
+      `${missingRoot}:backlog\n${root}:backlog\n`,
+      "utf-8",
+    );
+
+    const result = evaluateStopGateValidation({
+      context: {
+        plugin_root: "/tmp/plugin-root",
+        breadcrumb_directory: breadcrumbDirectory,
+      },
+      session_id: "session-6",
+    });
+
+    expect(result.status).toBe("pass");
+    expect(result.cleared_breadcrumbs).toBe(true);
+    expect(result.targets).toEqual([
+      {
+        kind: "module",
+        system_root: root,
+        module_id: "backlog",
+      },
+    ]);
+    expect(existsSync(breadcrumbPath)).toBe(false);
   });
 });

@@ -4,6 +4,7 @@ import { resolve } from "node:path";
 const CLAUDE_PLACEHOLDER = "${CLAUDE_PLUGIN_ROOT}";
 const CODEX_PLACEHOLDER = "${PLUGIN_ROOT}";
 const OLD_CLAUDE_HOOK_FILES = [
+  "pre-edit-baseline.json",
   "post-edit-validate.json",
   "post-edit-breadcrumb.json",
   "stop-validate.json",
@@ -12,6 +13,7 @@ const OLD_CLAUDE_HOOK_FILES = [
 ] as const;
 const EXPECTED_CLAUDE_HOOK_PATHS = [
   "./hooks/claude/session-start-operator.json",
+  "./hooks/claude/pre-edit-baseline.json",
   "./hooks/claude/post-edit-validate.json",
   "./hooks/claude/post-edit-breadcrumb.json",
   "./hooks/claude/stop-validate.json",

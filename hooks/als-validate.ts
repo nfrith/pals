@@ -9,19 +9,16 @@ import {
   extractCodexTouchedPaths,
   isCodexHookPayload,
   writeCodexPostToolUseAdditionalContext,
-  writeCodexPostToolUseBlock,
   type CodexHookPayload,
 } from "./codex-hook-adapter.ts";
 import {
   derivePluginRootFromEntrypoint,
   parseHookInput,
 } from "./hook-adapter.ts";
-import {
-  writeClaudeAdditionalContext,
-  writeClaudeBlock,
-} from "./claude-hook-adapter.ts";
+import { writeClaudeAdditionalContext } from "./claude-hook-adapter.ts";
 
 interface ClaudePostToolUsePayload {
+  session_id?: string;
   tool_input?: {
     file_path?: string;
   };
@@ -31,6 +28,7 @@ try {
   const input = await parseHookInput<ClaudePostToolUsePayload | CodexHookPayload>();
   const pluginRoot = derivePluginRootFromEntrypoint(import.meta.url);
   const isCodex = isCodexHookPayload(input);
+  const sessionId = input?.session_id ?? "";
   const touchedPaths = isCodex
     ? extractCodexTouchedPaths(input)
     : input?.tool_input?.file_path
@@ -48,6 +46,7 @@ try {
         plugin_root: pluginRoot,
       },
       file_path: validationPaths[0],
+      session_id: sessionId,
     });
     emitValidationResult(result, isCodex);
     process.exit(0);
@@ -59,6 +58,7 @@ try {
         plugin_root: pluginRoot,
       },
       file_path: filePath,
+      session_id: sessionId,
     })
   );
   emitAggregateValidationResult(results, isCodex);
@@ -89,54 +89,26 @@ function dedupeValidationPaths(filePaths: string[]): string[] {
 }
 
 function emitAggregateValidationResult(results: PostEditValidationResult[], isCodex: boolean): void {
-  const failures = results.filter((result) => result.status === "fail" && result.reason);
   const contexts = results
     .map((result) => result.additional_context)
     .filter((value): value is string => typeof value === "string" && value.length > 0);
 
-  if (failures.length > 0) {
-    const reason = failures.length === 1
-      ? failures[0].reason
-      : `ALS validation failed for ${failures.length} touched module(s). STOP: fix all errors before making any more edits.`;
-    emitBlock(reason, contexts.join("\n\n") || null, isCodex);
-    return;
-  }
-
-  const warnings = results.filter((result) => result.status === "warn");
-  if (warnings.length > 0) {
-    emitWarn(contexts.join("\n\n") || null, isCodex);
+  if (contexts.length > 0) {
+    emitAdvisory(contexts.join("\n\n"), isCodex);
   }
 }
 
 function emitValidationResult(result: PostEditValidationResult, isCodex: boolean): void {
-  if (result.status === "warn" && result.additional_context) {
-    emitWarn(result.additional_context, isCodex);
-  }
-
-  if (result.status === "fail" && result.reason) {
-    emitBlock(result.reason, result.additional_context, isCodex);
+  if (result.additional_context) {
+    emitAdvisory(result.additional_context, isCodex);
   }
 }
 
-function emitWarn(additionalContext: string | null, isCodex: boolean): void {
-  if (!additionalContext) {
-    return;
-  }
-
+function emitAdvisory(additionalContext: string, isCodex: boolean): void {
   if (isCodex) {
     writeCodexPostToolUseAdditionalContext(additionalContext);
     return;
   }
 
   writeClaudeAdditionalContext("PostToolUse", additionalContext);
-}
-
-function emitBlock(reason: string, additionalContext: string | null, isCodex: boolean): void {
-  if (isCodex) {
-    writeCodexPostToolUseBlock(reason, additionalContext);
-    return;
-  }
-
-  writeClaudeBlock("PostToolUse", reason, additionalContext);
-  process.exit(2);
 }
